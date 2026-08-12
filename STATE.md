@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 7 — 작업 등급 분류와 조건부 규칙 라우팅
+- 단계: Stage 8 — 작업 요청·범위·완료 조건 계약
 - Phase: B — Agent 운영 Kernel 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -27,6 +27,7 @@
 | 4 정보 유형과 정본 구조 | pass | [docs/INFORMATION_OWNERSHIP.md](docs/INFORMATION_OWNERSHIP.md) |
 | 5 Agent 진입 구조 | pass | [docs/AGENT_ENTRY.md](docs/AGENT_ENTRY.md) |
 | 6 권한·승인·안전 정책 | pass | [POLICY.md](POLICY.md) §6 |
+| 7 작업 등급과 규칙 라우팅 | pass | [rules/rule-governance.md](rules/rule-governance.md), 라우팅 테스트 9건 |
 
 ## 승인 상태
 
@@ -45,9 +46,10 @@
 | 미구현 검사 | 계층 경계 A1~A7과 정본 규칙 O1~O6이 선언만 되어 있다 | Stage 15 |
 | 미검증 분해 | Kernel 범위 §4의 기능 분해가 구현으로 확인되지 않았다 | Stage 15·19 |
 | 참고 구현 테스트 | 테스트 통과 여부를 이 저장소에서 확인하지 않았다 | 필요 시 사본으로 실행 |
+| 의미 기반 재현 미실행 | 모든 route의 증거 수준이 static-validated에 머문다 | Stage 21 |
 
 ## 첫 다음 행동
 
-1. 참고 구현의 규칙 거버넌스와 라우팅 표만 읽기 전용으로 조사한다.
-2. `rules/` 를 만들고 규칙 거버넌스 규칙을 첫 소유자로 작성한다.
-3. [POLICY.md](POLICY.md) §4 라우팅 표와 의도 fixture 형식을 확정한다.
+1. 작업 계약 규칙을 `rules/work-contract.md` 로 작성한다.
+2. 라우팅 표에 route를 추가하고 의도 fixture 4종을 만든다.
+3. 라우팅 테스트를 실행해 통과를 확인한다.

@@ -1,0 +1,43 @@
+{
+  "fixture_version": 1,
+  "purpose": "각 활성 규칙 route가 초기·구어체·중간전환·유사비해당 요청에서 올바른 소유자를 선택하는지 검사하는 test 전용 근거다. 활성 라우터가 아니다.",
+  "router": "POLICY.md",
+  "cases": [
+    {
+      "id": "rule-governance-initial",
+      "kind": "initial",
+      "utterance": "규칙 하나 새로 추가하려고 하는데 어디에 둬야 하는지 봐줘",
+      "prior_owners": [],
+      "expected_owners": ["rules/rule-governance.md"],
+      "forbidden_owners": [],
+      "reason": "규칙 추가는 규칙 거버넌스의 명시된 trigger다."
+    },
+    {
+      "id": "rule-governance-colloquial",
+      "kind": "colloquial",
+      "utterance": "이 규칙들 좀 정리해서 합칠 수 있는 거 합쳐줘",
+      "prior_owners": [],
+      "expected_owners": ["rules/rule-governance.md"],
+      "forbidden_owners": [],
+      "reason": "통합은 같은 trigger의 구어체 표현이다."
+    },
+    {
+      "id": "rule-governance-mid-task",
+      "kind": "mid-task",
+      "utterance": "작업하다 보니 이 절차가 반복되는데 규칙으로 만들어두자",
+      "prior_owners": [],
+      "expected_owners": ["rules/rule-governance.md"],
+      "forbidden_owners": [],
+      "reason": "작업 도중 규칙 생성 경계로 새로 진입하면 소유자를 추가로 읽어야 한다."
+    },
+    {
+      "id": "rule-governance-near-miss",
+      "kind": "near-miss",
+      "utterance": "이 문서에 오타 하나만 고쳐줘",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": ["rules/rule-governance.md"],
+      "reason": "오타 수정은 규칙의 조건·행동·책임을 바꾸지 않으므로 규칙 거버넌스로 라우팅되지 않는다."
+    }
+  ]
+}
