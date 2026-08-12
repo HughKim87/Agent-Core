@@ -228,6 +228,26 @@ def check_no_hardcoded_doc_names(root: Path) -> Iterable[Finding]:
                 )
 
 
+STATE_BUDGET_CHARS = 3_000
+
+
+@register("state-size-budget")
+def check_state_size(root: Path) -> Iterable[Finding]:
+    """O3. 현재 상태 문서가 단계 수에 비례해 커지지 않는다."""
+    marker = "## 첫 다음 행동"
+    for path in _walk(root, ".md"):
+        text = path.read_text(encoding="utf-8")
+        if marker not in text:
+            continue
+        if len(text) > STATE_BUDGET_CHARS:
+            yield Finding(
+                "state-size-budget",
+                _rel(root, path),
+                f"{len(text)}자가 예산 {STATE_BUDGET_CHARS}자를 넘었다. "
+                "완료 이력이 누적되었을 가능성이 높다",
+            )
+
+
 @register("state-canonical-owner")
 def check_state_canonical_owner(root: Path) -> Iterable[Finding]:
     """O1·O5. 현재 상태 정본이 하나이고 한시 자료를 정본으로 참조하지 않는다."""

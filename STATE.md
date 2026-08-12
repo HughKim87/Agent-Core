@@ -12,38 +12,17 @@
 
 ## 현재 단계
 
-- 단계: Stage 24 — 작업 상태 Runtime 필요성 검증
+- 단계: Stage 25 — 지식·결정·수명주기 Runtime 필요성 검증
 - Phase: E — 실험 기능 판정
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
 
-## 통과한 게이트
+## 직전 게이트
 
-| Stage | 결과 | 증거 |
-|---|---|---|
-| 1 목적과 최종 책임 | pass | [docs/CHARTER.md](docs/CHARTER.md) |
-| 2 Kernel 포함·제외 범위 | pass | [docs/KERNEL_SCOPE.md](docs/KERNEL_SCOPE.md) |
-| 3 계층과 의존 방향 | pass | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| 4 정보 유형과 정본 구조 | pass | [docs/INFORMATION_OWNERSHIP.md](docs/INFORMATION_OWNERSHIP.md) |
-| 5 Agent 진입 구조 | pass | [docs/AGENT_ENTRY.md](docs/AGENT_ENTRY.md) |
-| 6 권한·승인·안전 정책 | pass | [POLICY.md](POLICY.md) §6 |
-| 7 작업 등급과 규칙 라우팅 | pass | [rules/rule-governance.md](rules/rule-governance.md), 라우팅 테스트 9건 |
-| 8 작업 요청·범위·완료 조건 계약 | pass | [rules/work-contract.md](rules/work-contract.md) |
-| 9 단계 작업 설계와 무효화 | pass | [rules/staged-work-design.md](rules/staged-work-design.md) |
-| 10 현재 상태와 인수인계 | pass | [rules/handoff.md](rules/handoff.md), 상태 계약 테스트 |
-| 11 문서 수명주기 | pass | [rules/document-work.md](rules/document-work.md) |
-| 12 보호 데이터와 외부 효과 | pass | [rules/protected-data.md](rules/protected-data.md) |
-| 13 Core 자체 변경 통제 | pass | [rules/core-change-control.md](rules/core-change-control.md) |
-| 14 검증 수준과 완료 판정 | pass | [docs/VERIFICATION.md](docs/VERIFICATION.md) |
-| 15 무결성·경계 검사 구현 | pass | `src/core_check/`, 결함 주입 테스트 |
-| 16 파생 artifact 관리 | pass | `src/core_check/derived.py` |
-| 17 실패 분류와 실패 지식 | pass | [failures/README.md](failures/README.md) |
-| 18 선택적 읽기와 컨텍스트 | pass | `src/core_check/context.py` |
-| 19 최소 공개 인터페이스 | pass | `src/core_check/cli.py` |
-| 20 Core 자체 운영 시나리오 | pass | 시나리오 3종 실행 기록은 Git |
-| 21 다중 Agent 작업 재개 | pass | 콜드 세션 2회. 기록은 Git |
-| 22 통합 검증 게이트 | pass | `src/core_check/gate.py` |
-| 23 실험 격리와 승격 기준 | pass | [docs/EXPERIMENTAL.md](docs/EXPERIMENTAL.md) |
+- Stage 24 작업 상태 Runtime 필요성 검증: `pass` (판정: 제외)
+- 그 이전 단계의 판정과 증거는 이 문서가 소유하지 않는다. `git log --oneline --grep "완료"` 로 조회한다.
+
+이 문서는 단계 수와 무관하게 일정한 크기를 유지해야 한다. 통과 이력을 여기에 누적하면 시작 문맥이 진행에 비례해 커진다.
 
 ## 승인 상태
 
@@ -66,6 +45,6 @@
 
 ## 첫 다음 행동
 
-1. `docs/EXPERIMENTAL.md` §5 의 비교 기준으로 Markdown 기준선의 실측값을 모은다.
-2. 참고 구현의 작업 상태 Runtime을 같은 기준에 대입한다.
-3. `채택`·`실험 유지`·`제외` 중 하나를 근거와 함께 확정하고 Kernel 범위 문서에 반영한다.
+1. 같은 비교 기준으로 지식·결정·수명주기 Runtime을 판정한다.
+2. 오래된 근거·충돌 지식·대체 결정·출처 변경 사례를 양쪽 방식에 대입한다.
+3. 판정을 `docs/KERNEL_SCOPE.md` §9 에 근거와 함께 확정한다.

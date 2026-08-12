@@ -11,12 +11,15 @@ STATE = ROOT / "STATE.md"
 
 REQUIRED_SECTIONS = (
     "## 현재 단계",
-    "## 통과한 게이트",
+    "## 직전 게이트",
     "## 승인 상태",
     "## 차단",
     "## 알려진 위험",
     "## 첫 다음 행동",
 )
+
+# 단계 수에 비례해 커지면 안 된다. 실측 기반 예산.
+SIZE_BUDGET_CHARS = 3_000
 
 # 문서에 고정하면 실제와 어긋나는 동적 수치
 DYNAMIC_NUMBERS = re.compile(
@@ -60,13 +63,19 @@ class StateContractTest(unittest.TestCase):
         ]
         self.assertEqual(others, [], "현재 상태 정본이 둘 이상이다")
 
-    def test_no_completed_stage_detail(self) -> None:
-        gates = self.text.split("## 통과한 게이트", 1)[1].split("## 승인 상태", 1)[0]
-        for line in gates.splitlines():
-            if line.startswith("|") and "pass" in line:
-                self.assertLessEqual(
-                    len(line), 160, f"게이트 행에 완료 상세가 누적되어 있다: {line[:60]}"
-                )
+    def test_no_completed_stage_history_accumulates(self) -> None:
+        gates = self.text.split("## 직전 게이트", 1)[1].split("## 승인 상태", 1)[0]
+        judged = [l for l in gates.splitlines() if "`pass`" in l or "`fail`" in l]
+        self.assertLessEqual(
+            len(judged), 1, f"직전 게이트 절에 판정이 {len(judged)}건 누적되어 있다"
+        )
+
+    def test_size_stays_within_budget(self) -> None:
+        self.assertLessEqual(
+            len(self.text),
+            SIZE_BUDGET_CHARS,
+            "현재 상태 문서가 예산을 넘었다. 완료 이력이 누적되었을 가능성이 높다",
+        )
 
 
 if __name__ == "__main__":
