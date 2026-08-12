@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 12 — 보호 데이터와 외부 효과 통제
+- 단계: Stage 13 — Core 자체 변경 통제
 - Phase: B — Agent 운영 Kernel 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -32,6 +32,7 @@
 | 9 단계 작업 설계와 무효화 | pass | [rules/staged-work-design.md](rules/staged-work-design.md) |
 | 10 현재 상태와 인수인계 | pass | [rules/handoff.md](rules/handoff.md), 상태 계약 테스트 |
 | 11 문서 수명주기 | pass | [rules/document-work.md](rules/document-work.md) |
+| 12 보호 데이터와 외부 효과 | pass | [rules/protected-data.md](rules/protected-data.md) |
 
 ## 승인 상태
 
@@ -55,6 +56,6 @@
 
 ## 첫 다음 행동
 
-1. 보호 데이터 규칙을 `rules/protected-data.md` 로 확정한다.
-2. POLICY.md §7 을 채우고 열거 차단 조항을 명시한다.
+1. Core 변경 통제 규칙을 `rules/core-change-control.md` 로 확정한다.
+2. 게이트 명령의 디렉터리 이름 하드코딩 금지를 명문화한다.
 3. 라우팅 테스트를 실행해 통과를 확인한다.
