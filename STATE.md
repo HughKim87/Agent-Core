@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 8 — 작업 요청·범위·완료 조건 계약
+- 단계: Stage 9 — 단계 작업 설계와 계획 무효화 체계
 - Phase: B — Agent 운영 Kernel 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -28,6 +28,7 @@
 | 5 Agent 진입 구조 | pass | [docs/AGENT_ENTRY.md](docs/AGENT_ENTRY.md) |
 | 6 권한·승인·안전 정책 | pass | [POLICY.md](POLICY.md) §6 |
 | 7 작업 등급과 규칙 라우팅 | pass | [rules/rule-governance.md](rules/rule-governance.md), 라우팅 테스트 9건 |
+| 8 작업 요청·범위·완료 조건 계약 | pass | [rules/work-contract.md](rules/work-contract.md) |
 
 ## 승인 상태
 
@@ -50,6 +51,6 @@
 
 ## 첫 다음 행동
 
-1. 작업 계약 규칙을 `rules/work-contract.md` 로 작성한다.
-2. 라우팅 표에 route를 추가하고 의도 fixture 4종을 만든다.
+1. 단계 설계 규칙의 게이트 판정과 무효화 조항을 확정한다.
+2. 라우팅 표와 의도 fixture를 갱신한다.
 3. 라우팅 테스트를 실행해 통과를 확인한다.

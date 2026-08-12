@@ -8,7 +8,9 @@
       "kind": "initial",
       "utterance": "규칙 하나 새로 추가하려고 하는데 어디에 둬야 하는지 봐줘",
       "prior_owners": [],
-      "expected_owners": ["rules/rule-governance.md"],
+      "expected_owners": [
+        "rules/rule-governance.md"
+      ],
       "forbidden_owners": [],
       "reason": "규칙 추가는 규칙 거버넌스의 명시된 trigger다."
     },
@@ -17,7 +19,9 @@
       "kind": "colloquial",
       "utterance": "이 규칙들 좀 정리해서 합칠 수 있는 거 합쳐줘",
       "prior_owners": [],
-      "expected_owners": ["rules/rule-governance.md"],
+      "expected_owners": [
+        "rules/rule-governance.md"
+      ],
       "forbidden_owners": [],
       "reason": "통합은 같은 trigger의 구어체 표현이다."
     },
@@ -26,7 +30,9 @@
       "kind": "mid-task",
       "utterance": "작업하다 보니 이 절차가 반복되는데 규칙으로 만들어두자",
       "prior_owners": [],
-      "expected_owners": ["rules/rule-governance.md"],
+      "expected_owners": [
+        "rules/rule-governance.md"
+      ],
       "forbidden_owners": [],
       "reason": "작업 도중 규칙 생성 경계로 새로 진입하면 소유자를 추가로 읽어야 한다."
     },
@@ -36,8 +42,100 @@
       "utterance": "이 문서에 오타 하나만 고쳐줘",
       "prior_owners": [],
       "expected_owners": [],
-      "forbidden_owners": ["rules/rule-governance.md"],
+      "forbidden_owners": [
+        "rules/rule-governance.md"
+      ],
       "reason": "오타 수정은 규칙의 조건·행동·책임을 바꾸지 않으므로 규칙 거버넌스로 라우팅되지 않는다."
+    },
+    {
+      "id": "work-contract-initial",
+      "kind": "initial",
+      "utterance": "여러 파일 걸쳐서 리팩터링 좀 해줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/work-contract.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "범위가 넓은 다중 파일 변경은 최소 계약 확인 trigger다."
+    },
+    {
+      "id": "work-contract-colloquial",
+      "kind": "colloquial",
+      "utterance": "이거 좀 싹 손봐줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/work-contract.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "검증 가능한 결과가 없는 모호한 요청은 계약 확인을 요구한다."
+    },
+    {
+      "id": "work-contract-mid-task",
+      "kind": "mid-task",
+      "utterance": "아 그거 말고 다른 걸 원했어",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/work-contract.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "사용자 교정은 기존 계약을 무효화하는 경계다."
+    },
+    {
+      "id": "work-contract-near-miss",
+      "kind": "near-miss",
+      "utterance": "이 파일 내용이 뭔지 읽어줘",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/work-contract.md"
+      ],
+      "reason": "읽기만 하는 요청은 변경 계약이 필요 없다."
+    },
+    {
+      "id": "staged-work-design-initial",
+      "kind": "initial",
+      "utterance": "이 작업을 단계로 나눠서 순서대로 진행하자",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/staged-work-design.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "의존 단계가 있는 controlled 작업의 설계 trigger다."
+    },
+    {
+      "id": "staged-work-design-colloquial",
+      "kind": "colloquial",
+      "utterance": "전에 하던 거 이어서 해줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/staged-work-design.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "단계 재개는 같은 trigger의 구어체 표현이다."
+    },
+    {
+      "id": "staged-work-design-mid-task",
+      "kind": "mid-task",
+      "utterance": "이번 단계 끝났으니 다음으로 넘어가자",
+      "prior_owners": [
+        "rules/staged-work-design.md"
+      ],
+      "expected_owners": [
+        "rules/staged-work-design.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "단계 전환은 게이트 판정을 요구한다."
+    },
+    {
+      "id": "staged-work-design-near-miss",
+      "kind": "near-miss",
+      "utterance": "파일 하나만 고쳐줘",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/staged-work-design.md"
+      ],
+      "reason": "단일 단계 작업에는 단계 설계를 적용하지 않는다."
     }
   ]
 }
