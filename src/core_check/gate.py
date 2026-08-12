@@ -10,8 +10,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 import hashlib
+import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -19,8 +21,27 @@ from .context import STARTUP_BUDGET_CHARS, build as build_context
 from .integrity import run_all
 from .primitives import CheckError
 
-MIN_PYTHON = (3, 10)
 SKIP_DIRS = {".git", "__pycache__", ".obsidian"}
+COMPAT_BLOCK = re.compile(
+    r"<!--\s*core-compatibility:v1\s*-->\s*```json\s*(.*?)```", re.S
+)
+FALLBACK_MIN_PYTHON = (3, 10)
+
+
+def declared_compatibility(root: Path) -> dict[str, object]:
+    """지원 버전 선언을 조회한다. 값을 코드에 다시 적지 않는다."""
+    for path in sorted((root / "docs").glob("*.md")) if (root / "docs").is_dir() else []:
+        match = COMPAT_BLOCK.search(path.read_text(encoding="utf-8"))
+        if match:
+            return json.loads(match.group(1))
+    return {}
+
+
+def _min_python(root: Path) -> tuple[int, ...]:
+    declared = declared_compatibility(root).get("python_min")
+    if isinstance(declared, str):
+        return tuple(int(part) for part in declared.split("."))
+    return FALLBACK_MIN_PYTHON
 
 
 @dataclass
@@ -82,14 +103,19 @@ def tree_digest(root: Path) -> str:
 
 
 def _preflight(root: Path) -> Iterable[StepResult]:
-    if sys.version_info[:2] < MIN_PYTHON:
+    minimum = _min_python(root)
+    if sys.version_info[: len(minimum)] < minimum:
         yield StepResult(
             "preflight-runtime",
             "fail",
-            f"Python {'.'.join(map(str, MIN_PYTHON))} 이상이 필요하다. 현재 {sys.version.split()[0]}",
+            f"Python {'.'.join(map(str, minimum))} 이상이 필요하다. 현재 {sys.version.split()[0]}",
         )
         return
-    yield StepResult("preflight-runtime", "pass", sys.version.split()[0])
+    declared = declared_compatibility(root)
+    label = declared.get("core_version", "미선언")
+    yield StepResult(
+        "preflight-runtime", "pass", f"Python {sys.version.split()[0]} / core {label}"
+    )
 
     if not (root / "src").is_dir():
         yield StepResult("preflight-layout", "fail", "src 디렉터리가 없다")

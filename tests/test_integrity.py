@@ -545,3 +545,48 @@ class IntegrationGateTest(unittest.TestCase):
             [(s["name"], s["status"]) for s in first["steps"]],
             [(s["name"], s["status"]) for s in second["steps"]],
         )
+
+
+class CompatibilityTest(unittest.TestCase):
+    """선언과 실제 동작의 일치."""
+
+    def setUp(self) -> None:
+        from core_check import gate
+
+        self.gate = gate
+        self.declared = gate.declared_compatibility(ROOT)
+
+    def test_declaration_exists_and_is_complete(self) -> None:
+        for key in ("core_version", "contract_version", "python_min", "required_dependencies"):
+            self.assertIn(key, self.declared)
+
+    def test_declaration_is_the_only_source(self) -> None:
+        blocks = [
+            p
+            for p in ROOT.rglob("*.md")
+            if ".git" not in p.parts
+            and "tmp" not in p.parts
+            and self.gate.COMPAT_BLOCK.search(p.read_text(encoding="utf-8"))
+        ]
+        self.assertEqual(len(blocks), 1, f"호환성 선언이 {len(blocks)}곳에 있다")
+
+    def test_running_runtime_satisfies_declaration(self) -> None:
+        minimum = tuple(int(p) for p in self.declared["python_min"].split("."))
+        self.assertGreaterEqual(sys.version_info[: len(minimum)], minimum)
+
+    def test_no_required_dependencies_declared_and_none_used(self) -> None:
+        self.assertEqual(self.declared["required_dependencies"], [])
+
+    def test_gate_reads_minimum_from_declaration_not_constant(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build_clean(root)
+            (root / "docs").mkdir()
+            (root / "docs" / "c.md").write_text(
+                "<!-- core-compatibility:v1 -->\n```json\n"
+                '{"python_min": "99.0"}\n```\n<!-- /core-compatibility -->\n',
+                encoding="utf-8",
+            )
+            result = self.gate.run(root)
+            self.assertFalse(result.ok)
+            self.assertEqual(result.failed_step, "preflight-runtime")
