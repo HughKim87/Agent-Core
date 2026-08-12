@@ -16,6 +16,7 @@ from pathlib import Path
 import sys
 
 from .context import build as build_context
+from .gate import run as run_gate
 from .integrity import run_all
 from .primitives import CheckError
 
@@ -43,11 +44,19 @@ def cmd_context(root: Path, matched: list[str]) -> int:
     return EXIT_OK
 
 
+def cmd_gate(root: Path) -> int:
+    """소비자: Core 변경 승인 절차의 최종 관문."""
+    result = run_gate(root)
+    _emit(result.as_dict())
+    return EXIT_OK if result.ok else EXIT_FINDINGS
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="core-check", description="Core 무결성 검사")
     parser.add_argument("--root", default=".", help="검사할 저장소 뿌리")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("verify", help="모든 필수 검사를 실행한다")
+    sub.add_parser("gate", help="통합 검증 게이트를 실행한다")
     context = sub.add_parser("context", help="시작 컨텍스트를 구성한다")
     context.add_argument("--rule", action="append", default=[], help="현재 행동에 일치한 규칙")
     return parser
@@ -62,6 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "verify":
             return cmd_verify(root)
+        if args.command == "gate":
+            return cmd_gate(root)
         if args.command == "context":
             return cmd_context(root, args.rule)
     except CheckError as exc:

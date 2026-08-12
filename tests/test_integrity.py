@@ -461,3 +461,87 @@ class GateRobustnessTest(unittest.TestCase):
         self.assertEqual(code, cli.EXIT_UNUSABLE)
         self.assertNotEqual(code, cli.EXIT_FINDINGS)
         self.assertIn("error", payload)
+
+
+class IntegrationGateTest(unittest.TestCase):
+    """통합 게이트의 단계 결과, 상태 구분, 부작용 없음.
+
+    실제 저장소 전체를 대상으로 게이트를 돌리면 게이트가 회귀 테스트를 하위
+    프로세스로 실행하므로 이 테스트 자체가 다시 실행된다. 재진입 방지가 있어도
+    시간이 배로 든다. 따라서 단위 테스트는 합성 트리만 사용하고 실제 저장소
+    게이트는 CLI 종단 호출로 별도 확인한다.
+    """
+
+    def setUp(self) -> None:
+        from core_check import gate
+
+        self.gate = gate
+        self.tmp = tempfile.mkdtemp()
+        self.root = Path(self.tmp)
+        build_clean(self.root)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_clean_tree_gate_passes(self) -> None:
+        result = self.gate.run(self.root)
+        self.assertTrue(result.ok, result.as_dict())
+        self.assertIsNone(result.failed_step)
+
+    def test_gate_does_not_modify_working_tree(self) -> None:
+        before = self.gate.tree_digest(self.root)
+        self.gate.run(self.root)
+        self.assertEqual(before, self.gate.tree_digest(self.root))
+
+    def test_optional_absence_is_not_applicable_not_fail(self) -> None:
+        result = self.gate.run(self.root)
+        optional = [s for s in result.steps if s.name == "optional-features"][0]
+        self.assertEqual(optional.status, "not_applicable")
+        self.assertFalse(optional.required)
+        self.assertTrue(result.ok)
+
+    def test_not_applicable_does_not_fail_but_not_run_does(self) -> None:
+        result = self.gate.run(self.root)
+        regression = [s for s in result.steps if s.name == "regression-tests"][0]
+        self.assertEqual(regression.status, "not_applicable")
+        self.assertTrue(regression.required)
+        self.assertTrue(result.ok, "not_applicable 은 실패가 아니다")
+
+    def test_single_required_failure_fails_whole_gate(self) -> None:
+        (self.root / "data.json").write_text("{broken", encoding="utf-8")
+        result = self.gate.run(self.root)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.failed_step, "integrity")
+
+    def test_preflight_failure_marks_later_steps_not_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "placeholder.txt").write_text("x\n", encoding="utf-8")
+            result = self.gate.run(root)
+            self.assertFalse(result.ok)
+            self.assertEqual(result.failed_step, "preflight-layout")
+            statuses = {s.name: s.status for s in result.steps}
+            self.assertEqual(statuses["integrity"], "not_run")
+            self.assertEqual(statuses["regression-tests"], "not_run")
+
+    def test_reentry_is_blocked(self) -> None:
+        import os
+
+        (self.root / "tests").mkdir()
+        os.environ[self.gate.REENTRY_FLAG] = "1"
+        try:
+            result = self.gate.run(self.root)
+        finally:
+            os.environ.pop(self.gate.REENTRY_FLAG, None)
+        step = [s for s in result.steps if s.name == "regression-tests"][0]
+        self.assertEqual(step.status, "not_applicable")
+        self.assertIn("재진입", step.detail)
+
+    def test_gate_result_is_reproducible(self) -> None:
+        first = self.gate.run(self.root).as_dict()
+        second = self.gate.run(self.root).as_dict()
+        self.assertEqual(first["ok"], second["ok"])
+        self.assertEqual(
+            [(s["name"], s["status"]) for s in first["steps"]],
+            [(s["name"], s["status"]) for s in second["steps"]],
+        )
