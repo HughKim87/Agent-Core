@@ -286,3 +286,66 @@ class DerivedArtifactTest(unittest.TestCase):
     def test_rejects_target_outside_root(self) -> None:
         with self.assertRaises(UnsafePathError):
             resolve_inside(self.root, "../escape.txt")
+
+
+class ContextTest(unittest.TestCase):
+    """선택적 문서 읽기의 결정론과 예산 강제."""
+
+    def setUp(self) -> None:
+        from core_check import context
+
+        self.context = context
+        self.tmp = tempfile.mkdtemp()
+        self.root = Path(self.tmp)
+        build_clean(self.root)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_required_is_router_and_state_only(self) -> None:
+        package = self.context.build(self.root)
+        self.assertEqual(len(package.required), 2)
+        self.assertIn("ROUTER.md", package.required)
+        self.assertIn("CURRENT.md", package.required)
+
+    def test_unmatched_rule_is_excluded_with_reason(self) -> None:
+        package = self.context.build(self.root)
+        self.assertIn("rules/sample.md", package.excluded)
+        self.assertTrue(package.excluded["rules/sample.md"])
+
+    def test_matched_rule_is_included(self) -> None:
+        package = self.context.build(self.root, ["rules/sample.md"])
+        self.assertIn("rules/sample.md", package.optional)
+        self.assertNotIn("rules/sample.md", package.excluded)
+
+    def test_same_input_gives_same_digest(self) -> None:
+        first = self.context.build(self.root, ["rules/sample.md"])
+        second = self.context.build(self.root, ["rules/sample.md"])
+        self.assertEqual(first.digest, second.digest)
+
+    def test_different_selection_gives_different_digest(self) -> None:
+        first = self.context.build(self.root)
+        second = self.context.build(self.root, ["rules/sample.md"])
+        self.assertNotEqual(first.digest, second.digest)
+
+    def test_unrouted_owner_is_rejected(self) -> None:
+        from core_check.primitives import CheckError
+
+        with self.assertRaises(CheckError):
+            self.context.build(self.root, ["rules/does-not-exist.md"])
+
+    def test_budget_overflow_fails_instead_of_truncating(self) -> None:
+        with self.assertRaises(self.context.ContextBudgetError):
+            self.context.build(self.root, budget=10)
+
+    def test_failure_knowledge_is_not_in_default_selection(self) -> None:
+        failures = self.root / "failures"
+        failures.mkdir()
+        (failures / "case.md").write_text(RULE_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
+        package = self.context.build(self.root)
+        self.assertIn("failures/case.md", package.excluded)
+
+    def test_real_repository_startup_context_is_within_budget(self) -> None:
+        package = self.context.build(ROOT)
+        self.assertLessEqual(package.chars, self.context.STARTUP_BUDGET_CHARS)
+        self.assertEqual(len(package.required), 2)

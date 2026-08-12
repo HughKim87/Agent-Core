@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 18 — 선택적 문서 읽기와 컨텍스트 구성
+- 단계: Stage 19 — Core 최소 실행 도구와 공개 인터페이스
 - Phase: C — 검증 가능한 실행 기반 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -38,6 +38,7 @@
 | 15 무결성·경계 검사 구현 | pass | `src/core_check/`, 결함 주입 테스트 |
 | 16 파생 artifact 관리 | pass | `src/core_check/derived.py` |
 | 17 실패 분류와 실패 지식 | pass | [failures/README.md](failures/README.md) |
+| 18 선택적 읽기와 컨텍스트 | pass | `src/core_check/context.py` |
 
 ## 승인 상태
 
@@ -61,6 +62,6 @@
 
 ## 첫 다음 행동
 
-1. 컨텍스트 구성의 실제 소비자가 있는지 판정한다.
-2. 판정 기준 C2·C4를 적용해 채택·실험 유지·제외를 결정한다.
-3. 결정과 근거를 Kernel 범위 문서에 반영한다.
+1. 공개 인터페이스를 실제 소비자가 있는 최소 표면으로 정의한다.
+2. CLI 진입점을 만들고 구조화된 결과와 종료 상태를 반환한다.
+3. 깨끗한 환경에서 최소 호출을 실행해 확인한다.
