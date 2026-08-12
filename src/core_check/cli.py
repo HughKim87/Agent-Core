@@ -67,6 +67,11 @@ def main(argv: list[str] | None = None) -> int:
     except CheckError as exc:
         _emit({"ok": False, "error": str(exc), "kind": type(exc).__name__})
         return EXIT_UNUSABLE
+    except Exception as exc:  # noqa: BLE001
+        # 예상하지 못한 오류도 구조화해서 돌려준다. 검사 도구가 traceback으로 죽으면
+        # 호출자는 실패인지 수행 불가인지 구분할 수 없다.
+        _emit({"ok": False, "error": str(exc), "kind": type(exc).__name__, "unexpected": True})
+        return EXIT_UNUSABLE
     _emit({"ok": False, "error": f"알 수 없는 명령: {args.command}"})
     return EXIT_UNUSABLE
 

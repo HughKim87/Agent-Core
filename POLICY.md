@@ -52,6 +52,7 @@
 | 유지 문서를 만들거나 바꾸거나, 보고서·계획 문서를 요청받거나, 임시 문서를 처분 | [문서 작업](rules/document-work.md) |
 | 보호 경로의 항목을 다루거나, 비밀이 있을 수 있는 파일을 다루거나, 외부 효과를 일으키기 전 | [보호 데이터와 외부 효과](rules/protected-data.md) |
 | Core로 선언된 경로를 생성·수정·삭제·이동·개명·재생성하거나 간접적으로 변경 | [Core 변경 통제](rules/core-change-control.md) |
+| Git 스테이지·커밋·브랜치·push·복구·백업 | [버전 관리](rules/version-control.md) |
 | 실질적이고 일반화 가능한 실패를 기록하거나 재사용 | [실패 기록](rules/failure-records.md) |
 | 규칙을 추가·변경·통합·감사하거나 `controlled` 작업을 종료 | [규칙 거버넌스](rules/rule-governance.md) |
 

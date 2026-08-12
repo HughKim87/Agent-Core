@@ -423,3 +423,41 @@ class PublicInterfaceTest(unittest.TestCase):
                 if isinstance(node, ast_module.Import):
                     for alias in node.names:
                         self.assertIn(alias.name.split(".")[0], stdlib, path.name)
+
+
+class GateRobustnessTest(unittest.TestCase):
+    """게이트 자체의 실패 처리. 자체 운영 시나리오에서 발견된 결함의 회귀."""
+
+    def _run(self, *argv: str) -> tuple[int, dict]:
+        import contextlib
+        import io
+
+        from core_check import cli
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = cli.main(list(argv))
+        return code, json.loads(buffer.getvalue())
+
+    def test_unexpected_error_is_structured_not_traceback(self) -> None:
+        from core_check import cli
+
+        original = cli.run_all
+        cli.run_all = lambda root: (_ for _ in ()).throw(RuntimeError("예상 못한 오류"))
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                code, payload = self._run("--root", tmp, "verify")
+            self.assertEqual(code, cli.EXIT_UNUSABLE)
+            self.assertTrue(payload["unexpected"])
+            self.assertEqual(payload["kind"], "RuntimeError")
+        finally:
+            cli.run_all = original
+
+    def test_unusable_root_is_distinguished_from_findings(self) -> None:
+        from core_check import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            code, payload = self._run("--root", tmp, "context")
+        self.assertEqual(code, cli.EXIT_UNUSABLE)
+        self.assertNotEqual(code, cli.EXIT_FINDINGS)
+        self.assertIn("error", payload)

@@ -366,6 +366,52 @@
         "rules/failure-records.md"
       ],
       "reason": "교정된 일회성 오타는 실패 지식이 아니다."
+    },
+    {
+      "id": "version-control-initial",
+      "kind": "initial",
+      "utterance": "여기까지 커밋해줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/version-control.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "Git 쓰기는 버전 관리의 명시된 trigger다."
+    },
+    {
+      "id": "version-control-colloquial",
+      "kind": "colloquial",
+      "utterance": "이거 저장해두자",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/version-control.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "커밋 요청의 구어체 표현이다."
+    },
+    {
+      "id": "version-control-mid-task",
+      "kind": "mid-task",
+      "utterance": "이제 원격에도 올려줘",
+      "prior_owners": [
+        "rules/version-control.md"
+      ],
+      "expected_owners": [
+        "rules/version-control.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "push 는 별도 승인이 필요한 경계다."
+    },
+    {
+      "id": "version-control-near-miss",
+      "kind": "near-miss",
+      "utterance": "이 파일 수정 내역이 뭔지 알려줘",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/version-control.md"
+      ],
+      "reason": "이력 조회는 Git 쓰기가 아니다."
     }
   ]
 }
