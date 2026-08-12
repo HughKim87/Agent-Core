@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 6 — 공통 권한·승인·안전 정책
+- 단계: Stage 7 — 작업 등급 분류와 조건부 규칙 라우팅
 - Phase: B — Agent 운영 Kernel 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -26,6 +26,7 @@
 | 3 계층과 의존 방향 | pass | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | 4 정보 유형과 정본 구조 | pass | [docs/INFORMATION_OWNERSHIP.md](docs/INFORMATION_OWNERSHIP.md) |
 | 5 Agent 진입 구조 | pass | [docs/AGENT_ENTRY.md](docs/AGENT_ENTRY.md) |
+| 6 권한·승인·안전 정책 | pass | [POLICY.md](POLICY.md) §6 |
 
 ## 승인 상태
 
@@ -47,6 +48,6 @@
 
 ## 첫 다음 행동
 
-1. 참고 구현의 상시 정책에서 권한·승인·안전 절만 읽기 전용으로 조사한다.
-2. 권위 순서와 승인 경계를 [POLICY.md](POLICY.md) §6에 확정한다.
-3. 승인 필요·불필요·금지 시나리오를 정책에 대입해 판정 일관성을 확인한다.
+1. 참고 구현의 규칙 거버넌스와 라우팅 표만 읽기 전용으로 조사한다.
+2. `rules/` 를 만들고 규칙 거버넌스 규칙을 첫 소유자로 작성한다.
+3. [POLICY.md](POLICY.md) §4 라우팅 표와 의도 fixture 형식을 확정한다.
