@@ -12,8 +12,8 @@
 
 ## 현재 단계
 
-- 단계: Stage 13 — Core 자체 변경 통제
-- Phase: B — Agent 운영 Kernel 구축
+- 단계: Stage 14 — 검증 수준과 완료 판정 체계
+- Phase: C — 검증 가능한 실행 기반 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
 
@@ -33,6 +33,7 @@
 | 10 현재 상태와 인수인계 | pass | [rules/handoff.md](rules/handoff.md), 상태 계약 테스트 |
 | 11 문서 수명주기 | pass | [rules/document-work.md](rules/document-work.md) |
 | 12 보호 데이터와 외부 효과 | pass | [rules/protected-data.md](rules/protected-data.md) |
+| 13 Core 자체 변경 통제 | pass | [rules/core-change-control.md](rules/core-change-control.md) |
 
 ## 승인 상태
 
@@ -56,6 +57,6 @@
 
 ## 첫 다음 행동
 
-1. Core 변경 통제 규칙을 `rules/core-change-control.md` 로 확정한다.
-2. 게이트 명령의 디렉터리 이름 하드코딩 금지를 명문화한다.
-3. 라우팅 테스트를 실행해 통과를 확인한다.
+1. 검증 수준 체계를 `docs/VERIFICATION.md` 로 확정한다.
+2. 작업 위험과 결과 유형에 필요한 최소 검증 수준을 연결한다.
+3. POLICY.md §9 를 확정하고 라우팅 테스트를 실행한다.
