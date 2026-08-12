@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 5 — 독립 Core 프로젝트의 Agent 진입 구조
+- 단계: Stage 6 — 공통 권한·승인·안전 정책
 - Phase: B — Agent 운영 Kernel 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -25,6 +25,7 @@
 | 2 Kernel 포함·제외 범위 | pass | [docs/KERNEL_SCOPE.md](docs/KERNEL_SCOPE.md) |
 | 3 계층과 의존 방향 | pass | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | 4 정보 유형과 정본 구조 | pass | [docs/INFORMATION_OWNERSHIP.md](docs/INFORMATION_OWNERSHIP.md) |
+| 5 Agent 진입 구조 | pass | [docs/AGENT_ENTRY.md](docs/AGENT_ENTRY.md) |
 
 ## 승인 상태
 
@@ -46,6 +47,6 @@
 
 ## 첫 다음 행동
 
-1. Stage 5의 진입 확인: Stage 4의 게이트와 증거를 읽는다.
-2. 참고 구현의 진입 파일 3종과 상시 정책의 시작 절만 읽기 전용으로 조사한다.
-3. 에이전트별 최소 진입 파일과 공통 정책 정본의 이름·책임을 확정하고 구현한다.
+1. 참고 구현의 상시 정책에서 권한·승인·안전 절만 읽기 전용으로 조사한다.
+2. 권위 순서와 승인 경계를 [POLICY.md](POLICY.md) §6에 확정한다.
+3. 승인 필요·불필요·금지 시나리오를 정책에 대입해 판정 일관성을 확인한다.
