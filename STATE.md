@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 17 — 실패 분류와 재사용 가능한 실패 지식
+- 단계: Stage 18 — 선택적 문서 읽기와 컨텍스트 구성
 - Phase: C — 검증 가능한 실행 기반 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -37,6 +37,7 @@
 | 14 검증 수준과 완료 판정 | pass | [docs/VERIFICATION.md](docs/VERIFICATION.md) |
 | 15 무결성·경계 검사 구현 | pass | `src/core_check/`, 결함 주입 테스트 |
 | 16 파생 artifact 관리 | pass | `src/core_check/derived.py` |
+| 17 실패 분류와 실패 지식 | pass | [failures/README.md](failures/README.md) |
 
 ## 승인 상태
 
@@ -60,6 +61,6 @@
 
 ## 첫 다음 행동
 
-1. 실패 분류 규칙을 `rules/failure-records.md` 로 작성한다.
-2. 참고 구현의 해결 실패 6건과 tmp 기록에서 재사용 가능한 지식을 추출한다.
-3. `failures/` 에 원인별 정본을 만들고 검사를 통과시킨다.
+1. 컨텍스트 구성의 실제 소비자가 있는지 판정한다.
+2. 판정 기준 C2·C4를 적용해 채택·실험 유지·제외를 결정한다.
+3. 결정과 근거를 Kernel 범위 문서에 반영한다.

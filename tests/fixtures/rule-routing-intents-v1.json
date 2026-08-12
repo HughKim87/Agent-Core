@@ -320,6 +320,52 @@
         "rules/core-change-control.md"
       ],
       "reason": "읽기는 Core 변경이 아니다."
+    },
+    {
+      "id": "failure-records-initial",
+      "kind": "initial",
+      "utterance": "이번에 겪은 실패를 기록으로 남겨줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/failure-records.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "실패 기록은 명시된 trigger다."
+    },
+    {
+      "id": "failure-records-colloquial",
+      "kind": "colloquial",
+      "utterance": "같은 실수 또 안 하게 정리해놔",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/failure-records.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "재사용 목적의 실패 보존 요청이다."
+    },
+    {
+      "id": "failure-records-mid-task",
+      "kind": "mid-task",
+      "utterance": "세 번째 같은 방식으로 실패했어",
+      "prior_owners": [
+        "rules/work-contract.md"
+      ],
+      "expected_owners": [
+        "rules/failure-records.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "반복 실패 임계에 도달하면 기록·중단 경계로 진입한다."
+    },
+    {
+      "id": "failure-records-near-miss",
+      "kind": "near-miss",
+      "utterance": "방금 오타 하나 잘못 쳤네 다시 해줘",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/failure-records.md"
+      ],
+      "reason": "교정된 일회성 오타는 실패 지식이 아니다."
     }
   ]
 }
