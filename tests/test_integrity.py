@@ -561,11 +561,12 @@ class CompatibilityTest(unittest.TestCase):
             self.assertIn(key, self.declared)
 
     def test_declaration_is_the_only_source(self) -> None:
+        # 제외 판정은 저장소 뿌리 기준 상대 경로로 한다. 절대 경로로 판정하면
+        # 저장소가 `tmp` 같은 이름의 디렉터리 아래에 체크아웃될 때 전부 건너뛴다.
         blocks = [
             p
             for p in ROOT.rglob("*.md")
-            if ".git" not in p.parts
-            and "tmp" not in p.parts
+            if not {".git", "tmp"} & set(p.relative_to(ROOT).parts)
             and self.gate.COMPAT_BLOCK.search(p.read_text(encoding="utf-8"))
         ]
         self.assertEqual(len(blocks), 1, f"호환성 선언이 {len(blocks)}곳에 있다")
