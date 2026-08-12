@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 16 — 결정론적 파생 Artifact 관리
+- 단계: Stage 17 — 실패 분류와 재사용 가능한 실패 지식
 - Phase: C — 검증 가능한 실행 기반 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -36,6 +36,7 @@
 | 13 Core 자체 변경 통제 | pass | [rules/core-change-control.md](rules/core-change-control.md) |
 | 14 검증 수준과 완료 판정 | pass | [docs/VERIFICATION.md](docs/VERIFICATION.md) |
 | 15 무결성·경계 검사 구현 | pass | `src/core_check/`, 결함 주입 테스트 |
+| 16 파생 artifact 관리 | pass | `src/core_check/derived.py` |
 
 ## 승인 상태
 
@@ -59,6 +60,6 @@
 
 ## 첫 다음 행동
 
-1. 파생 artifact의 인간 정본과 재생성 경로를 정의한다.
-2. 현재 저장소에 실제 파생 artifact가 있는지 판정한다.
-3. drift 검사를 구현하거나 대상 부재를 근거와 함께 기록한다.
+1. 실패 분류 규칙을 `rules/failure-records.md` 로 작성한다.
+2. 참고 구현의 해결 실패 6건과 tmp 기록에서 재사용 가능한 지식을 추출한다.
+3. `failures/` 에 원인별 정본을 만들고 검사를 통과시킨다.

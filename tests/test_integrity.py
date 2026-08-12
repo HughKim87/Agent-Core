@@ -209,3 +209,80 @@ class RealRepositoryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DerivedArtifactTest(unittest.TestCase):
+    """파생 artifact 관리의 결정론과 drift 탐지."""
+
+    def setUp(self) -> None:
+        from core_check import derived
+
+        self.derived = derived
+        self.tmp = tempfile.mkdtemp()
+        self.root = Path(self.tmp)
+        build_clean(self.root)
+        if "upper" not in derived.GENERATORS:
+            derived.generator("upper")(str.upper)
+        (self.root / "source.md").write_text("abc\n", encoding="utf-8")
+        (self.root / "derived-artifacts.json").write_text(
+            '{"artifacts": [{"source": "source.md", "target": "out.txt", "generator": "upper"}]}\n',
+            encoding="utf-8",
+        )
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write_artifact(self) -> None:
+        entry = self.derived.load_declaration(self.root)[0]
+        (self.root / "out.txt").write_text(
+            self.derived.regenerate(self.root, entry), encoding="utf-8"
+        )
+
+    def test_absent_declaration_is_not_a_failure(self) -> None:
+        (self.root / "derived-artifacts.json").unlink()
+        self.assertEqual(findings_for(self.root, "derived-artifacts"), [])
+
+    def test_regeneration_is_deterministic(self) -> None:
+        entry = self.derived.load_declaration(self.root)[0]
+        first = self.derived.regenerate(self.root, entry)
+        second = self.derived.regenerate(self.root, entry)
+        self.assertEqual(first, second)
+
+    def test_regenerated_artifact_passes(self) -> None:
+        self._write_artifact()
+        self.assertEqual(findings_for(self.root, "derived-artifacts"), [])
+
+    def test_detects_missing_artifact(self) -> None:
+        self.assertTrue(findings_for(self.root, "derived-artifacts"))
+
+    def test_detects_manual_edit_of_artifact(self) -> None:
+        self._write_artifact()
+        (self.root / "out.txt").write_text("직접 고쳤다\n", encoding="utf-8")
+        self.assertTrue(findings_for(self.root, "derived-artifacts"))
+
+    def test_detects_source_change_without_regeneration(self) -> None:
+        self._write_artifact()
+        (self.root / "source.md").write_text("xyz\n", encoding="utf-8")
+        self.assertTrue(findings_for(self.root, "derived-artifacts"))
+
+    def test_detects_duplicate_target(self) -> None:
+        (self.root / "derived-artifacts.json").write_text(
+            '{"artifacts": ['
+            '{"source": "source.md", "target": "out.txt", "generator": "upper"},'
+            '{"source": "source.md", "target": "out.txt", "generator": "upper"}]}\n',
+            encoding="utf-8",
+        )
+        self._write_artifact()
+        messages = findings_for(self.root, "derived-artifacts")
+        self.assertTrue(any("정본이 둘 이상" in m for m in messages), messages)
+
+    def test_detects_unknown_generator(self) -> None:
+        (self.root / "derived-artifacts.json").write_text(
+            '{"artifacts": [{"source": "source.md", "target": "out.txt", "generator": "없음"}]}\n',
+            encoding="utf-8",
+        )
+        self.assertTrue(findings_for(self.root, "derived-artifacts"))
+
+    def test_rejects_target_outside_root(self) -> None:
+        with self.assertRaises(UnsafePathError):
+            resolve_inside(self.root, "../escape.txt")
