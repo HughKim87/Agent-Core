@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 10 — 현재 상태와 세션 인수인계 체계
+- 단계: Stage 11 — 문서 생성·갱신·종료 수명주기
 - Phase: B — Agent 운영 Kernel 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -30,12 +30,14 @@
 | 7 작업 등급과 규칙 라우팅 | pass | [rules/rule-governance.md](rules/rule-governance.md), 라우팅 테스트 9건 |
 | 8 작업 요청·범위·완료 조건 계약 | pass | [rules/work-contract.md](rules/work-contract.md) |
 | 9 단계 작업 설계와 무효화 | pass | [rules/staged-work-design.md](rules/staged-work-design.md) |
+| 10 현재 상태와 인수인계 | pass | [rules/handoff.md](rules/handoff.md), 상태 계약 테스트 |
 
 ## 승인 상태
 
 - 사용자가 블루프린트의 모든 단계를 에이전트 권장안으로 진행하도록 위임했다.
 - 단계 완료 시 커밋을 남긴다. push는 승인되지 않았다.
 - 참고 구현은 읽기 전용이다. 변경이 필요하면 중단하고 보고한다.
+- 재개 방식: `portable`. 저장소의 추적된 내용만으로 재개된다.
 
 ## 차단
 
@@ -52,6 +54,6 @@
 
 ## 첫 다음 행동
 
-1. 현재 상태 문서의 계약을 `rules/handoff.md` 로 확정한다.
-2. same-workspace 재개와 portable 재개를 구분한다.
-3. STATE.md 가 그 계약을 실제로 따르는지 검사로 확인한다.
+1. 문서 수명주기 규칙을 `rules/document-work.md` 로 작성한다.
+2. 문서 생성 게이트와 읽기 예산을 확정한다.
+3. 라우팅과 상태 계약 테스트를 실행해 통과를 확인한다.

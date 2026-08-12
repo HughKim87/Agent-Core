@@ -136,6 +136,52 @@
         "rules/staged-work-design.md"
       ],
       "reason": "단일 단계 작업에는 단계 설계를 적용하지 않는다."
+    },
+    {
+      "id": "handoff-initial",
+      "kind": "initial",
+      "utterance": "여기까지 하고 다음 세션에서 이어받게 정리해줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/handoff.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "작업 인계는 인수인계 규칙의 명시된 trigger다."
+    },
+    {
+      "id": "handoff-colloquial",
+      "kind": "colloquial",
+      "utterance": "지금 상황 좀 남겨놔",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/handoff.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "상태 기록 요청의 구어체 표현이다."
+    },
+    {
+      "id": "handoff-mid-task",
+      "kind": "mid-task",
+      "utterance": "이번 단계 끝났으니 상태 갱신해",
+      "prior_owners": [
+        "rules/staged-work-design.md"
+      ],
+      "expected_owners": [
+        "rules/handoff.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "단계 전환 시 상태 갱신 경계로 새로 진입한다."
+    },
+    {
+      "id": "handoff-near-miss",
+      "kind": "near-miss",
+      "utterance": "이 프로젝트가 뭐 하는 건지 설명해줘",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/handoff.md"
+      ],
+      "reason": "개요 설명 요청은 상태 갱신이 아니다."
     }
   ]
 }
