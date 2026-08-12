@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 9 — 단계 작업 설계와 계획 무효화 체계
+- 단계: Stage 10 — 현재 상태와 세션 인수인계 체계
 - Phase: B — Agent 운영 Kernel 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -29,6 +29,7 @@
 | 6 권한·승인·안전 정책 | pass | [POLICY.md](POLICY.md) §6 |
 | 7 작업 등급과 규칙 라우팅 | pass | [rules/rule-governance.md](rules/rule-governance.md), 라우팅 테스트 9건 |
 | 8 작업 요청·범위·완료 조건 계약 | pass | [rules/work-contract.md](rules/work-contract.md) |
+| 9 단계 작업 설계와 무효화 | pass | [rules/staged-work-design.md](rules/staged-work-design.md) |
 
 ## 승인 상태
 
@@ -51,6 +52,6 @@
 
 ## 첫 다음 행동
 
-1. 단계 설계 규칙의 게이트 판정과 무효화 조항을 확정한다.
-2. 라우팅 표와 의도 fixture를 갱신한다.
-3. 라우팅 테스트를 실행해 통과를 확인한다.
+1. 현재 상태 문서의 계약을 `rules/handoff.md` 로 확정한다.
+2. same-workspace 재개와 portable 재개를 구분한다.
+3. STATE.md 가 그 계약을 실제로 따르는지 검사로 확인한다.
