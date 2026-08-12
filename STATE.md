@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 11 — 문서 생성·갱신·종료 수명주기
+- 단계: Stage 12 — 보호 데이터와 외부 효과 통제
 - Phase: B — Agent 운영 Kernel 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -31,6 +31,7 @@
 | 8 작업 요청·범위·완료 조건 계약 | pass | [rules/work-contract.md](rules/work-contract.md) |
 | 9 단계 작업 설계와 무효화 | pass | [rules/staged-work-design.md](rules/staged-work-design.md) |
 | 10 현재 상태와 인수인계 | pass | [rules/handoff.md](rules/handoff.md), 상태 계약 테스트 |
+| 11 문서 수명주기 | pass | [rules/document-work.md](rules/document-work.md) |
 
 ## 승인 상태
 
@@ -54,6 +55,6 @@
 
 ## 첫 다음 행동
 
-1. 문서 수명주기 규칙을 `rules/document-work.md` 로 작성한다.
-2. 문서 생성 게이트와 읽기 예산을 확정한다.
-3. 라우팅과 상태 계약 테스트를 실행해 통과를 확인한다.
+1. 보호 데이터 규칙을 `rules/protected-data.md` 로 확정한다.
+2. POLICY.md §7 을 채우고 열거 차단 조항을 명시한다.
+3. 라우팅 테스트를 실행해 통과를 확인한다.

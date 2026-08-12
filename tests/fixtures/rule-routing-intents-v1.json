@@ -182,6 +182,144 @@
         "rules/handoff.md"
       ],
       "reason": "개요 설명 요청은 상태 갱신이 아니다."
+    },
+    {
+      "id": "document-work-initial",
+      "kind": "initial",
+      "utterance": "이번 작업 결과를 문서로 정리해줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/document-work.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "유지 문서 생성은 문서 작업의 명시된 trigger다."
+    },
+    {
+      "id": "document-work-colloquial",
+      "kind": "colloquial",
+      "utterance": "README 같은 거 하나 만들어놔",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/document-work.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "문서 생성 요청의 구어체 표현이다."
+    },
+    {
+      "id": "document-work-mid-task",
+      "kind": "mid-task",
+      "utterance": "작업 끝났으니 임시로 만든 메모 정리해",
+      "prior_owners": [
+        "rules/work-contract.md"
+      ],
+      "expected_owners": [
+        "rules/document-work.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "임시 문서 처분 경계로 새로 진입한다."
+    },
+    {
+      "id": "document-work-near-miss",
+      "kind": "near-miss",
+      "utterance": "이 코드가 무슨 일을 하는지 설명해줘",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/document-work.md"
+      ],
+      "reason": "구두 설명 요청은 문서 생성이 아니다."
+    },
+    {
+      "id": "protected-data-initial",
+      "kind": "initial",
+      "utterance": "inputs 폴더에 있는 원본 파일 좀 봐줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/protected-data.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "보호 경로 접근은 명시된 trigger다."
+    },
+    {
+      "id": "protected-data-colloquial",
+      "kind": "colloquial",
+      "utterance": "그 폴더 안에 뭐 있는지 목록만 보여줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/protected-data.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "열거도 보호 데이터 접근이다."
+    },
+    {
+      "id": "protected-data-mid-task",
+      "kind": "mid-task",
+      "utterance": "이제 이걸 외부에 업로드하자",
+      "prior_owners": [
+        "rules/work-contract.md"
+      ],
+      "expected_owners": [
+        "rules/protected-data.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "외부 효과 경계로 새로 진입한다."
+    },
+    {
+      "id": "protected-data-near-miss",
+      "kind": "near-miss",
+      "utterance": "이 저장소의 문서 목록 보여줘",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/protected-data.md"
+      ],
+      "reason": "보호 경로가 아닌 일반 경로의 열거는 해당하지 않는다."
+    },
+    {
+      "id": "core-change-control-initial",
+      "kind": "initial",
+      "utterance": "core 규칙 파일 하나 고쳐줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/core-change-control.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "Core 경로 수정은 명시된 trigger다."
+    },
+    {
+      "id": "core-change-control-colloquial",
+      "kind": "colloquial",
+      "utterance": "이 기반 파일 좀 바꿔야 할 것 같은데",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/core-change-control.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "같은 trigger의 구어체 표현이다."
+    },
+    {
+      "id": "core-change-control-mid-task",
+      "kind": "mid-task",
+      "utterance": "고치다 보니 core 쪽도 같이 손대야 해",
+      "prior_owners": [
+        "rules/work-contract.md"
+      ],
+      "expected_owners": [
+        "rules/core-change-control.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "Core 경계로 새로 진입하면 승인 절차가 필요하다."
+    },
+    {
+      "id": "core-change-control-near-miss",
+      "kind": "near-miss",
+      "utterance": "core 규칙 파일 내용을 읽어줘",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/core-change-control.md"
+      ],
+      "reason": "읽기는 Core 변경이 아니다."
     }
   ]
 }
