@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 23 — 실험 기능 격리와 승격 기준
+- 단계: Stage 24 — 작업 상태 Runtime 필요성 검증
 - Phase: E — 실험 기능 판정
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -43,6 +43,7 @@
 | 20 Core 자체 운영 시나리오 | pass | 시나리오 3종 실행 기록은 Git |
 | 21 다중 Agent 작업 재개 | pass | 콜드 세션 2회. 기록은 Git |
 | 22 통합 검증 게이트 | pass | `src/core_check/gate.py` |
+| 23 실험 격리와 승격 기준 | pass | [docs/EXPERIMENTAL.md](docs/EXPERIMENTAL.md) |
 
 ## 승인 상태
 
@@ -65,6 +66,6 @@
 
 ## 첫 다음 행동
 
-1. `docs/EXPERIMENTAL.md` 에 실험 기능의 위치·상태·소유자·승격 조건·종료 조건을 정의한다.
-2. 실험 기능이 없는 현재 상태에서 게이트가 통과함을 근거로 격리 구조의 성립을 확인한다.
-3. Stage 24·25가 사용할 비교 기준을 그 문서에 미리 고정한다.
+1. `docs/EXPERIMENTAL.md` §5 의 비교 기준으로 Markdown 기준선의 실측값을 모은다.
+2. 참고 구현의 작업 상태 Runtime을 같은 기준에 대입한다.
+3. `채택`·`실험 유지`·`제외` 중 하나를 근거와 함께 확정하고 Kernel 범위 문서에 반영한다.
