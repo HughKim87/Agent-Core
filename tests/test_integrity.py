@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import shutil
 import sys
@@ -349,3 +350,76 @@ class ContextTest(unittest.TestCase):
         package = self.context.build(ROOT)
         self.assertLessEqual(package.chars, self.context.STARTUP_BUDGET_CHARS)
         self.assertEqual(len(package.required), 2)
+
+
+class PublicInterfaceTest(unittest.TestCase):
+    """공개 인터페이스의 정상·오류·경계 동작."""
+
+    def setUp(self) -> None:
+        from core_check import cli
+
+        self.cli = cli
+        self.tmp = tempfile.mkdtemp()
+        self.root = Path(self.tmp)
+        build_clean(self.root)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _run(self, *argv: str) -> tuple[int, dict]:
+        import contextlib
+        import io
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = self.cli.main(list(argv))
+        return code, json.loads(buffer.getvalue())
+
+    def test_verify_returns_zero_on_clean_tree(self) -> None:
+        code, payload = self._run("--root", str(self.root), "verify")
+        self.assertEqual(code, self.cli.EXIT_OK)
+        self.assertTrue(payload["ok"])
+
+    def test_verify_returns_one_on_findings(self) -> None:
+        (self.root / "data.json").write_text("{broken", encoding="utf-8")
+        code, payload = self._run("--root", str(self.root), "verify")
+        self.assertEqual(code, self.cli.EXIT_FINDINGS)
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["findings"])
+
+    def test_missing_root_returns_two(self) -> None:
+        code, payload = self._run("--root", str(self.root / "nope"), "verify")
+        self.assertEqual(code, self.cli.EXIT_UNUSABLE)
+        self.assertIn("error", payload)
+
+    def test_context_command_reports_selection(self) -> None:
+        code, payload = self._run("--root", str(self.root), "context", "--rule", "rules/sample.md")
+        self.assertEqual(code, self.cli.EXIT_OK)
+        self.assertIn("rules/sample.md", payload["optional"])
+        self.assertEqual(len(payload["required"]), 2)
+
+    def test_context_rejects_unrouted_rule_with_structured_error(self) -> None:
+        code, payload = self._run("--root", str(self.root), "context", "--rule", "rules/nope.md")
+        self.assertEqual(code, self.cli.EXIT_UNUSABLE)
+        self.assertEqual(payload["kind"], "CheckError")
+
+    def test_every_public_command_has_a_consumer_note(self) -> None:
+        import inspect
+
+        from core_check import cli
+
+        commands = [f for name, f in vars(cli).items() if name.startswith("cmd_")]
+        self.assertTrue(commands)
+        for fn in commands:
+            self.assertIn("소비자", inspect.getdoc(fn) or "")
+
+    def test_no_third_party_dependency(self) -> None:
+        import ast as ast_module
+
+        stdlib = set(sys.stdlib_module_names)
+        for path in sorted((ROOT / "src" / "core_check").glob("*.py")):
+            tree = ast_module.parse(path.read_text(encoding="utf-8"))
+            for node in ast_module.walk(tree):
+                if isinstance(node, ast_module.Import):
+                    for alias in node.names:
+                        self.assertIn(alias.name.split(".")[0], stdlib, path.name)
