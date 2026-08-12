@@ -4,7 +4,7 @@
 - 읽는 시점: 세션을 시작할 때, 작업을 이어받을 때.
 - 책임: 프로젝트 에이전트가 단계 전환 시 갱신한다.
 - 상태: 활성 정본.
-- 관련 권위: [전체 구축 설계](AGENT_CORE_BUILD_BLUEPRINT.md), [정보 소유 구조](docs/INFORMATION_OWNERSHIP.md).
+- 관련 권위: [Core 헌장](docs/CHARTER.md)이 목적과 보장을, [전체 구축 설계](AGENT_CORE_BUILD_BLUEPRINT.md)가 단계 지도를 소유한다.
 
 완료된 단계의 상세는 이 문서에 남기지 않는다. Git 커밋에서 조회한다.
 
@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 20 — Core 자체 운영 시나리오 검증
+- 단계: Stage 22 — Core Kernel 통합 검증 게이트
 - Phase: D — Core 자체 운영 입증
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -40,6 +40,8 @@
 | 17 실패 분류와 실패 지식 | pass | [failures/README.md](failures/README.md) |
 | 18 선택적 읽기와 컨텍스트 | pass | `src/core_check/context.py` |
 | 19 최소 공개 인터페이스 | pass | `src/core_check/cli.py` |
+| 20 Core 자체 운영 시나리오 | pass | 시나리오 3종 실행 기록은 Git |
+| 21 다중 Agent 작업 재개 | pass | 콜드 세션 2회. 기록은 Git |
 
 ## 승인 상태
 
@@ -56,13 +58,12 @@
 
 | 항목 | 내용 | 해소 시점 |
 |---|---|---|
-| 부분 구현 검사 | A7과 O2·O3·O6은 아직 자동 검사가 없다 | Stage 16·22 |
-| ~~미검증 분해~~ | 해소됨. L5가 L7을 import하지 않는 구조로 구현·검사 완료 | 완료 |
-| 참고 구현 테스트 | 테스트 통과 여부를 이 저장소에서 확인하지 않았다 | 필요 시 사본으로 실행 |
-| 의미 기반 재현 미실행 | 모든 route의 증거 수준이 static-validated에 머문다 | Stage 21 |
+| 부분 구현 검사 | 계층 배정 검사 A7과 정본 규칙 O2·O3·O6은 아직 자동 검사가 없다 | Stage 22 |
+| 실험 Runtime 미이식 | 작업 상태·지식 Runtime을 아직 이 저장소로 옮기지 않았다 | Stage 23~25 |
+| Host 경계 미해결 | Core가 하위 디렉터리로 들어갈 때의 진입 파일 문제가 미결이다 | Stage 28 |
 
 ## 첫 다음 행동
 
-1. 규칙 변경·계약 변경·검증 코드 변경의 대표 시나리오를 실제로 수행한다.
-2. 각 시나리오에서 소유자·승인·범위·검증 증거를 대조한다.
-3. 실패를 주입해 중단과 복구 경로를 확인한다.
+1. `src/core_check/gate.py` 를 만들어 preflight, 무결성 검사, 회귀 테스트, 라우팅 검사를 단일 진입점으로 통합한다.
+2. 필수 단계 실패와 선택 기능 부재를 서로 다른 상태로 반환하게 한다.
+3. 게이트 실행 전후로 작업 트리가 변하지 않는지 확인하는 검사를 `tests/test_integrity.py` 에 추가한다.
