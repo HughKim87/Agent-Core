@@ -12,14 +12,15 @@
 
 ## 현재 단계
 
-- 단계: Stage 28 — Host 연결 단계 진입 조건 정의
-- Phase: F — 독립 Core 완료와 다음 단계 경계
+- 단계: 없음. 블루프린트 28단계 전부 완료
+- Phase: 완료. 다음은 Host 연결 설계로 별도 승인 대상
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
+- 독립 Core 1차 완료. 판정은 [docs/COMPLETION.md](docs/COMPLETION.md)
 
 ## 직전 게이트
 
-- Stage 27 독립 Core 1차 완료 판정: `pass` (판정: 완료)
+- Stage 28 Host 연결 단계 진입 조건 정의: `pass`
 - 그 이전 단계의 판정과 증거는 이 문서가 소유하지 않는다. `git log --oneline --grep "완료"` 로 조회한다.
 
 이 문서는 단계 수와 무관하게 일정한 크기를 유지해야 한다. 통과 이력을 여기에 누적하면 시작 문맥이 진행에 비례해 커진다.
@@ -45,6 +46,6 @@
 
 ## 첫 다음 행동
 
-1. `docs/HOST_ENTRY_CONDITIONS.md` 에 Host가 사용할 공개 계약과 Core가 알지 말아야 할 정보를 구분한다.
-2. 과거 4회 실패한 진입 파일 문제의 `실제 해`를 먼저 확정할 것을 다음 단계의 첫 작업으로 등록한다.
-3. Host 연결은 별도 승인 작업으로 남기고 이 저장소에서는 구현하지 않는다.
+1. 사용자에게 Host 연결 단계의 착수 여부를 확인받는다. 이 저장소의 다음 작업은 승인 없이 시작하지 않는다.
+2. 착수가 승인되면 [docs/HOST_ENTRY_CONDITIONS.md](docs/HOST_ENTRY_CONDITIONS.md) §5의 1번과 2번을 최소 재현으로 확정한다. 해법을 먼저 고르지 않는다.
+3. `tmp/` 의 종료 여부를 사용자에게 확인받는다. 삭제는 승인 대상이다.
