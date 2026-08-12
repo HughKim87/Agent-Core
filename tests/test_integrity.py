@@ -1,0 +1,211 @@
+"""무결성 검사의 결함 탐지 검증.
+
+각 검사가 실제로 결함을 잡는지 주입 fixture로 확인한다. 정상 상태에서 오류 0으로
+통과하는 것만으로는 검사가 동작한다고 말할 수 없다.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from core_check import run_all  # noqa: E402
+from core_check.primitives import UnsafePathError, fingerprint, resolve_inside  # noqa: E402
+
+DOC_HEADERS = """- 목적: 결함 주입용 표본.
+- 읽는 시점: 검사 확인 시.
+- 책임: 테스트.
+- 상태: 표본.
+- 관련 권위: 없음.
+"""
+
+ROUTER_BODY = """# 라우터 표본
+
+{headers}
+## 4. 규칙 라우팅
+
+| 행동 | 읽을 소유자 |
+|---|---|
+| 표본 행동 | [표본 규칙](rules/sample.md) |
+
+## 5. 끝
+"""
+
+STATE_BODY = """# 상태 표본
+
+{headers}
+## 첫 다음 행동
+
+1. 아무것도 하지 않는다.
+"""
+
+RULE_BODY = """# 표본 규칙
+
+{headers}
+본문.
+"""
+
+
+def build_clean(root: Path) -> None:
+    (root / "rules").mkdir(parents=True)
+    (root / "src" / "core_check").mkdir(parents=True)
+    (root / "ROUTER.md").write_text(ROUTER_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
+    (root / "CURRENT.md").write_text(STATE_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
+    (root / "rules" / "sample.md").write_text(RULE_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
+    (root / "src" / "core_check" / "primitives.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (root / "src" / "core_check" / "integrity.py").write_text(
+        "from .primitives import VALUE\n", encoding="utf-8"
+    )
+    (root / "data.json").write_text('{"a": 1}\n', encoding="utf-8")
+
+
+def findings_for(root: Path, check: str) -> list[str]:
+    return [f.message for f in run_all(root).findings if f.check == check]
+
+
+class BaselineTest(unittest.TestCase):
+    def test_clean_tree_passes_with_zero_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build_clean(root)
+            report = run_all(root)
+            self.assertTrue(report.ok, [f.as_dict() for f in report.findings])
+            self.assertEqual(report.findings, [])
+
+    def test_optional_absence_is_not_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build_clean(root)
+            report = run_all(root)
+            self.assertIn("optional-checks", report.skipped)
+            self.assertTrue(report.ok)
+
+
+class FaultInjectionTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.mkdtemp()
+        self.root = Path(self.tmp)
+        build_clean(self.root)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_detects_broken_link(self) -> None:
+        (self.root / "rules" / "sample.md").write_text(
+            RULE_BODY.format(headers=DOC_HEADERS) + "\n[없는 문서](missing.md)\n", encoding="utf-8"
+        )
+        self.assertTrue(findings_for(self.root, "markdown-links"))
+
+    def test_detects_invalid_json(self) -> None:
+        (self.root / "data.json").write_text("{not json", encoding="utf-8")
+        self.assertTrue(findings_for(self.root, "json-parse"))
+
+    def test_detects_python_syntax_error(self) -> None:
+        (self.root / "src" / "core_check" / "broken.py").write_text("def (:\n", encoding="utf-8")
+        self.assertTrue(findings_for(self.root, "python-ast"))
+
+    def test_detects_trailing_whitespace(self) -> None:
+        (self.root / "data.json").write_text('{"a": 1} \n', encoding="utf-8")
+        self.assertTrue(findings_for(self.root, "text-encoding"))
+
+    def test_detects_nul_byte(self) -> None:
+        (self.root / "data.json").write_bytes(b'{"a": 1}\x00\n')
+        self.assertTrue(findings_for(self.root, "text-encoding"))
+
+    def test_detects_missing_document_headers(self) -> None:
+        (self.root / "rules" / "sample.md").write_text("# 헤더 없음\n\n본문만 있다.\n" * 40, encoding="utf-8")
+        self.assertTrue(findings_for(self.root, "document-headers"))
+
+    def test_detects_unrouted_rule(self) -> None:
+        (self.root / "rules" / "orphan.md").write_text(
+            RULE_BODY.format(headers=DOC_HEADERS), encoding="utf-8"
+        )
+        self.assertTrue(findings_for(self.root, "rule-routes"))
+
+    def test_detects_duplicate_route(self) -> None:
+        body = ROUTER_BODY.format(headers=DOC_HEADERS).replace(
+            "| 표본 행동 | [표본 규칙](rules/sample.md) |",
+            "| 표본 행동 | [표본 규칙](rules/sample.md) |\n| 중복 | [표본 규칙](rules/sample.md) |",
+        )
+        (self.root / "ROUTER.md").write_text(body, encoding="utf-8")
+        self.assertTrue(findings_for(self.root, "rule-routes"))
+
+    def test_detects_rule_cross_routing(self) -> None:
+        (self.root / "rules" / "other.md").write_text(
+            RULE_BODY.format(headers=DOC_HEADERS), encoding="utf-8"
+        )
+        (self.root / "rules" / "sample.md").write_text(
+            RULE_BODY.format(headers=DOC_HEADERS) + "\n[다른 규칙](other.md)\n", encoding="utf-8"
+        )
+        self.assertTrue(findings_for(self.root, "rule-cross-routing"))
+
+    def test_detects_l6_importing_internal_module(self) -> None:
+        (self.root / "src" / "core_check" / "primitives.py").write_text(
+            "from .integrity import VALUE\n", encoding="utf-8"
+        )
+        messages = findings_for(self.root, "layer-boundaries")
+        self.assertTrue(any("L6" in m for m in messages), messages)
+
+    def test_detects_l5_importing_experimental(self) -> None:
+        (self.root / "src" / "core_check" / "integrity.py").write_text(
+            "import experimental.runtime\n", encoding="utf-8"
+        )
+        messages = findings_for(self.root, "layer-boundaries")
+        self.assertTrue(any("L7" in m for m in messages), messages)
+
+    def test_detects_import_cycle(self) -> None:
+        pkg = self.root / "src" / "core_check"
+        (pkg / "alpha.py").write_text("from .beta import X\n", encoding="utf-8")
+        (pkg / "beta.py").write_text("from .alpha import Y\n", encoding="utf-8")
+        messages = findings_for(self.root, "layer-boundaries")
+        self.assertTrue(any("순환" in m for m in messages), messages)
+
+    def test_detects_hardcoded_document_name(self) -> None:
+        (self.root / "src" / "core_check" / "integrity.py").write_text(
+            'from .primitives import VALUE\nTARGET = "CURRENT.md"\n', encoding="utf-8"
+        )
+        self.assertTrue(findings_for(self.root, "no-hardcoded-doc-names"))
+
+    def test_detects_duplicate_state_owner(self) -> None:
+        (self.root / "SECOND.md").write_text(STATE_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
+        self.assertTrue(findings_for(self.root, "state-canonical-owner"))
+
+    def test_detects_reference_to_temporary_material(self) -> None:
+        (self.root / "tmp").mkdir()
+        (self.root / "tmp" / "note.md").write_text("메모\n", encoding="utf-8")
+        (self.root / "rules" / "sample.md").write_text(
+            RULE_BODY.format(headers=DOC_HEADERS) + "\n[한시 자료](tmp/note.md)\n", encoding="utf-8"
+        )
+        self.assertTrue(findings_for(self.root, "state-canonical-owner"))
+
+
+class PrimitivesTest(unittest.TestCase):
+    def test_resolve_inside_rejects_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(UnsafePathError):
+                resolve_inside(Path(tmp), "../outside")
+
+    def test_resolve_inside_accepts_child(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertEqual(resolve_inside(root, "a/b").parent.name, "a")
+
+    def test_fingerprint_is_deterministic(self) -> None:
+        self.assertEqual(fingerprint("같은 입력"), fingerprint("같은 입력"))
+        self.assertNotEqual(fingerprint("가"), fingerprint("나"))
+
+
+class RealRepositoryTest(unittest.TestCase):
+    def test_repository_passes_with_zero_errors(self) -> None:
+        report = run_all(ROOT)
+        self.assertTrue(report.ok, [f.as_dict() for f in report.findings])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 15 — 문서·링크·Schema·코드 무결성 검사
+- 단계: Stage 16 — 결정론적 파생 Artifact 관리
 - Phase: C — 검증 가능한 실행 기반 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -35,6 +35,7 @@
 | 12 보호 데이터와 외부 효과 | pass | [rules/protected-data.md](rules/protected-data.md) |
 | 13 Core 자체 변경 통제 | pass | [rules/core-change-control.md](rules/core-change-control.md) |
 | 14 검증 수준과 완료 판정 | pass | [docs/VERIFICATION.md](docs/VERIFICATION.md) |
+| 15 무결성·경계 검사 구현 | pass | `src/core_check/`, 결함 주입 테스트 |
 
 ## 승인 상태
 
@@ -51,13 +52,13 @@
 
 | 항목 | 내용 | 해소 시점 |
 |---|---|---|
-| 미구현 검사 | 계층 경계 A1~A7과 정본 규칙 O1~O6이 선언만 되어 있다 | Stage 15 |
+| 부분 구현 검사 | A7과 O2·O3·O6은 아직 자동 검사가 없다 | Stage 16·22 |
 | 미검증 분해 | Kernel 범위 §4의 기능 분해가 구현으로 확인되지 않았다 | Stage 15·19 |
 | 참고 구현 테스트 | 테스트 통과 여부를 이 저장소에서 확인하지 않았다 | 필요 시 사본으로 실행 |
 | 의미 기반 재현 미실행 | 모든 route의 증거 수준이 static-validated에 머문다 | Stage 21 |
 
 ## 첫 다음 행동
 
-1. `src/` 에 무결성 검사와 경계 검사를 구현한다.
-2. 결함 주입 fixture를 만들어 각 검사가 실제로 탐지하는지 확인한다.
-3. 정상 상태에서 오류 0으로 통과하는지 확인한다.
+1. 파생 artifact의 인간 정본과 재생성 경로를 정의한다.
+2. 현재 저장소에 실제 파생 artifact가 있는지 판정한다.
+3. drift 검사를 구현하거나 대상 부재를 근거와 함께 기록한다.
