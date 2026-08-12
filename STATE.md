@@ -12,7 +12,7 @@
 
 ## 현재 단계
 
-- 단계: Stage 14 — 검증 수준과 완료 판정 체계
+- 단계: Stage 15 — 문서·링크·Schema·코드 무결성 검사
 - Phase: C — 검증 가능한 실행 기반 구축
 - 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
 - 활성 단계 설계: 없음
@@ -34,6 +34,7 @@
 | 11 문서 수명주기 | pass | [rules/document-work.md](rules/document-work.md) |
 | 12 보호 데이터와 외부 효과 | pass | [rules/protected-data.md](rules/protected-data.md) |
 | 13 Core 자체 변경 통제 | pass | [rules/core-change-control.md](rules/core-change-control.md) |
+| 14 검증 수준과 완료 판정 | pass | [docs/VERIFICATION.md](docs/VERIFICATION.md) |
 
 ## 승인 상태
 
@@ -57,6 +58,6 @@
 
 ## 첫 다음 행동
 
-1. 검증 수준 체계를 `docs/VERIFICATION.md` 로 확정한다.
-2. 작업 위험과 결과 유형에 필요한 최소 검증 수준을 연결한다.
-3. POLICY.md §9 를 확정하고 라우팅 테스트를 실행한다.
+1. `src/` 에 무결성 검사와 경계 검사를 구현한다.
+2. 결함 주입 fixture를 만들어 각 검사가 실제로 탐지하는지 확인한다.
+3. 정상 상태에서 오류 0으로 통과하는지 확인한다.
