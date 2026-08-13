@@ -1,6 +1,6 @@
 {
   "fixture_version": 1,
-  "purpose": "각 활성 규칙 route가 초기·구어체·중간전환·유사비해당 요청에서 올바른 소유자를 선택하는지 검사하는 test 전용 근거다. 활성 라우터가 아니다.",
+  "purpose": "활성 route의 콜드 Agent 의미 재현에 쓰는 입력·기대값이며, 기계 테스트는 이 파일의 구조와 참조 위생만 검사한다. 활성 라우터나 자연어 판정 Runtime이 아니다.",
   "router": "POLICY.md",
   "cases": [
     {
@@ -412,6 +412,18 @@
         "rules/version-control.md"
       ],
       "reason": "이력 조회는 Git 쓰기가 아니다."
+    },
+    {
+      "id": "document-and-commit-composed",
+      "kind": "composed",
+      "utterance": "이번 작업 결과를 문서로 정리하고 여기까지 커밋해줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/document-work.md",
+        "rules/version-control.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "유지 문서 생성과 Git 쓰기는 서로 다른 두 행동 경계이므로 두 소유자가 함께 필요하다."
     }
   ]
 }

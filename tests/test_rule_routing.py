@@ -1,6 +1,7 @@
-"""규칙 라우팅의 결정론적 검사.
+"""규칙 route와 의미 재현 fixture의 구조·위생 검사.
 
-의미 기반 재현은 이 검사가 다루지 않는다. 두 검증은 서로 다른 증거다.
+이 모듈은 자연어 발화를 판정하지 않는다. 의미 선택은 별도의 콜드 Agent
+재현으로 검증하며, 이 검사는 그 입력과 기대값이 유효한지만 확인한다.
 """
 
 from __future__ import annotations
@@ -63,7 +64,7 @@ class RoutingCompletenessTest(unittest.TestCase):
                 self.assertIn(header, text, f"{rule} 에 {header} 항목이 없다")
 
 
-class IntentFixtureTest(unittest.TestCase):
+class FixtureStructureTest(unittest.TestCase):
     def setUp(self) -> None:
         self.data = json.loads(read(FIXTURE))
         self.cases = self.data["cases"]
@@ -93,6 +94,16 @@ class IntentFixtureTest(unittest.TestCase):
             self.assertTrue(
                 REQUIRED_KINDS <= kinds,
                 f"{rule} 에 누락된 케이스 종류: {sorted(REQUIRED_KINDS - kinds)}",
+            )
+
+    def test_has_composed_case_with_multiple_expected_owners(self) -> None:
+        composed = [c for c in self.cases if c["kind"] == "composed"]
+        self.assertTrue(composed, "둘 이상의 route가 필요한 composed 케이스가 없다")
+        for case in composed:
+            self.assertGreaterEqual(
+                len(case["expected_owners"]),
+                2,
+                f"{case['id']} 가 여러 기대 소유자를 갖지 않는다",
             )
 
     def test_fixture_is_not_a_router(self) -> None:

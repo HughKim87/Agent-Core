@@ -12,16 +12,16 @@
 
 ## 현재 단계
 
-- 단계: I2 — 라우팅 검증 책임 교정
+- 단계: I3 — 계층 배정과 선언 기반 문서 발견
 - Phase: 내부 완료 재검증
 - 활성 전체 설계: [Core 내부 검증 개선 설계](docs/CORE_IMPROVEMENT_BLUEPRINT.md)
-- 활성 단계 설계: 개선 설계 I2
+- 활성 단계 설계: 개선 설계 I3
 - 독립 Core 1차 완료 판정은 무효화되어 재검증 중이다. 판정은 [docs/COMPLETION.md](docs/COMPLETION.md)
 
 ## 직전 게이트
 
-- I1 텍스트·줄바꿈·Windows clean clone 복구: `pass`
-- I1 착수 기준선과 상세 판정은 [최종 작업 검증](docs/CORE_BUILD_FINAL_VALIDATION.md)과 Git에서 조회한다.
+- I2 라우팅 검증 책임 교정과 독립 Agent 37개 의미 재현: `pass`
+- 독립 재현은 gpt-5.6-sol, 2026-08-13~14 KST, 실패 ID 0건이다. 금지되지 않은 추가 소유자 선택은 3건 관찰됐다.
 
 이 문서는 단계 수와 무관하게 일정한 크기를 유지해야 한다. 통과 이력을 여기에 누적하면 시작 문맥이 진행에 비례해 커진다.
 
@@ -47,6 +47,6 @@
 
 ## 첫 다음 행동
 
-1. `test_rule_routing.py`와 fixture의 기계 검증 책임을 구조·위생 검사로 한정한다.
-2. composed 요청 사례와 독립 Agent 의미 재현 절차를 추가한다.
-3. 의미 검증을 `unit-tested`로 과장한 문서 표현을 교정하고 I2 게이트를 실행한다.
+1. `docs/ARCHITECTURE.md`에 모든 Core Python 모듈의 기계 판독 계층 배정을 선언한다.
+2. `docs/INFORMATION_OWNERSHIP.md`에 정책·상태·진입 포인터 역할 선언을 추가한다.
+3. 검사기와 context가 선언을 사용하게 바꾸고 미배정·중복·제목 변경 결함을 주입 검증한다.
