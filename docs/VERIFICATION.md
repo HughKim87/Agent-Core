@@ -84,9 +84,13 @@
 |---|---|---|
 | 무결성·경계 검사 | `unit-tested` | 텍스트 경계, 선언, 계층 배정, 실패 예방 흡수의 정상·결함 주입 검사를 실행한다 |
 | 공개 인터페이스 | `integrated` | 현재 checkout과 Windows clean clone에서 종단 호출을 확인했다 |
-| Core 자체 운영 | `self-operated` | I0~I4 개선을 Core 정책·상태·게이트로 순차 진행했다 |
-| 현재 상태 계약 | `cross-agent` | 과거 콜드 재개를 통과했다. I6에서 개선 후 상태를 다시 확인한다 |
+| Core 자체 운영 | `self-operated` | I0~I6 개선을 Core 정책·상태·게이트로 순차 진행했다 |
+| 현재 상태 계약 | `cross-agent` | I6 콜드 Agent가 대화 없이 목적·단계·차단·첫 행동을 복원했다 |
 | 규칙 라우팅 구조·fixture 위생 | `structure-validated` | 링크·유일성·형태·fixture 참조를 기계 검사한다. 자연어 의미는 판정하지 않는다 |
 | 규칙 라우팅 의미 정확성 | `cross-agent` | gpt-5.6-sol 콜드 재현 37/37 기대·금지 조건 통과, 실패 ID 0건. 금지되지 않은 추가 소유자 선택 3건은 한계로 남는다 |
 | 단계 commit snapshot | `integrated` | 작업 트리 전용 route 결함 fixture와 I5 후보 commit snapshot의 Windows clean clone 전체 게이트를 통과했다 |
 | 실험 Runtime | `not_applicable` | Kernel 범위 판정에 따라 이식하지 않았다 |
+
+## 8. I6 현재 증거
+
+2026-08-14 Windows에서 현재 checkout과 clean clone을 Python 3.10.20·3.12.13으로 각각 실행했다. 각 조합은 회귀 테스트, 통합 게이트, 무부작용 검사를 통과했다. 세부 표와 남은 한계는 [최종 개선 보고서](CORE_IMPROVEMENT_FINAL_REPORT_2026-08-14.md)가 소유한다.

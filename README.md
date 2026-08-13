@@ -28,4 +28,4 @@
 
 ## 현재 상태
 
-독립 Core의 내부 개선과 완료 재검증을 진행 중이다. 정확한 현재 단계와 첫 행동은 [STATE.md](STATE.md)가 소유한다. [완료 판정](docs/COMPLETION.md)이 복원되기 전에는 Host 프로젝트 연결, 배포 방식, submodule 작업을 시작하지 않는다.
+독립 Core의 내부 개선과 완료 재검증이 끝났다. 정확한 현재 상태는 [STATE.md](STATE.md), 판정 근거는 [완료 판정](docs/COMPLETION.md)과 [최종 개선 보고서](docs/CORE_IMPROVEMENT_FINAL_REPORT_2026-08-14.md)가 소유한다. Host 프로젝트 연결, 배포 방식, submodule은 별도 요청과 범위 확정이 필요한 후속 작업이다.
