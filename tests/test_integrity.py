@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -481,6 +482,56 @@ class FailureAbsorptionTest(unittest.TestCase):
                 self.assertEqual(len(residues), 1, path.name)
             else:
                 self.fail(f"{path.name}의 흡수·최소 유지 판정이 없다")
+
+
+@unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 commit snapshot fixture를 건너뛴다")
+class CommitSnapshotTest(unittest.TestCase):
+    """작업 트리 통과가 완료 commit snapshot 통과를 대신하지 못한다."""
+
+    def test_clean_clone_exposes_worktree_only_route_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "repo"
+            clone = base / "clone"
+            root.mkdir()
+            build_clean(root)
+
+            def git(*args: str, cwd: Path = root) -> None:
+                subprocess.run(
+                    [shutil.which("git") or "git", *args],
+                    cwd=cwd,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+
+            git("init", "--quiet")
+            git("config", "user.name", "Core Snapshot Test")
+            git("config", "user.email", "core-snapshot@example.invalid")
+            git("add", ".")
+            git("commit", "--quiet", "-m", "baseline")
+
+            router = (root / "ROUTER.md").read_text(encoding="utf-8").replace(
+                "<!-- /core-rule-routes:v1 -->",
+                "| 작업 트리 전용 | [늦게 추가된 규칙](rules/late.md) |\n<!-- /core-rule-routes:v1 -->",
+            )
+            (root / "ROUTER.md").write_text(router, encoding="utf-8")
+            (root / "rules" / "late.md").write_text(
+                RULE_BODY.format(headers=DOC_HEADERS), encoding="utf-8"
+            )
+            self.assertTrue(run_all(root).ok)
+
+            git("add", "ROUTER.md")
+            git("commit", "--quiet", "-m", "broken candidate")
+            git("clone", "--quiet", str(root), str(clone), cwd=base)
+
+            report = run_all(clone)
+            self.assertFalse(report.ok)
+            self.assertTrue(
+                any(f.check in {"markdown-links", "rule-routes"} for f in report.findings),
+                [f.as_dict() for f in report.findings],
+            )
 
 
 class PublicInterfaceTest(unittest.TestCase):
