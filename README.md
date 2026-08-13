@@ -20,12 +20,14 @@
 | 무엇이 Core에 들어가고 무엇이 빠지는가 | [docs/KERNEL_SCOPE.md](docs/KERNEL_SCOPE.md) |
 | 내부 계층과 의존 방향 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | 어떤 정보가 어디에 있어야 하는가 | [docs/INFORMATION_OWNERSHIP.md](docs/INFORMATION_OWNERSHIP.md) |
-| 전체 구축 계획과 단계별 성공 조건 | [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md) |
+| 완료된 최초 구축 설계와 단계별 성공 조건 | [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md) |
 
 ## 에이전트로 시작하는 경우
 
 [AGENTS.md](AGENTS.md) 또는 [CLAUDE.md](CLAUDE.md)가 진입점이며 둘 다 [POLICY.md](POLICY.md)를 가리킨다. 진입 파일에는 정책이나 상태가 들어 있지 않다.
 
+전용 진입 파일을 사용하지 않는 에이전트는 [POLICY.md](POLICY.md)를 끝까지 읽고, 이어 [STATE.md](STATE.md)를 끝까지 읽은 뒤 현재 요청에 일치하는 규칙만 선택한다.
+
 ## 현재 상태
 
-독립 Core의 내부 개선과 완료 재검증이 끝났다. 정확한 현재 상태는 [STATE.md](STATE.md), 판정 근거는 [완료 판정](docs/COMPLETION.md)과 [최종 개선 보고서](docs/CORE_IMPROVEMENT_FINAL_REPORT_2026-08-14.md)가 소유한다. Host 프로젝트 연결, 배포 방식, submodule은 별도 요청과 범위 확정이 필요한 후속 작업이다.
+독립 Core 1차 완료와 내부 품질 마감이 끝났다. 정확한 현재 단계와 게이트는 [STATE.md](STATE.md), 완료 조건은 [완료 판정](docs/COMPLETION.md)이 소유한다. Host 프로젝트 연결, 배포 방식, submodule은 별도 요청과 범위 확정이 필요한 후속 작업이다.

@@ -72,6 +72,19 @@ class FixtureStructureTest(unittest.TestCase):
         ids = [c["id"] for c in self.cases]
         self.assertEqual(len(ids), len(set(ids)))
 
+    def test_selection_contract_is_exact(self) -> None:
+        self.assertEqual(self.data["selection_contract"], "exact")
+
+    def test_owner_lists_have_no_duplicates(self) -> None:
+        for case in self.cases:
+            for field in ("prior_owners", "expected_owners", "forbidden_owners"):
+                owners = case[field]
+                self.assertEqual(
+                    len(owners),
+                    len(set(owners)),
+                    f"{case['id']} 의 {field}에 중복 소유자가 있다",
+                )
+
     def test_referenced_owners_are_routed(self) -> None:
         routes = set(routed_owners())
         for case in self.cases:
@@ -82,6 +95,15 @@ class FixtureStructureTest(unittest.TestCase):
         for case in self.cases:
             overlap = set(case["expected_owners"]) & set(case["forbidden_owners"])
             self.assertEqual(overlap, set(), f"{case['id']} 의 기대·금지 소유자가 겹친다")
+
+    def test_expected_owners_are_new_for_this_transition(self) -> None:
+        for case in self.cases:
+            overlap = set(case["prior_owners"]) & set(case["expected_owners"])
+            self.assertEqual(
+                overlap,
+                set(),
+                f"{case['id']} 가 이미 읽은 소유자를 다시 기대한다: {sorted(overlap)}",
+            )
 
     def test_every_routed_rule_has_required_kinds(self) -> None:
         for rule in routed_owners():
