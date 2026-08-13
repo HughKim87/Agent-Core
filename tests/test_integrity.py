@@ -447,10 +447,40 @@ class ContextTest(unittest.TestCase):
         package = self.context.build(self.root)
         self.assertIn("failures/case.md", package.excluded)
 
+    def test_real_failure_documents_are_all_excluded_from_default_selection(self) -> None:
+        package = self.context.build(ROOT)
+        selected = set(package.required + package.optional)
+        failure_docs = {
+            p.relative_to(ROOT).as_posix() for p in (ROOT / "failures").glob("*.md")
+        }
+        self.assertTrue(failure_docs)
+        self.assertTrue(failure_docs.isdisjoint(selected))
+        self.assertTrue(failure_docs <= set(package.excluded))
+
     def test_real_repository_startup_context_is_within_budget(self) -> None:
         package = self.context.build(ROOT)
         self.assertLessEqual(package.chars, self.context.STARTUP_BUDGET_CHARS)
         self.assertEqual(len(package.required), 2)
+
+
+class FailureAbsorptionTest(unittest.TestCase):
+    """실패 예방책은 규칙·테스트가 소유하고 예외 문서는 최소 정보만 갖는다."""
+
+    def test_each_failure_case_is_absorbed_or_has_one_nonobvious_residue(self) -> None:
+        cases = sorted((ROOT / "failures").glob("*.md"))
+        cases = [path for path in cases if path.name != "README.md"]
+        self.assertTrue(cases)
+        for path in cases:
+            text = path.read_text(encoding="utf-8")
+            if "- 상태: 흡수 완료, 종료 대기." in text:
+                owners = [line for line in text.splitlines() if line.startswith("- 예방 소유자:")]
+                self.assertEqual(len(owners), 1, path.name)
+                self.assertNotIn("## 예방", text, path.name)
+            elif "- 상태: 최소 유지." in text:
+                residues = [line for line in text.splitlines() if line.startswith("- 비자명 잔여:")]
+                self.assertEqual(len(residues), 1, path.name)
+            else:
+                self.fail(f"{path.name}의 흡수·최소 유지 판정이 없다")
 
 
 class PublicInterfaceTest(unittest.TestCase):

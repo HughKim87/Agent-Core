@@ -41,7 +41,7 @@ C3(실제 소비자 존재)의 판정에 사용한 측정 결과는 다음과 �
 | rule-governance | 필수 Kernel | G1·G6. 규칙 발견 가능성과 라우팅 유일성의 소유자 |
 | staged-work-design | 필수 Kernel | P4. 다단계 작업의 재개 가능성 |
 | document-work | 필수 Kernel | P2·P3. 문서 증식 억제 |
-| failure-records | 필수 Kernel | G5 |
+| failure-prevention | 필수 Kernel | G5. 해결 사례를 기존 규칙·검사에 흡수한다 |
 | version-control | 필수 Kernel | G3. Git 쓰기 경계 |
 | user-data-work | 필수 Kernel | G3. 보호 데이터. 단 보호 경로 이름의 일반화 필요 |
 | boundary-routing-and-dependency | 필수 Kernel (축소 적용) | C1을 강제하는 유일한 장치. BND01~BND04는 Host가 없는 1차 Core에서 Core 내부 계층 경계로 축소 적용하고, 영역 간 적용은 Stage 28로 연기한다. BND05는 즉시 적용 |
@@ -100,7 +100,8 @@ C3(실제 소비자 존재)의 판정에 사용한 측정 결과는 다음과 �
 
 | 구성요소 | 판정 |
 |---|---|
-| 원인별 해결 실패 사례 6건 | 필수 Kernel (G5). 도메인 어휘가 포함된 2건은 이전 시 정제한다 |
+| 규칙·검사에 흡수된 실패 예방책 | 필수 Kernel (G5) |
+| 현재 규칙에서 도출할 수 없는 최소 진단 문서 | 선택 정보. 일반 route와 시작 컨텍스트에 포함하지 않는다 |
 
 ### 3.6 회귀 테스트
 
@@ -157,7 +158,7 @@ Stage 2 검증 방법 2의 결과다. 필수 Kernel만으로 아래 흐름이 �
 | 현재 상태를 읽고 첫 다음 행동을 확인 | 현재 상태 문서, staged-work-design |
 | 위험 행동에서 정지 | core-change-control, user-data-work, version-control |
 | 변경 후 무결성 검증 | 문서·링크·Schema·AST 검사, 파생 artifact 검증 |
-| 실패를 기록하고 재사용 | failure-records, 실패 지식 6건 |
+| 실패 경험을 예방책에 흡수 | failure-prevention, 관련 규칙·결함 주입 테스트 |
 | 다른 에이전트가 재개 | 현재 상태 문서, staged-work-design |
 
 **미충족 없음.** 실험 기능이 하나도 없어도 헌장 §4의 G1~G6을 시도할 수 있다. 단 G6(재현성)의 컨텍스트 부분은 검증된 선택 기능인 컨텍스트 구성이 담당하므로, 1차 Core에서 G6은 규칙 선택의 재현성까지만 보장한다.

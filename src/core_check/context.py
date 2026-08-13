@@ -77,7 +77,7 @@ def build(root: Path, matched: Iterable[str] = (), *, budget: int = STARTUP_BUDG
         if rel in package.required or rel in package.optional:
             continue
         if rel.startswith("failures/"):
-            package.excluded[rel] = "해결 실패 지식은 해당 영역 진입 시에만 검색한다"
+            package.excluded[rel] = "예외 진단 문서는 기본 선택과 일반 route에 포함하지 않는다"
         elif rel.startswith("rules/"):
             package.excluded[rel] = "현재 행동에 route가 일치하지 않는다"
         else:
