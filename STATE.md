@@ -12,16 +12,17 @@
 
 ## 현재 단계
 
-- 단계: 없음. 블루프린트 28단계 전부 완료
-- Phase: 완료. 다음은 Host 연결 설계로 별도 승인 대상
-- 활성 전체 설계: [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md)
-- 활성 단계 설계: 없음
-- 독립 Core 1차 완료. 판정은 [docs/COMPLETION.md](docs/COMPLETION.md)
+- 단계: I1 — 텍스트·줄바꿈·clean clone 복구
+- Phase: 내부 완료 재검증
+- 활성 전체 설계: [Core 내부 검증 개선 설계](docs/CORE_IMPROVEMENT_BLUEPRINT.md)
+- 활성 단계 설계: 개선 설계 I1
+- 독립 Core 1차 완료 판정은 무효화되어 재검증 중이다. 판정은 [docs/COMPLETION.md](docs/COMPLETION.md)
 
 ## 직전 게이트
 
-- Stage 28 Host 연결 단계 진입 조건 정의: `pass`
-- 그 이전 단계의 판정과 증거는 이 문서가 소유하지 않는다. `git log --oneline --grep "완료"` 로 조회한다.
+- I0 완료 상태 정정과 기준선 고정: `pass`
+- 현재 Windows checkout의 통합 게이트: `fail`. 회귀 테스트 단계에서 CRLF 처리 결함이 재현된다.
+- 상세 판정과 과거 단계 증거는 [최종 작업 검증](docs/CORE_BUILD_FINAL_VALIDATION.md)과 Git에서 조회한다.
 
 이 문서는 단계 수와 무관하게 일정한 크기를 유지해야 한다. 통과 이력을 여기에 누적하면 시작 문맥이 진행에 비례해 커진다.
 
@@ -34,18 +35,19 @@
 
 ## 차단
 
-없음.
+- I6 통과 전까지 Host 연결 단계에 진입하지 않는다.
+- 현재 통합 게이트 실패 상태에서는 독립 Core 완료를 복원하지 않는다.
 
 ## 알려진 위험
 
 | 항목 | 내용 | 해소 시점 |
 |---|---|---|
-| 부분 구현 검사 | 계층 배정 검사 A7과 정본 규칙 O2·O3·O6은 아직 자동 검사가 없다 | 미정. 현재 위험은 낮다 |
+| 부분 구현 검사 | 계층 배정 검사 A7과 정본 규칙 O2·O6은 아직 자동 검사가 없다. O3은 크기 예산만 자동화됐고 의미 검사는 남아 있다 | I3·I5 |
 | 실험 Runtime 미채택 | 두 Runtime 모두 근거와 함께 제외로 판정했다. 재검토 조건은 Kernel 범위 §8.5·§9.6 | 조건 발생 시 |
-| Host 경계 미해결 | Core가 하위 디렉터리로 들어갈 때의 진입 파일 문제가 미결이다 | Stage 28 |
+| Host 경계 미해결 | Core가 하위 디렉터리로 들어갈 때의 진입 파일 문제는 다음 작업의 실측 대상이다 | I6 통과 후 |
 
 ## 첫 다음 행동
 
-1. 사용자에게 Host 연결 단계의 착수 여부를 확인받는다. 이 저장소의 다음 작업은 승인 없이 시작하지 않는다.
-2. 착수가 승인되면 [docs/HOST_ENTRY_CONDITIONS.md](docs/HOST_ENTRY_CONDITIONS.md) §5의 1번과 2번을 최소 재현으로 확정한다. 해법을 먼저 고르지 않는다.
-3. `tmp/` 의 종료 여부를 사용자에게 확인받는다. 삭제는 승인 대상이다.
+1. `.gitattributes`, `src/core_check/integrity.py`, `tests/test_integrity.py`, `docs/COMPATIBILITY.md`를 I1 범위로 수정한다.
+2. 정상 LF·CRLF와 실제 후행 공백을 구분하는 회귀 테스트를 실행한다.
+3. 현재 checkout과 Windows clean clone에서 전체 게이트를 실행한다.
