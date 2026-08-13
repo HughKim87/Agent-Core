@@ -115,17 +115,40 @@ L7 행이 이 Stage의 성공 게이트 3을 충족한다. L6과 L1이 최소 �
 
 모든 구성요소는 정확히 하나의 계층을 갖는다.
 
+현재 구현 모듈의 기계 판독 배정은 다음 선언이 소유한다.
+
+<!-- core-module-layers:v1 -->
+```json
+{
+  "L5": [
+    "src/core_check/__init__.py",
+    "src/core_check/__main__.py",
+    "src/core_check/cli.py",
+    "src/core_check/context.py",
+    "src/core_check/declarations.py",
+    "src/core_check/derived.py",
+    "src/core_check/gate.py",
+    "src/core_check/integrity.py",
+    "src/core_check/registry.py"
+  ],
+  "L6": [
+    "src/core_check/primitives.py"
+  ],
+  "L7": []
+}
+```
+
 | 계층 | 배정된 구성요소 |
 |---|---|
 | L1 | 에이전트 진입 파일, 상시 정책, 규칙 라우팅 표 |
 | L2 | core 변경 통제, 규칙 거버넌스, 단계 작업 설계, 문서 작업, 실패 기록, 버전 관리, 사용자 데이터 작업, 경계·의존 규칙, 파일 지식 추출, 파일 정리, 교차 검증 |
 | L3 | 정보 책임 구조, 현재 상태 문서, 문서 수명주기 |
 | L4 | 해결 실패 사례 6건 |
-| L5 | 문서·링크·Schema·AST 검사, 보호 경로 검사, 파생 artifact 검증, 통합 게이트, 검사 등록 인터페이스 |
+| L5 | 문서·링크·Schema·AST 검사, 보호 경로 검사, 파생 artifact 검증, 통합 게이트, 선언 해석, 시작 컨텍스트 구성, 공개 CLI |
 | L6 | 경로 안전 판정, 공통 오류 유형, 결정론적 해시 |
-| L7 | 기록 저장소, 작업 상태 Runtime, 지식·결정 Runtime, 수명주기 Runtime, 컨텍스트 구성, drift·중복 탐지 |
+| L7 | 기록 저장소, 작업 상태 Runtime, 지식·결정 Runtime, 수명주기 Runtime, drift·중복 탐지 |
 
-컨텍스트 구성은 [Kernel 범위](KERNEL_SCOPE.md)에서 `검증된 선택 기능`이지만 계층은 L7이다. 등급과 계층은 서로 다른 축이며, 선택 기능이 승격되면 등급만 바뀌고 계층은 유지된다.
+현재 `context.py`는 필수 통합 게이트가 직접 호출하는 시작 문맥 예산 검사이므로 L5다. 향후 실험 Runtime의 지식 선택·재평가는 L7에 남고, L5에 자기 검사를 등록하는 경계를 지킨다.
 
 ## 8. 검사 가능한 형태의 경계 규칙
 
@@ -144,5 +167,5 @@ Stage 15가 구현할 검사 항목이다. 이 목록이 없으면 이 문서는
 ## 9. 이 문서의 한계
 
 - 계층 배정은 확정되었으나 실제 디렉터리와 파일 이름은 Stage 4가 소유한다.
-- §8의 검사 7종은 아직 구현되지 않았다. 현재 증거 수준은 `documented`이며 `static-validated`가 아니다.
+- §8의 검사 중 A1·A2·A3·A4·A5·A6·A7은 통합 무결성 검사에 구현되어 있다.
 - §4의 분해는 설계 수준에서 성립을 확인했을 뿐 구현으로 검증되지 않았다. Stage 15·19에서 실패하면 Stage 2의 등급 판정을 다시 연다.

@@ -31,9 +31,11 @@ ROUTER_BODY = """# 라우터 표본
 {headers}
 ## 4. 규칙 라우팅
 
+<!-- core-rule-routes:v1 -->
 | 행동 | 읽을 소유자 |
 |---|---|
 | 표본 행동 | [표본 규칙](rules/sample.md) |
+<!-- /core-rule-routes:v1 -->
 
 ## 5. 끝
 """
@@ -52,16 +54,58 @@ RULE_BODY = """# 표본 규칙
 본문.
 """
 
+DOCUMENT_ROLES_BODY = """# 문서 역할 표본
+
+{headers}
+<!-- core-document-roles:v1 -->
+```json
+{{
+  "policy": "ROUTER.md",
+  "state": "CURRENT.md",
+  "entry_pointers": ["ENTRY.md"]
+}}
+```
+"""
+
+
+def layers_body(layers: dict[str, list[str]]) -> str:
+    payload = json.dumps(layers, ensure_ascii=False, indent=2)
+    return f"""# 계층 배정 표본
+
+{DOC_HEADERS}
+<!-- core-module-layers:v1 -->
+```json
+{payload}
+```
+"""
+
+
+def write_layers(root: Path, layers: dict[str, list[str]]) -> None:
+    (root / "docs" / "ARCHITECTURE.md").write_text(layers_body(layers), encoding="utf-8")
+
 
 def build_clean(root: Path) -> None:
     (root / "rules").mkdir(parents=True)
+    (root / "docs").mkdir(parents=True)
     (root / "src" / "core_check").mkdir(parents=True)
     (root / "ROUTER.md").write_text(ROUTER_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
     (root / "CURRENT.md").write_text(STATE_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
+    (root / "ENTRY.md").write_text("# 진입 포인터\n\n[정책](ROUTER.md)\n", encoding="utf-8")
+    (root / "docs" / "OWNERSHIP.md").write_text(
+        DOCUMENT_ROLES_BODY.format(headers=DOC_HEADERS), encoding="utf-8"
+    )
     (root / "rules" / "sample.md").write_text(RULE_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
     (root / "src" / "core_check" / "primitives.py").write_text("VALUE = 1\n", encoding="utf-8")
     (root / "src" / "core_check" / "integrity.py").write_text(
         "from .primitives import VALUE\n", encoding="utf-8"
+    )
+    write_layers(
+        root,
+        {
+            "L5": ["src/core_check/integrity.py"],
+            "L6": ["src/core_check/primitives.py"],
+            "L7": [],
+        },
     )
     (root / "data.json").write_text('{"a": 1}\n', encoding="utf-8")
 
@@ -132,6 +176,13 @@ class FaultInjectionTest(unittest.TestCase):
         (self.root / "rules" / "sample.md").write_text("# 헤더 없음\n\n본문만 있다.\n" * 40, encoding="utf-8")
         self.assertTrue(findings_for(self.root, "document-headers"))
 
+    def test_detects_missing_headers_on_short_root_document(self) -> None:
+        (self.root / "README.md").write_text("# 짧은 개요\n", encoding="utf-8")
+        self.assertTrue(findings_for(self.root, "document-headers"))
+
+    def test_declared_entry_pointer_may_omit_document_headers(self) -> None:
+        self.assertEqual(findings_for(self.root, "document-headers"), [])
+
     def test_detects_unrouted_rule(self) -> None:
         (self.root / "rules" / "orphan.md").write_text(
             RULE_BODY.format(headers=DOC_HEADERS), encoding="utf-8"
@@ -163,8 +214,17 @@ class FaultInjectionTest(unittest.TestCase):
         self.assertTrue(any("L6" in m for m in messages), messages)
 
     def test_detects_l5_importing_experimental(self) -> None:
+        (self.root / "src" / "core_check" / "runtime.py").write_text("VALUE = 2\n", encoding="utf-8")
+        write_layers(
+            self.root,
+            {
+                "L5": ["src/core_check/integrity.py"],
+                "L6": ["src/core_check/primitives.py"],
+                "L7": ["src/core_check/runtime.py"],
+            },
+        )
         (self.root / "src" / "core_check" / "integrity.py").write_text(
-            "import experimental.runtime\n", encoding="utf-8"
+            "from .runtime import VALUE\n", encoding="utf-8"
         )
         messages = findings_for(self.root, "layer-boundaries")
         self.assertTrue(any("L7" in m for m in messages), messages)
@@ -176,6 +236,23 @@ class FaultInjectionTest(unittest.TestCase):
         messages = findings_for(self.root, "layer-boundaries")
         self.assertTrue(any("순환" in m for m in messages), messages)
 
+    def test_detects_unassigned_module(self) -> None:
+        (self.root / "src" / "core_check" / "unassigned.py").write_text("VALUE = 3\n", encoding="utf-8")
+        messages = findings_for(self.root, "layer-boundaries")
+        self.assertTrue(any("배정 수가 0" in m for m in messages), messages)
+
+    def test_detects_duplicate_module_assignment(self) -> None:
+        write_layers(
+            self.root,
+            {
+                "L5": ["src/core_check/integrity.py"],
+                "L6": ["src/core_check/primitives.py", "src/core_check/integrity.py"],
+                "L7": [],
+            },
+        )
+        messages = findings_for(self.root, "layer-boundaries")
+        self.assertTrue(any("배정 수가 2" in m for m in messages), messages)
+
     def test_detects_hardcoded_document_name(self) -> None:
         (self.root / "src" / "core_check" / "integrity.py").write_text(
             'from .primitives import VALUE\nTARGET = "CURRENT.md"\n', encoding="utf-8"
@@ -183,8 +260,23 @@ class FaultInjectionTest(unittest.TestCase):
         self.assertTrue(findings_for(self.root, "no-hardcoded-doc-names"))
 
     def test_detects_duplicate_state_owner(self) -> None:
-        (self.root / "SECOND.md").write_text(STATE_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
+        (self.root / "SECOND.md").write_text(
+            DOCUMENT_ROLES_BODY.format(headers=DOC_HEADERS), encoding="utf-8"
+        )
         self.assertTrue(findings_for(self.root, "state-canonical-owner"))
+
+    def test_human_headings_do_not_define_policy_or_state_roles(self) -> None:
+        router = (self.root / "ROUTER.md").read_text(encoding="utf-8").replace(
+            "## 4. 규칙 라우팅", "## 행동 소유자"
+        )
+        state = (self.root / "CURRENT.md").read_text(encoding="utf-8").replace(
+            "## 첫 다음 행동", "## 다음 실행"
+        )
+        (self.root / "ROUTER.md").write_text(router, encoding="utf-8")
+        (self.root / "CURRENT.md").write_text(state, encoding="utf-8")
+        self.assertEqual(findings_for(self.root, "declaration-contracts"), [])
+        self.assertEqual(findings_for(self.root, "rule-routes"), [])
+        self.assertEqual(findings_for(self.root, "state-canonical-owner"), [])
 
     def test_detects_reference_to_temporary_material(self) -> None:
         (self.root / "tmp").mkdir()
@@ -591,7 +683,7 @@ class CompatibilityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             build_clean(root)
-            (root / "docs").mkdir()
+            (root / "docs").mkdir(exist_ok=True)
             (root / "docs" / "c.md").write_text(
                 "<!-- core-compatibility:v1 -->\n```json\n"
                 '{"python_min": "99.0"}\n```\n<!-- /core-compatibility -->\n',

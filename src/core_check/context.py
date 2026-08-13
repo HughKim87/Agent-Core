@@ -11,15 +11,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-import re
 
+from .declarations import role_path, routed_rule_paths, walk_markdown
 from .primitives import CheckError, Finding, fingerprint, resolve_inside
 from .registry import register
-
-MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
-ROUTING_SECTION = re.compile(r"^##\s*\d+\.\s*규칙 라우팅\s*$(.*?)^##\s", re.M | re.S)
-STATE_MARKER = "## 첫 다음 행동"
-SKIP_DIRS = {".git", "tmp", "__pycache__", ".obsidian"}
 
 # 시작 문맥 예산. 정책 + 현재 상태만으로 이 값을 넘으면 문서 구조에 문제가 있다.
 STARTUP_BUDGET_CHARS = 20_000
@@ -47,31 +42,16 @@ class ContextPackage:
         }
 
 
-def _walk_md(root: Path) -> Iterable[Path]:
-    for path in sorted(root.rglob("*.md")):
-        if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
-            continue
-        yield path
-
-
 def find_router(root: Path) -> Path:
-    for path in _walk_md(root):
-        if ROUTING_SECTION.search(path.read_text(encoding="utf-8")):
-            return path
-    raise CheckError("라우팅 절을 가진 문서를 찾지 못했다")
+    return role_path(root, "policy")
 
 
 def find_state(root: Path) -> Path:
-    owners = [p for p in _walk_md(root) if STATE_MARKER in p.read_text(encoding="utf-8")]
-    if len(owners) != 1:
-        raise CheckError(f"현재 상태 정본이 {len(owners)}개다")
-    return owners[0]
+    return role_path(root, "state")
 
 
 def routed_rules(root: Path) -> list[str]:
-    section = ROUTING_SECTION.search(find_router(root).read_text(encoding="utf-8"))
-    assert section is not None
-    return [t for t in MD_LINK.findall(section.group(1)) if t.startswith("rules/")]
+    return routed_rule_paths(root)
 
 
 def build(root: Path, matched: Iterable[str] = (), *, budget: int = STARTUP_BUDGET_CHARS) -> ContextPackage:
@@ -92,7 +72,7 @@ def build(root: Path, matched: Iterable[str] = (), *, budget: int = STARTUP_BUDG
         package.optional.append(name)
 
     # 기본 선택에서 제외하는 것
-    for path in _walk_md(root):
+    for path in walk_markdown(root):
         rel = path.relative_to(root).as_posix()
         if rel in package.required or rel in package.optional:
             continue

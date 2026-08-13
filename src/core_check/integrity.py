@@ -11,19 +11,13 @@ import json
 from pathlib import Path
 import re
 
+from .declarations import document_roles, module_layers, role_path, routed_rule_paths
 from .primitives import Finding, Report
+from .primitives import CheckError
 from .registry import REGISTRY, register
 
 MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
-ROUTING_SECTION = re.compile(r"^##\s*\d+\.\s*규칙 라우팅\s*$(.*?)^##\s", re.M | re.S)
 DOC_HEADERS = ("- 목적:", "- 읽는 시점:", "- 책임:", "- 상태:", "- 관련 권위:")
-
-# 계층 선언. 경로 접두사로 판별한다.
-LAYERS = {
-    "L5": ("src/core_check/integrity.py", "src/core_check/registry.py"),
-    "L6": ("src/core_check/primitives.py",),
-    "L7": ("experimental/",),
-}
 
 SKIP_DIRS = {".git", "tmp", "__pycache__", ".obsidian"}
 
@@ -39,15 +33,21 @@ def _rel(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-def _router(root: Path) -> Path | None:
-    """라우팅 절을 가진 문서를 찾는다. 이름을 상수로 두지 않는다."""
-    for path in _walk(root, ".md"):
-        if ROUTING_SECTION.search(path.read_text(encoding="utf-8")):
-            return path
-    return None
-
-
 # --- 필수 검사 -------------------------------------------------------------
+
+
+@register("declaration-contracts")
+def check_declaration_contracts(root: Path) -> Iterable[Finding]:
+    """문서 역할, route 블록, 모듈 계층 선언이 단일하고 해석 가능한지 확인한다."""
+    for label, loader in (
+        ("문서 역할", document_roles),
+        ("모듈 계층", module_layers),
+        ("규칙 route", routed_rule_paths),
+    ):
+        try:
+            loader(root)
+        except CheckError as exc:
+            yield Finding("declaration-contracts", "-", f"{label}: {exc}")
 
 
 @register("text-encoding")
@@ -103,13 +103,15 @@ def check_python_ast(root: Path) -> Iterable[Finding]:
 @register("document-headers")
 def check_document_headers(root: Path) -> Iterable[Finding]:
     """O4. 유지 문서는 최소 설명 다섯 항목을 갖는다."""
+    try:
+        pointers = set(document_roles(root)["entry_pointers"])
+    except CheckError:
+        pointers = set()
     for path in _walk(root, ".md"):
         rel = _rel(root, path)
         text = path.read_text(encoding="utf-8")
-        # 포인터 전용 진입 파일과 사용자 개요는 최소 설명 대상이 아니다.
-        if path.parent == root and len(text) < 2000 and not text.lstrip().startswith("- "):
-            if all(h not in text for h in DOC_HEADERS):
-                continue
+        if rel in pointers:
+            continue
         missing = [h for h in DOC_HEADERS if h not in text]
         if missing:
             yield Finding("document-headers", rel, f"최소 설명 누락: {' '.join(missing)}")
@@ -118,12 +120,11 @@ def check_document_headers(root: Path) -> Iterable[Finding]:
 @register("rule-routes")
 def check_rule_routes(root: Path) -> Iterable[Finding]:
     """A5. 모든 활성 규칙이 라우터에서 정확히 한 번 라우팅된다."""
-    router = _router(root)
-    if router is None:
-        yield Finding("rule-routes", "-", "라우팅 절을 가진 문서를 찾지 못했다")
+    try:
+        routes = routed_rule_paths(root)
+    except CheckError as exc:
+        yield Finding("rule-routes", "-", str(exc))
         return
-    section = ROUTING_SECTION.search(router.read_text(encoding="utf-8"))
-    routes = [t for t in MD_LINK.findall(section.group(1)) if t.startswith("rules/")]
     rules_dir = root / "rules"
     active = sorted(f"rules/{p.name}" for p in rules_dir.glob("*.md")) if rules_dir.is_dir() else []
     for rule in active:
@@ -151,13 +152,29 @@ def check_rule_cross_routing(root: Path) -> Iterable[Finding]:
 
 @register("layer-boundaries")
 def check_layer_boundaries(root: Path) -> Iterable[Finding]:
-    """A1·A2·A3. 계층 간 import 방향과 순환."""
+    """A1·A2·A3·A7. 전 모듈 배정, import 방향과 순환."""
     graph: dict[str, set[str]] = {}
     package = root / "src" / "core_check"
     if not package.is_dir():
         return
+    try:
+        layers = module_layers(root)
+    except CheckError as exc:
+        yield Finding("layer-boundaries", "-", str(exc))
+        return
+
+    assignments: dict[str, list[str]] = {}
+    for layer, paths in layers.items():
+        for declared in paths:
+            assignments.setdefault(declared, []).append(layer)
+            if not (root / declared).is_file():
+                yield Finding("layer-boundaries", declared, f"{layer} 배정 대상 파일이 없다")
+
     for path in sorted(package.glob("*.py")):
         rel = _rel(root, path)
+        owners = assignments.get(rel, [])
+        if len(owners) != 1:
+            yield Finding("layer-boundaries", rel, f"계층 배정 수가 {len(owners)}이다: {owners}")
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:
@@ -166,17 +183,18 @@ def check_layer_boundaries(root: Path) -> Iterable[Finding]:
             continue
         deps: set[str] = set()
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.level == 1 and node.module:
-                deps.add(f"src/core_check/{node.module}.py")
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name.startswith("experimental"):
-                        deps.add("experimental/")
+            if isinstance(node, ast.ImportFrom) and node.level == 1:
+                if node.module:
+                    deps.add(f"src/core_check/{node.module.split('.', 1)[0]}.py")
+                else:
+                    for alias in node.names:
+                        deps.add(f"src/core_check/{alias.name.split('.', 1)[0]}.py")
         graph[rel] = deps
-        if rel in LAYERS["L6"] and deps:
+        layer = owners[0] if len(owners) == 1 else None
+        if layer == "L6" and deps:
             yield Finding("layer-boundaries", rel, f"L6이 내부 모듈을 import한다: {sorted(deps)}")
-        if rel in LAYERS["L5"]:
-            bad = [d for d in deps if d.startswith("experimental")]
+        if layer == "L5":
+            bad = [d for d in deps if "L7" in assignments.get(d, [])]
             if bad:
                 yield Finding("layer-boundaries", rel, f"L5가 L7을 import한다: {bad}")
 
@@ -209,18 +227,14 @@ def check_no_hardcoded_doc_names(root: Path) -> Iterable[Finding]:
     package = root / "src" / "core_check"
     if not package.is_dir():
         return
-    discovered: set[str] = set()
-    router = _router(root)
-    if router is not None:
-        discovered.add(router.name)
-    marker = "## 첫 다음 행동"
-    for path in _walk(root, ".md"):
-        text = path.read_text(encoding="utf-8")
-        if marker in text:
-            discovered.add(path.name)
-        if router is not None and path.parent == root and len(text) < 200:
-            if any(t.endswith(router.name) for t in MD_LINK.findall(text)) or router.name in text:
-                discovered.add(path.name)
+    try:
+        roles = document_roles(root)
+    except CheckError:
+        return
+    discovered = {
+        Path(value).name
+        for value in [roles["policy"], roles["state"], *roles["entry_pointers"]]
+    }
     for path in sorted(package.glob("*.py")):
         text = path.read_text(encoding="utf-8")
         for name in sorted(discovered):
@@ -236,27 +250,28 @@ STATE_BUDGET_CHARS = 3_000
 @register("state-size-budget")
 def check_state_size(root: Path) -> Iterable[Finding]:
     """O3. 현재 상태 문서가 단계 수에 비례해 커지지 않는다."""
-    marker = "## 첫 다음 행동"
-    for path in _walk(root, ".md"):
-        text = path.read_text(encoding="utf-8")
-        if marker not in text:
-            continue
-        if len(text) > STATE_BUDGET_CHARS:
-            yield Finding(
-                "state-size-budget",
-                _rel(root, path),
-                f"{len(text)}자가 예산 {STATE_BUDGET_CHARS}자를 넘었다. "
-                "완료 이력이 누적되었을 가능성이 높다",
-            )
+    try:
+        path = role_path(root, "state")
+    except CheckError as exc:
+        yield Finding("state-size-budget", "-", str(exc))
+        return
+    text = path.read_text(encoding="utf-8")
+    if len(text) > STATE_BUDGET_CHARS:
+        yield Finding(
+            "state-size-budget",
+            _rel(root, path),
+            f"{len(text)}자가 예산 {STATE_BUDGET_CHARS}자를 넘었다. "
+            "완료 이력이 누적되었을 가능성이 높다",
+        )
 
 
 @register("state-canonical-owner")
 def check_state_canonical_owner(root: Path) -> Iterable[Finding]:
     """O1·O5. 현재 상태 정본이 하나이고 한시 자료를 정본으로 참조하지 않는다."""
-    marker = "## 첫 다음 행동"
-    owners = [_rel(root, p) for p in _walk(root, ".md") if marker in p.read_text(encoding="utf-8")]
-    if len(owners) != 1:
-        yield Finding("state-canonical-owner", "-", f"현재 상태 정본이 {len(owners)}개다: {owners}")
+    try:
+        role_path(root, "state")
+    except CheckError as exc:
+        yield Finding("state-canonical-owner", "-", str(exc))
     for path in _walk(root, ".md"):
         rel = _rel(root, path)
         for target in MD_LINK.findall(path.read_text(encoding="utf-8")):

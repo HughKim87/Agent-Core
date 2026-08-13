@@ -9,14 +9,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-ROUTER = ROOT / "POLICY.md"
 RULES_DIR = ROOT / "rules"
 FIXTURE = ROOT / "tests" / "fixtures" / "rule-routing-intents-v1.json"
+sys.path.insert(0, str(ROOT / "src"))
 
-ROUTING_SECTION = re.compile(r"^## 4\. 규칙 라우팅\s*$(.*?)^## ", re.M | re.S)
+from core_check.declarations import document_roles, routed_rule_paths  # noqa: E402
+
 LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 REQUIRED_KINDS = {"initial", "colloquial", "mid-task", "near-miss"}
 REQUIRED_HEADERS = ("- 목적:", "- 읽는 시점:", "- 책임:", "- 상태:", "- 관련 권위:")
@@ -27,10 +29,7 @@ def read(path: Path) -> str:
 
 
 def routed_owners() -> list[str]:
-    match = ROUTING_SECTION.search(read(ROUTER))
-    if match is None:
-        raise AssertionError("POLICY.md 에서 규칙 라우팅 절을 찾지 못했다")
-    return [t for t in LINK.findall(match.group(1)) if t.startswith("rules/")]
+    return routed_rule_paths(ROOT)
 
 
 def active_rules() -> list[str]:
@@ -108,7 +107,7 @@ class FixtureStructureTest(unittest.TestCase):
 
     def test_fixture_is_not_a_router(self) -> None:
         self.assertNotIn("router_owner", self.data)
-        self.assertEqual(self.data["router"], "POLICY.md")
+        self.assertEqual(self.data["router"], document_roles(ROOT)["policy"])
 
 
 if __name__ == "__main__":
