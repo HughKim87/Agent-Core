@@ -63,8 +63,10 @@ def check_text_encoding(root: Path) -> Iterable[Finding]:
                 continue
             if b"\x00" in raw:
                 yield Finding("text-encoding", rel, "NUL 바이트가 있다")
-            for number, line in enumerate(text.split("\n"), start=1):
-                if line != line.rstrip():
+            # splitlines()는 LF와 CRLF의 줄 종료 문자를 모두 제거한다. 줄 종료
+            # 자체는 공백이 아니며, 실제 줄 내용 끝의 공백과 탭만 위반이다.
+            for number, line in enumerate(text.splitlines(), start=1):
+                if line != line.rstrip(" \t"):
                     yield Finding("text-encoding", rel, f"{number}행에 후행 공백이 있다")
 
 

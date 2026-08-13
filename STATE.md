@@ -12,17 +12,16 @@
 
 ## 현재 단계
 
-- 단계: I1 — 텍스트·줄바꿈·clean clone 복구
+- 단계: I2 — 라우팅 검증 책임 교정
 - Phase: 내부 완료 재검증
 - 활성 전체 설계: [Core 내부 검증 개선 설계](docs/CORE_IMPROVEMENT_BLUEPRINT.md)
-- 활성 단계 설계: 개선 설계 I1
+- 활성 단계 설계: 개선 설계 I2
 - 독립 Core 1차 완료 판정은 무효화되어 재검증 중이다. 판정은 [docs/COMPLETION.md](docs/COMPLETION.md)
 
 ## 직전 게이트
 
-- I0 완료 상태 정정과 기준선 고정: `pass`
-- 현재 Windows checkout의 통합 게이트: `fail`. 회귀 테스트 단계에서 CRLF 처리 결함이 재현된다.
-- 상세 판정과 과거 단계 증거는 [최종 작업 검증](docs/CORE_BUILD_FINAL_VALIDATION.md)과 Git에서 조회한다.
+- I1 텍스트·줄바꿈·Windows clean clone 복구: `pass`
+- I1 착수 기준선과 상세 판정은 [최종 작업 검증](docs/CORE_BUILD_FINAL_VALIDATION.md)과 Git에서 조회한다.
 
 이 문서는 단계 수와 무관하게 일정한 크기를 유지해야 한다. 통과 이력을 여기에 누적하면 시작 문맥이 진행에 비례해 커진다.
 
@@ -48,6 +47,6 @@
 
 ## 첫 다음 행동
 
-1. `.gitattributes`, `src/core_check/integrity.py`, `tests/test_integrity.py`, `docs/COMPATIBILITY.md`를 I1 범위로 수정한다.
-2. 정상 LF·CRLF와 실제 후행 공백을 구분하는 회귀 테스트를 실행한다.
-3. 현재 checkout과 Windows clean clone에서 전체 게이트를 실행한다.
+1. `test_rule_routing.py`와 fixture의 기계 검증 책임을 구조·위생 검사로 한정한다.
+2. composed 요청 사례와 독립 Agent 의미 재현 절차를 추가한다.
+3. 의미 검증을 `unit-tested`로 과장한 문서 표현을 교정하고 I2 게이트를 실행한다.

@@ -115,6 +115,15 @@ class FaultInjectionTest(unittest.TestCase):
         (self.root / "data.json").write_text('{"a": 1} \n', encoding="utf-8")
         self.assertTrue(findings_for(self.root, "text-encoding"))
 
+    def test_accepts_lf_and_crlf_line_endings(self) -> None:
+        (self.root / "lf.json").write_bytes(b'{\n  "a": 1\n}\n')
+        (self.root / "crlf.json").write_bytes(b'{\r\n  "a": 1\r\n}\r\n')
+        self.assertEqual(findings_for(self.root, "text-encoding"), [])
+
+    def test_detects_trailing_whitespace_before_crlf(self) -> None:
+        (self.root / "data.json").write_bytes(b'{"a": 1} \r\n')
+        self.assertTrue(findings_for(self.root, "text-encoding"))
+
     def test_detects_nul_byte(self) -> None:
         (self.root / "data.json").write_bytes(b'{"a": 1}\x00\n')
         self.assertTrue(findings_for(self.root, "text-encoding"))
