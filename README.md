@@ -20,7 +20,6 @@
 | 무엇이 Core에 들어가고 무엇이 빠지는가 | [docs/KERNEL_SCOPE.md](docs/KERNEL_SCOPE.md) |
 | 내부 계층과 의존 방향 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | 어떤 정보가 어디에 있어야 하는가 | [docs/INFORMATION_ARCHITECTURE.md](docs/INFORMATION_ARCHITECTURE.md) |
-| 완료된 최초 구축 설계와 단계별 성공 조건 | [AGENT_CORE_BUILD_BLUEPRINT.md](AGENT_CORE_BUILD_BLUEPRINT.md) |
 
 ## 에이전트로 시작하는 경우
 

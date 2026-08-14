@@ -93,4 +93,4 @@
 
 ## 8. I6 완료 snapshot 증거
 
-2026-08-14 I6 완료 시점의 Windows checkout과 clean clone을 Python 3.10.20·3.12.13으로 각각 실행했다. 각 조합은 회귀 테스트, 통합 게이트, 무부작용 검사를 통과했다. 세부 표와 당시 한계는 [최종 개선 보고서](CORE_IMPROVEMENT_FINAL_REPORT_2026-08-14.md)가 소유하고, 현재 작업의 최신 판정은 `SESSION_HANDOFF.md`가 소유한다.
+2026-08-14 I6 완료 시점의 Windows checkout과 clean clone을 Python 3.10.20·3.12.13으로 각각 실행했다. 각 조합은 회귀 테스트, 통합 게이트, 무부작용 검사를 통과했다. 세부 실행 이력은 Git이, 현재 작업의 최신 판정은 `SESSION_HANDOFF.md`가 소유한다.
