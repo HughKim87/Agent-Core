@@ -1,3 +1,3 @@
 # Claude Entry Point
 
-@POLICY.md
+@PROJECT_RULES.md

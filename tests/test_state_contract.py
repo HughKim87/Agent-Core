@@ -7,7 +7,7 @@ import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-STATE = ROOT / "STATE.md"
+STATE = ROOT / "SESSION_HANDOFF.md"
 
 REQUIRED_SECTIONS = (
     "## 현재 단계",

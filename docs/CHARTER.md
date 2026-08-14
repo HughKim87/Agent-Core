@@ -125,4 +125,4 @@ Runtime 두 항목의 C3 미충족 근거는 참고 구현에서 source·knowled
 - G1·G2·G4·G6은 현재 자동 검사와 콜드 Agent 재현으로 관측한다. G3의 실행기 수준 강제와 실제 Host 효과는 Core 범위 밖이다.
 - P2의 장기적 사용자 재설명 감소와 실제 Host에서의 P1·P3·P4는 독립 Core 내부 검증만으로 주장하지 않는다.
 - C2와 C4에는 판단이 개입한다. 현재 판정 근거와 재검토 조건은 [Kernel 범위](KERNEL_SCOPE.md)가 소유한다.
-- 이 문서는 Core가 무엇인지 정의하며, 실제 배치는 [계층 구조](ARCHITECTURE.md)와 [정보 소유 구조](INFORMATION_OWNERSHIP.md)가 소유한다.
+- 이 문서는 Core가 무엇인지 정의하며, 실제 배치는 [계층 구조](ARCHITECTURE.md)와 [정보 소유 구조](INFORMATION_ARCHITECTURE.md)가 소유한다.

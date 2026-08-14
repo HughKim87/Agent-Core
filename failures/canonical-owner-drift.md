@@ -4,7 +4,7 @@
 - 읽는 시점: 이 파일의 삭제 승인을 판단할 때만.
 - 책임: 에이전트가 예방 소유자를 유지하고 사용자가 삭제를 승인한다.
 - 상태: 흡수 완료, 종료 대기. 활성 예방 정본이 아니다.
-- 관련 권위: [문서 작업](../rules/document-work.md), [정보 소유 구조](../docs/INFORMATION_OWNERSHIP.md), 무결성 결함 주입 테스트.
+- 관련 권위: [문서 작업](../rules/document-work.md), [정보 소유 구조](../docs/INFORMATION_ARCHITECTURE.md), 무결성 결함 주입 테스트.
 - 예방 소유자: `rules/document-work.md`.
 
 ---

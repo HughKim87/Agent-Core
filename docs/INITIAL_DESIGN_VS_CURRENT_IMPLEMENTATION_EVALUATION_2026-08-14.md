@@ -42,7 +42,7 @@
 |---|---|
 | 회귀 테스트 | Python 3.12.13에서 **87개 통과** |
 | 통합 게이트 | runtime·layout·무결성·context·회귀·무부작용 필수 단계 통과 |
-| 문서 역할 | 정책 `POLICY.md`, 상태 `STATE.md`, 진입 포인터 `AGENTS.md`·`CLAUDE.md` 선언 해석 성공 |
+| 문서 역할 | 정책 `PROJECT_RULES.md`, 상태 `SESSION_HANDOFF.md`, 진입 포인터 `AGENTS.md`·`CLAUDE.md` 선언 해석 성공 |
 | Core 모듈 | 발견 모듈 10개가 L5 9개, L6 1개, L7 0개로 단일 배정 |
 | 규칙 route | 활성 route 9개, 구조·유일성 검사 통과 |
 | 시작 문맥 | 정책과 상태 2개 문서만 필수 선택 |
@@ -91,7 +91,7 @@
 현재 Core는 다음 흐름으로 작동한다.
 
 1. 진입 포인터가 공통 정책으로 연결된다.
-2. 정책과 상태 역할은 [정보 소유 선언](INFORMATION_OWNERSHIP.md)의 기계 블록에서 조회된다.
+2. 정책과 상태 역할은 [정보 소유 선언](INFORMATION_ARCHITECTURE.md)의 기계 블록에서 조회된다.
 3. 정책의 단일 route 블록이 현재 행동에 필요한 규칙만 선택한다.
 4. `core_check`가 문서·링크·JSON·AST·계층·정본·context·파생 artifact를 검사한다.
 5. 통합 게이트가 runtime preflight부터 회귀·무부작용까지 하나의 결과로 판정한다.
@@ -114,7 +114,7 @@
 
 자동 게이트는 통과하지만 다음 활성 문서는 현재 구현과 어긋나는 문장을 포함한다.
 
-- [정보 소유 구조](INFORMATION_OWNERSHIP.md)는 진입·정책 이름이 이후 Stage에서 확정된다고 쓰고, 이미 존재하는 디렉터리를 “지금 만들지 않는다”고 쓰며, §9 검사가 아직 구현되지 않았다고 적는다.
+- [정보 소유 구조](INFORMATION_ARCHITECTURE.md)는 진입·정책 이름이 이후 Stage에서 확정된다고 쓰고, 이미 존재하는 디렉터리를 “지금 만들지 않는다”고 쓰며, §9 검사가 아직 구현되지 않았다고 적는다.
 - [Core 헌장](CHARTER.md)은 G1~G6 검사가 아직 구현되지 않았고 Runtime 판정이 미확정인 것처럼 남아 있다.
 - [계층 구조](ARCHITECTURE.md)는 A1~A7 구현 완료를 적으면서도 같은 문서에서 “Stage 15가 구현할 검사”라고 표현한다.
 - [Agent 진입 계약](AGENT_ENTRY.md)은 실제 I6 cross-agent 재개가 끝났는데도 Stage 21 이전의 `static-validated` 상태 문구를 유지한다.
@@ -187,7 +187,7 @@ Python 3.10.20과 3.12.13, 현재 checkout과 clean clone 조합은 충분히 �
 
 | 우선순위 | 개선 대상 | 완료 기준 |
 |---|---|---|
-| P1 | `CHARTER.md`, `ARCHITECTURE.md`, `INFORMATION_OWNERSHIP.md`, `AGENT_ENTRY.md`의 미래형 Stage 문구 교정 | 현재 구현·제외 판정과 모순되는 활성 문장 0건 |
+| P1 | `CHARTER.md`, `ARCHITECTURE.md`, `INFORMATION_ARCHITECTURE.md`, `AGENT_ENTRY.md`의 미래형 Stage 문구 교정 | 현재 구현·제외 판정과 모순되는 활성 문장 0건 |
 | P1 | 라우팅 의미 fixture의 추가 소유자 허용 정책 정의 | exact-set 또는 명시 허용 집합으로 과선택 판정 가능 |
 | P2 | 종료 대기 실패 문서와 `tmp/` 처분 | 사용자가 승인한 정확한 대상만 삭제·보존 결정 |
 | P2 | 비-Windows clean clone 검증 | 지원한다고 주장할 운영체제에서 동일 게이트 통과 |

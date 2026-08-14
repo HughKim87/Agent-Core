@@ -63,7 +63,7 @@
 | 의도 fixture가 실제 라우팅을 검사하지 않는다 | `confirmed` | `tests/test_rule_routing.py`는 `utterance`를 한 번도 참조하지 않는다. 기대·금지 소유자, 케이스 종류, 경로 존재만 검사한다 |
 | 의미 기반 재현 없이 route를 활성화했다 | `confirmed` | 규칙 거버넌스 §6은 기계 검사와 의미 기반 재현을 모두 활성화 조건으로 두지만 완료 문서는 전 route 의미 재현 미실행을 인정한다 |
 | `composed` 사례가 없다 | `confirmed` | fixture의 `kind: composed`는 0건이고 테스트의 `REQUIRED_KINDS`에도 포함되지 않는다 |
-| Stage 8에 Stage 9 route가 섞였다 | `confirmed` | 커밋 `8699da1`의 `POLICY.md`는 `rules/staged-work-design.md`를 라우팅하지만 해당 커밋에는 그 파일이 없다. 파일은 `74732db`에서 생성됐다 |
+| Stage 8에 Stage 9 route가 섞였다 | `confirmed` | 커밋 `8699da1`의 상시 정책은 `rules/staged-work-design.md`를 라우팅하지만 해당 커밋에는 그 파일이 없다. 파일은 `74732db`에서 생성됐다 |
 | A6가 절 이름 결합을 막지 못한다 | `confirmed` | `규칙 라우팅`과 `첫 다음 행동` 문자열이 `integrity.py`, `context.py`의 문서 발견 로직에 6회 고정돼 있다 |
 | 짧은 루트 문서가 헤더 검사를 우회한다 | `confirmed` | 2,000자 미만 루트 문서가 메타데이터 없이 시작하면 검사에서 제외되는 조건이 있다 |
 | silent no-op이 두 차례 있었다 | `confirmed` | Stage 21·22 커밋 설명에 다중 행 치환 미적용과 `pkill -f unittest`의 자기 명령줄 일치 문제가 기록돼 있다 |
@@ -73,7 +73,7 @@
 
 | 주장 | 판정 | 교정 |
 |---|---|---|
-| `failures/`로 가는 route가 없다 | `partially_confirmed` | `POLICY.md`에는 실패 기록 규칙으로 가는 route가 있다. 문제는 `failures/README.md`로 이어지는 명시적 링크와 작업 영역→관련 사례 선택 장치가 없다는 점이다 |
+| `failures/`로 가는 route가 없다 | `partially_confirmed` | `PROJECT_RULES.md`에는 실패 기록 규칙으로 가는 route가 있다. 문제는 `failures/README.md`로 이어지는 명시적 링크와 작업 영역→관련 사례 선택 장치가 없다는 점이다 |
 | 검사기가 절 이름 6곳에 결합돼 있어 A6 위반이다 | `partially_confirmed` | A6의 표면 문구는 문서 이름 상수 금지다. 다만 아키텍처의 상위 원칙은 문서 의미도 하드코딩하지 말라고 하므로 설계 취지 위반은 맞다 |
 | 실패 사례의 `실패한 접근` 절은 원문에 없던 재구성이다 | `not_fully_auditable` | 현재 실패 정본에는 모두 해당 절이 있지만, 모든 문장을 원자료와 일대일로 대조할 출처 매핑이 없어 재구성 범위를 정량 판정할 수 없다 |
 
@@ -109,7 +109,7 @@ fixture에는 36개의 `utterance`가 있지만 테스트는 다음만 확인한
 
 Stage 8 커밋 `8699da1`에는 다음 불일치가 있다.
 
-- `POLICY.md`: `rules/staged-work-design.md` route 존재
+- `PROJECT_RULES.md`: `rules/staged-work-design.md` route 존재
 - Git tree: `rules/staged-work-design.md` 부재
 - 해당 파일 생성: Stage 9 커밋 `74732db`
 
@@ -117,7 +117,7 @@ Stage 8 커밋 `8699da1`에는 다음 불일치가 있다.
 
 ### 4.3 문서 이름 결합은 줄었지만 문서 의미 결합이 남았다
 
-현재 검사기는 `POLICY.md`, `STATE.md` 같은 파일명을 직접 상수로 쓰지 않는다. 대신 아래 절 이름으로 문서를 찾는다.
+현재 검사기는 `PROJECT_RULES.md`, `SESSION_HANDOFF.md` 같은 파일명을 직접 상수로 쓰지 않는다. 대신 아래 절 이름으로 문서를 찾는다.
 
 - `규칙 라우팅`
 - `첫 다음 행동`

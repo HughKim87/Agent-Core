@@ -3,7 +3,7 @@
 - 목적: `CORE_IMPROVEMENT_BLUEPRINT.md` I0~I6의 구현 결과, 직접 검증, 완료 판정과 남은 한계를 하나의 최종 보고로 제공한다.
 - 읽는 시점: 이번 내부 개선의 결과를 검토하거나 후속 Core·Host 작업의 선행 상태를 확인할 때.
 - 책임: 에이전트가 실행 증거와 한계를 기록하고 사용자가 결과 확인과 종료 대기 문서 삭제 여부를 결정한다.
-- 상태: 2026-08-14 완료 보고서. 실행 시점의 역사적 snapshot이며 현재 상태 정본은 `STATE.md`다.
+- 상태: 2026-08-14 완료 보고서. 실행 시점의 역사적 snapshot이며 현재 상태 정본은 `SESSION_HANDOFF.md`다.
 - 관련 권위: [개선 설계](CORE_IMPROVEMENT_BLUEPRINT.md), [완료 판정](COMPLETION.md), [검증 기준](VERIFICATION.md).
 
 ---

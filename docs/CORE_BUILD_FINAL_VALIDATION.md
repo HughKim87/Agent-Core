@@ -87,7 +87,7 @@ Core의 목적, 정책, 작업 계약, 현재 상태, 세션 재개, 실패 지�
 | `composed` fixture 0건 | `confirmed` | fixture와 필수 종류 검사에 포함되지 않는다 |
 | Stage 8의 고아 route | `confirmed` | `8699da1`에는 Stage 9 규칙 route가 있으나 대상 파일이 없다 |
 | `README.md` 상태 drift | `confirmed` | 구축 중 표현이 28단계 완료 정본과 어긋난다 |
-| `STATE.md` 위험 표 stale | `confirmed` | 완료된 Stage 28과 구현된 O3 검사를 미완료처럼 기록한다 |
+| `SESSION_HANDOFF.md` 위험 표 stale | `confirmed` | 완료된 Stage 28과 구현된 O3 검사를 미완료처럼 기록한다 |
 | 계층 배정표 불완전 | `confirmed` | 모듈 9개 중 3개만 `LAYERS`에 배정됐다 |
 | 문서 절 이름 결합 | `confirmed` | `규칙 라우팅`, `첫 다음 행동`을 발견 기준으로 사용한다 |
 | 짧은 루트 문서 헤더 우회 | `confirmed` | 2,000자 미만 문서에 광범위한 예외가 적용된다 |
@@ -99,7 +99,7 @@ Core의 목적, 정책, 작업 계약, 현재 상태, 세션 재개, 실패 지�
 |---|---|
 | Stage 21 transcript를 보존하지 않아 감점 | 감점 철회. 재현 대화를 유지 데이터로 보존하지 않는 것은 규칙 거버넌스의 명시적 계약이다 |
 | Stage 26 실패를 Python 3.12 문제로 표현 | 원인은 Python 버전이 아니라 CRLF 처리와 줄바꿈 계약 부재다. Stage 26은 텍스트 호환성 선언 부재만 소유한다 |
-| `failures/` route가 전혀 없다 | `POLICY.md`에는 실패 기록 규칙 route가 있다. 정확한 결함은 색인 링크와 작업 영역→관련 실패 사례 선택 경로가 없다는 것이다 |
+| `failures/` route가 전혀 없다 | `PROJECT_RULES.md`에는 실패 기록 규칙 route가 있다. 정확한 결함은 색인 링크와 작업 영역→관련 실패 사례 선택 경로가 없다는 것이다 |
 | A6 절 이름 상수 4곳 또는 6곳 | 의미 marker는 2종이다. production 코드의 literal 정의는 `ROUTING_SECTION` 2개와 상태 marker 4개로 총 6회다. 개수보다 의미 결합 자체가 핵심이다 |
 | 다른 운영체제·runtime은 실사용이므로 평가 제외 | 잘못된 제외다. clean clone과 현재 설치 runtime은 실제 Host 없이도 검증할 수 있다 |
 | G3 완전 달성 | 정책과 경계 정의는 완료됐지만 위반 시나리오 종단 검증이 부족하므로 `부분`을 유지한다 |
@@ -247,7 +247,7 @@ silent no-op 두 건은 Git 커밋 설명에 기록돼 있으므로 발생 사�
 1. 실패 기록 규칙에서 `failures/README.md`로 연결한다.
 2. 작업 영역과 관련 실패 사례를 선택하는 최소 계약을 만든다.
 3. 조건 일치 시 실패 지식을 컨텍스트에 포함하는 명시 인터페이스를 둔다.
-4. `README.md`, `STATE.md`, `VERIFICATION.md`, `COMPATIBILITY.md`, `COMPLETION.md`를 실제 상태와 맞춘다.
+4. `README.md`, `SESSION_HANDOFF.md`, `VERIFICATION.md`, `COMPATIBILITY.md`, `COMPLETION.md`를 실제 상태와 맞춘다.
 5. O2·O6과 O3의 남은 의미 검사를 구분해 구현 상태를 정확히 기록한다.
 
 ### 5순위 — 단계와 완료 판정 재감사

@@ -3,8 +3,8 @@
 - 목적: 현재 Agent Core의 구현 의도와 구현 상태를 보존하면서, 교차검증에서 확인된 내부 결함을 의존 순서대로 수정하고 독립 Core 완료 판정을 다시 받을 수 있게 한다.
 - 읽는 시점: I0~I6 개선의 승인 범위, 단계 의존성과 성공 조건을 역사적으로 확인할 때.
 - 책임: 에이전트가 완료된 설계의 의미를 보존하고 사용자가 대체·종료 여부를 결정한다.
-- 상태: 완료 설계. I0~I6 종료 후 현재 활성 설계가 아니며 현재 상태는 `STATE.md`가 소유한다.
-- 관련 권위: [상시 정책](../POLICY.md), [현재 상태](../STATE.md), [최종 작업 검증](CORE_BUILD_FINAL_VALIDATION.md), [전체 구축 설계](../AGENT_CORE_BUILD_BLUEPRINT.md).
+- 상태: 완료 설계. I0~I6 종료 후 현재 활성 설계가 아니며 현재 상태는 `SESSION_HANDOFF.md`가 소유한다.
+- 관련 권위: [상시 정책](../PROJECT_RULES.md), [현재 상태](../SESSION_HANDOFF.md), [최종 작업 검증](CORE_BUILD_FINAL_VALIDATION.md), [전체 구축 설계](../AGENT_CORE_BUILD_BLUEPRINT.md).
 
 ---
 
@@ -58,11 +58,11 @@ Agent Core는 AI 모델 자체를 개선하려는 시스템이 아니다. 세션
 
 | 영역 | 원래 구현 의도 | 현재 구현 |
 |---|---|---|
-| Agent 진입 | 지원 Agent마다 정책을 복제하지 않고 같은 정본으로 연결 | `AGENTS.md`, `CLAUDE.md`가 `POLICY.md`를 가리킨다 |
-| 정책과 라우팅 | 항상 필요한 경계만 먼저 읽고 행동에 맞는 절차만 선택 | `POLICY.md`의 단일 라우팅 표와 `rules/`의 조건부 규칙 |
+| Agent 진입 | 지원 Agent마다 정책을 복제하지 않고 같은 정본으로 연결 | `AGENTS.md`, `CLAUDE.md`가 `PROJECT_RULES.md`를 가리킨다 |
+| 정책과 라우팅 | 항상 필요한 경계만 먼저 읽고 행동에 맞는 절차만 선택 | `PROJECT_RULES.md`의 단일 라우팅 표와 `rules/`의 조건부 규칙 |
 | 작업 계약 | 목표·범위·제외·검증을 작업 중 유지 | `work-contract`, `staged-work-design`, `core-change-control` 규칙 |
-| 현재 상태 | 대화 없이 현재 단계와 첫 행동을 복원 | `STATE.md` 단일 정본과 크기 예산 검사 |
-| 문서 소유 | 같은 사실이 여러 문서에서 서로 달라지는 것을 방지 | `docs/INFORMATION_OWNERSHIP.md`와 문서 메타데이터 검사 |
+| 현재 상태 | 대화 없이 현재 단계와 첫 행동을 복원 | `SESSION_HANDOFF.md` 단일 정본과 크기 예산 검사 |
+| 문서 소유 | 같은 사실이 여러 문서에서 서로 달라지는 것을 방지 | `docs/INFORMATION_ARCHITECTURE.md`와 문서 메타데이터 검사 |
 | 실패 처리 | 해결된 실패가 반복되지 않게 예방 지식을 남김 | `rules/failure-records.md`, `failures/` 정본, Git 이력 |
 | 무결성 검사 | 문서·링크·JSON·Python·라우팅·계층 결함 탐지 | `src/core_check/integrity.py`의 등록형 검사 |
 | 컨텍스트 | 정책·상태·일치 규칙만 선택하고 예산을 강제 | `src/core_check/context.py` |
@@ -97,7 +97,7 @@ Agent Core는 AI 모델 자체를 개선하려는 시스템이 아니다. 세션
 |---|---|
 | 현재 지켜야 할 행동 | 해당 `rules/` 문서 |
 | 자동으로 막을 수 있는 재발 | 회귀 테스트와 무결성 검사 |
-| 현재 미해결 문제 | `STATE.md` |
+| 현재 미해결 문제 | `SESSION_HANDOFF.md` |
 | 완료된 사건과 수정 과정 | Git 커밋 |
 | 규칙·테스트만으로 설명할 수 없는 비자명한 진단 지식 | 예외적으로 유지하는 최소 실패 문서 |
 
@@ -142,7 +142,7 @@ I5 단계 snapshot과 활성 문서 정합성
 I6 통합 재검증과 완료 재판정
 ```
 
-각 단계는 이전 단계의 필수 게이트가 모두 `pass`일 때만 시작한다. 구현 세션은 `STATE.md`에 활성 단계를 하나만 기록한다.
+각 단계는 이전 단계의 필수 게이트가 모두 `pass`일 때만 시작한다. 구현 세션은 `SESSION_HANDOFF.md`에 활성 단계를 하나만 기록한다.
 
 ## 7. 단계별 개선 설계
 
@@ -154,7 +154,7 @@ I6 통합 재검증과 완료 재판정
 
 ### 구현할 내용
 
-- `STATE.md`의 현재 단계를 `내부 완료 재검증`으로 바꾼다.
+- `SESSION_HANDOFF.md`의 현재 단계를 `내부 완료 재검증`으로 바꾼다.
 - `docs/COMPLETION.md`의 완료 판정을 `재검증 중`으로 표시한다.
 - Host 연결은 I6 통과 전까지 차단한다고 명시한다.
 - 현재 checkout과 Windows clean clone의 검사 결과를 같은 명령으로 다시 측정한다.
@@ -162,7 +162,7 @@ I6 통합 재검증과 완료 재판정
 
 ### 변경 예상 범위
 
-- `STATE.md`
+- `SESSION_HANDOFF.md`
 - `docs/COMPLETION.md`
 - 필요 시 `docs/VERIFICATION.md`
 
@@ -279,14 +279,14 @@ fixture 의미를 바꾸기 전 버전을 Git으로 복구한다. 규칙 trigger
 - 필수 게이트가 직접 사용하는 `context.py`의 현재 L7 배정을 재검토하고 실제 의존 방향과 일치하는 필수 계층으로 교정한다.
 - A7 검사를 구현해 미배정·중복 배정을 탐지한다.
 - A1을 배정된 모든 L5 모듈에 적용한다.
-- `docs/INFORMATION_OWNERSHIP.md`에 정책 소유자, 상태 소유자, 진입 포인터 역할을 나타내는 기계 판독 선언을 둔다.
+- `docs/INFORMATION_ARCHITECTURE.md`에 정책 소유자, 상태 소유자, 진입 포인터 역할을 나타내는 기계 판독 선언을 둔다.
 - `integrity.py`와 `context.py`가 `규칙 라우팅`, `첫 다음 행동` 같은 절 제목 대신 역할 선언을 조회하게 한다.
 - 문서 헤더 예외는 선언된 진입 포인터에만 허용한다.
 
 ### 변경 예상 범위
 
 - `docs/ARCHITECTURE.md`
-- `docs/INFORMATION_OWNERSHIP.md`
+- `docs/INFORMATION_ARCHITECTURE.md`
 - `src/core_check/integrity.py`
 - `src/core_check/context.py`
 - 관련 테스트
@@ -328,7 +328,7 @@ fixture 의미를 바꾸기 전 버전을 Git으로 복구한다. 규칙 trigger
 - 현재 `failures/` 각 사례를 다음 셋 중 하나로 분류한다.
   - `흡수 후 종료`: 예방책이 규칙·테스트에 완전히 표현됨
   - `최소 유지`: 현재 규칙에서 도출할 수 없는 비자명한 진단 정보가 남음
-  - `미해결 이동`: 해결되지 않았으므로 `STATE.md`가 소유
+  - `미해결 이동`: 해결되지 않았으므로 `SESSION_HANDOFF.md`가 소유
 - 흡수 후 종료 대상은 규칙·테스트의 소유자를 먼저 보강한다.
 - 종료 대상 삭제는 정확한 목록을 제시하고 사용자 승인을 받은 뒤에만 수행한다.
 - 실패 문서를 일반 작업 라우터나 기본 컨텍스트에 추가하지 않는다.
@@ -340,7 +340,7 @@ fixture 의미를 바꾸기 전 버전을 Git으로 복구한다. 규칙 trigger
 - `docs/CHARTER.md`
 - `docs/KERNEL_SCOPE.md`
 - `docs/ARCHITECTURE.md`
-- `docs/INFORMATION_OWNERSHIP.md`
+- `docs/INFORMATION_ARCHITECTURE.md`
 - `rules/failure-records.md`
 - 관련 규칙과 테스트
 - 사용자 승인 시 `failures/`의 종료 대상
@@ -376,7 +376,7 @@ fixture 의미를 바꾸기 전 버전을 Git으로 복구한다. 규칙 trigger
 - 완료 커밋의 임시 clean clone에서 route 대상, 링크, 테스트, 게이트를 실행한다.
 - Stage 8의 과거 이력은 다시 쓰지 않고 최종 검증 문서와 Git 이력에 알려진 체크포인트 결함으로 남긴다.
 - `README.md`의 구축 상태를 실제 상태와 맞춘다.
-- `STATE.md`의 O3와 Stage 28 관련 오래된 위험을 갱신한다.
+- `SESSION_HANDOFF.md`의 O3와 Stage 28 관련 오래된 위험을 갱신한다.
 - `VERIFICATION.md`의 라우팅 증거 수준을 I2 결과에 맞춘다.
 - `COMPATIBILITY.md`의 줄바꿈 계약을 I1 결과에 맞춘다.
 - `COMPLETION.md`는 아직 I6 이전이므로 `재검증 중`을 유지한다.
@@ -386,7 +386,7 @@ fixture 의미를 바꾸기 전 버전을 Git으로 복구한다. 규칙 trigger
 - `rules/staged-work-design.md`
 - `rules/version-control.md`
 - `README.md`
-- `STATE.md`
+- `SESSION_HANDOFF.md`
 - `docs/VERIFICATION.md`
 - `docs/COMPATIBILITY.md`
 - `docs/COMPLETION.md`
@@ -431,7 +431,7 @@ fixture 의미를 바꾸기 전 버전을 Git으로 복구한다. 규칙 trigger
 
 - `docs/COMPLETION.md`
 - `docs/VERIFICATION.md`
-- `STATE.md`
+- `SESSION_HANDOFF.md`
 - 필요 시 `README.md`
 
 ### 검증 방법
@@ -460,9 +460,9 @@ fixture 의미를 바꾸기 전 버전을 Git으로 복구한다. 규칙 trigger
 
 다른 세션은 이 문서만으로 다음 순서를 따른다.
 
-1. `POLICY.md`와 `STATE.md`를 읽는다.
+1. `PROJECT_RULES.md`와 `SESSION_HANDOFF.md`를 읽는다.
 2. 이 설계의 fingerprint 또는 시작 커밋 SHA를 기록한다.
-3. 현재 활성 Stage 하나만 `STATE.md`에 등록한다.
+3. 현재 활성 Stage 하나만 `SESSION_HANDOFF.md`에 등록한다.
 4. Stage의 현재 구현, 변경 범위, 제외 범위, 검증 명령을 재확인한다.
 5. 정책·규칙·구조 변경 또는 삭제가 있으면 사용자 결정을 먼저 받는다.
 6. 최소 변경만 구현한다.

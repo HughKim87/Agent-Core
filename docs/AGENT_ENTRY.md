@@ -4,7 +4,7 @@
 - 읽는 시점: 지원 에이전트를 추가·제거할 때, 진입 파일을 바꿀 때.
 - 책임: 사용자가 지원 범위를 승인하고 에이전트가 진입 파일을 유지한다.
 - 상태: 활성 정본. 현재 진입 포인터와 콜드 Agent 검증 상태 반영.
-- 관련 권위: [상시 정책](../POLICY.md), [정보 소유 구조](INFORMATION_OWNERSHIP.md).
+- 관련 권위: [상시 정책](../PROJECT_RULES.md), [정보 소유 구조](INFORMATION_ARCHITECTURE.md).
 
 ---
 
@@ -14,7 +14,7 @@
 |---|---|---|
 | Codex 계열 | `AGENTS.md` | 저장소 루트의 규약 파일을 자동으로 읽는다 |
 | Claude 계열 | `CLAUDE.md` | 저장소 루트의 규약 파일을 자동으로 읽고 `@` 참조를 따라간다 |
-| 그 외 | `README.md` | 개요에서 `POLICY.md`와 `STATE.md`의 읽기 순서를 확인하는 fallback |
+| 그 외 | `README.md` | 개요에서 `PROJECT_RULES.md`와 `SESSION_HANDOFF.md`의 읽기 순서를 확인하는 fallback |
 
 지원 범위를 넓힐 때는 새 진입 파일을 추가할 뿐 정책 정본을 늘리지 않는다.
 
@@ -35,7 +35,7 @@
 
 ```
 AGENTS.md  ─┐
-CLAUDE.md  ─┼─→ POLICY.md ─→ STATE.md ─→ 현재 요청에 일치하는 규칙만
+CLAUDE.md  ─┼─→ PROJECT_RULES.md ─→ SESSION_HANDOFF.md ─→ 현재 요청에 일치하는 규칙만
 README.md  ─┘
 ```
 
@@ -43,7 +43,7 @@ README.md  ─┘
 
 ## 4. 현재 상태 선택
 
-현재 상태 문서는 고정 경로 `STATE.md`다. 저장소 이름·브랜치 이름·디렉터리 이름으로 분기하지 않는다.
+현재 상태 문서는 고정 경로 `SESSION_HANDOFF.md`다. 저장소 이름·브랜치 이름·디렉터리 이름으로 분기하지 않는다.
 
 참고 구현은 저장소 이름으로 두 상태 문서 중 하나를 고르는 분기를 시작 정책에 두고 있었다. 이는 상위 정책이 하위 이름에 결합된 사례이며 이 저장소에서는 채택하지 않는다.
 
