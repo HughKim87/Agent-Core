@@ -23,7 +23,7 @@
 ## 2. 필수 Kernel
 
 - Core 공통 정책과 규칙 route
-- 작업 계약, 단계 설계, 인수인계, 문서, 보호 데이터, Core 변경, Git, 실패 예방, 규칙 거버넌스
+- 작업 계약, 단계 설계, 인수인계, 문서, 파일 지식 추출, 추출 후 정리, 보호 데이터, Core 변경, 경계 의존성, Git, 교차검증, 실패 예방, 규칙 거버넌스
 - Core·consumer 정보 소유 선언과 계약 문서
 - 경로 안전, 선언 해석, 구조·링크·AST·계층 검사
 - Core·consumer scope가 있는 시작 context와 fingerprint

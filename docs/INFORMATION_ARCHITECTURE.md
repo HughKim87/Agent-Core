@@ -14,6 +14,7 @@
 - Core는 공통 사실만, 소비 저장소는 프로젝트별 사실만 소유한다.
 - 현재 상태와 완료 이력은 분리한다. 상태는 소비 저장소 문서가, 완료 이력은 각 저장소 Git이 소유한다.
 - Core commit SHA는 부모 저장소의 submodule gitlink만 소유한다.
+- 서로 다른 프로젝트 자료를 병합할 때는 정본 흡수와 의존 해제가 검증될 때까지 원본 저장소·revision·상대경로를 복원할 수 있어야 한다.
 - 실제 정보가 없으면 빈 미래 디렉터리를 만들지 않는다.
 
 ## 2. Core 역할 선언
@@ -57,6 +58,7 @@ Core 저장소에는 자동 진입 파일, 현재 상태, 특정 Maintainer·Hos
 | Core 상대경로 | 소비 계약의 `core_path` |
 | Core 원격·submodule path | `.gitmodules` |
 | 고정 Core revision | submodule gitlink |
+| 가져오거나 병합한 자료의 source lineage | 원래 Git 또는 해당 Consumer의 migration·source owner |
 | 프로젝트 완료 이력 | 소비 저장소 Git commit |
 
 소비 정책의 `agent-core-consumer:v1` 블록이 프로젝트별 경로 선언의 기계 정본이다.

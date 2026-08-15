@@ -49,15 +49,19 @@ Core 저장소 자체에는 자동 진입 파일과 현재 상태를 두지 않�
 <!-- core-rule-routes:v1 -->
 | 행동 | 읽을 소유자 |
 |---|---|
-| 여러 파일이나 동작을 바꾸는 작업을 시작하거나, 범위가 모호하거나, 사용자가 진행 중인 작업을 교정 | [작업 계약](rules/work-contract.md) |
+| 여러 파일을 바꾸거나 둘 이상의 변경·쓰기 행동을 함께 수행하는 작업을 시작하거나, 범위가 모호하거나, 사용자가 진행 중인 작업을 교정 | [작업 계약](rules/work-contract.md) |
 | 의존 관계가 있는 여러 단계의 `controlled` 작업을 설계·실행·재개·전환 | [단계 작업 설계](rules/staged-work-design.md) |
 | 작업을 중단·인계하거나 소비 저장소의 현재 상태를 갱신 | [현재 상태와 인수인계](rules/handoff.md) |
-| 유지 문서를 만들거나 바꾸거나, 보고서·계획 문서를 요청받거나, 임시 문서를 처분 | [문서 작업](rules/document-work.md) |
+| 일반 유지 문서를 만들거나 바꾸거나, 보고서·계획 문서를 요청받거나, 임시 문서를 처분. 단 활성 규칙·현재 상태·실패 예방·파일 추출의 전용 소유권 판정은 제외 | [문서 작업](rules/document-work.md) |
+| 파일·저장소에서 재사용 지식·현재 상태·근거·source lineage를 추출하거나 병합·정리 전에 고유 내용을 판정. 단 활성 규칙 자체의 추가·통합과 일반 요약은 제외 | [파일 지식 추출과 출처 보존](rules/file-extraction.md) |
+| 파일·문서·보고서·cache·파생물의 물리적 유지·삭제·이동·개명·활성 트리 제외를 판정. 단 규칙 내용의 의미 통합은 제외 | [추출 후 파일 정리](rules/file-cleanup.md) |
 | 보호 경로의 항목을 다루거나, 비밀이 있을 수 있는 파일을 다루거나, 외부 효과를 일으키기 전 | [보호 데이터와 외부 효과](rules/protected-data.md) |
 | 소비 계약의 `core_path`를 생성·수정·삭제·이동·개명·재생성하거나 간접적으로 변경 | [Core 변경 통제](rules/core-change-control.md) |
+| Core↔Consumer 링크·route·schema·import·저장 경로·submodule 계약·경계 테스트나 새 외부 도구 경로를 변경·감사 | [Core·Consumer 경계와 의존성](rules/boundary-routing-and-dependency.md) |
 | Git 스테이지·커밋·브랜치·push·복구·백업 | [버전 관리](rules/version-control.md) |
+| 다른 Agent·보고서·분석의 결론을 교차검증·비교·통합하거나 독립 재현을 주장 | [교차검증](rules/cross-validation.md) |
 | 실질적이고 일반화 가능한 실패를 규칙·검사에 흡수하거나 반복 실패를 중단 | [실패 경험의 예방책 흡수](rules/failure-records.md) |
-| 규칙을 추가·변경·통합·감사하거나 `controlled` 작업을 종료 | [규칙 거버넌스](rules/rule-governance.md) |
+| 활성 규칙 파일을 추가·변경하거나, 추출한 내용을 공통 규칙으로 흡수·통합하거나, 규칙을 감사하거나 `controlled` 작업을 종료 | [규칙 거버넌스](rules/rule-governance.md) |
 <!-- /core-rule-routes:v1 -->
 
 라우팅은 최초 요청이 아니라 다음 실질 행동에 대해 다시 평가한다. 이미 읽은 소유자는 같은 논리적 작업에서 다시 읽지 않는다.

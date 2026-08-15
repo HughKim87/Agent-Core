@@ -18,7 +18,7 @@
     {
       "id": "rule-governance-colloquial",
       "kind": "colloquial",
-      "utterance": "이 규칙들 좀 정리해서 합칠 수 있는 거 합쳐줘",
+      "utterance": "이 활성 규칙들의 내용을 통합하되 파일 삭제나 이동은 하지 마",
       "prior_owners": [],
       "expected_owners": [
         "rules/rule-governance.md"
@@ -40,7 +40,7 @@
     {
       "id": "rule-governance-near-miss",
       "kind": "near-miss",
-      "utterance": "이 문서에 오타 하나만 고쳐줘",
+      "utterance": "이 일반 유지 문서에 오타 하나만 고쳐줘",
       "prior_owners": [],
       "expected_owners": [
         "rules/document-work.md"
@@ -108,7 +108,7 @@
     {
       "id": "staged-work-design-colloquial",
       "kind": "colloquial",
-      "utterance": "전에 하던 거 이어서 해줘",
+      "utterance": "전에 중단한 단계 작업을 이어서 해줘",
       "prior_owners": [],
       "expected_owners": [
         "rules/staged-work-design.md"
@@ -119,15 +119,17 @@
     {
       "id": "staged-work-design-mid-task",
       "kind": "mid-task",
-      "utterance": "이번 단계 끝났으니 다음으로 넘어가자",
+      "utterance": "이번 단계 끝났으니 현재 상태를 갱신하고 다음 단계로 넘어가자",
       "prior_owners": [
         "rules/staged-work-design.md"
       ],
-      "expected_owners": [],
+      "expected_owners": [
+        "rules/handoff.md"
+      ],
       "forbidden_owners": [
         "rules/staged-work-design.md"
       ],
-      "reason": "단계 전환은 이미 읽은 단계 작업 설계의 게이트를 적용하지만 같은 논리 작업에서 소유자를 다시 읽지는 않는다."
+      "reason": "단계 설계는 이미 읽었고, 단계 전환에서 현재 상태 갱신 소유자로 새로 진입한다."
     },
     {
       "id": "staged-work-design-near-miss",
@@ -211,7 +213,7 @@
     {
       "id": "document-work-mid-task",
       "kind": "mid-task",
-      "utterance": "작업 끝났으니 임시로 만든 메모 정리해",
+      "utterance": "작업 끝났으니 임시 메모의 문서 수명주기만 판정해. 파일 삭제나 이동은 하지 마",
       "prior_owners": [
         "rules/work-contract.md"
       ],
@@ -219,7 +221,7 @@
         "rules/document-work.md"
       ],
       "forbidden_owners": [],
-      "reason": "임시 문서 처분 경계로 새로 진입한다."
+      "reason": "임시 문서의 수명주기만 판정하며 물리적 정리와 지식 추출은 명시적으로 제외했다."
     },
     {
       "id": "document-work-near-miss",
@@ -293,7 +295,7 @@
     {
       "id": "core-change-control-colloquial",
       "kind": "colloquial",
-      "utterance": "이 기반 파일 좀 바꿔야 할 것 같은데",
+      "utterance": "선언된 Core 기반 파일을 좀 바꿔야 할 것 같은데",
       "prior_owners": [],
       "expected_owners": [
         "rules/core-change-control.md"
@@ -350,26 +352,29 @@
     {
       "id": "failure-records-mid-task",
       "kind": "mid-task",
-      "utterance": "세 번째 같은 방식으로 실패했어",
+      "utterance": "세 번째 같은 방식으로 실패했어. 원인과 재시작 조건을 현재 상태에 남겨",
       "prior_owners": [
         "rules/work-contract.md"
       ],
       "expected_owners": [
+        "rules/handoff.md",
         "rules/failure-records.md"
       ],
       "forbidden_owners": [],
-      "reason": "반복 실패 임계에 도달하면 기록·중단 경계로 진입한다."
+      "reason": "반복 실패 임계에 도달하면 같은 방법을 중단하고 원인·재시작 조건을 현재 상태에 기록한다."
     },
     {
       "id": "failure-records-near-miss",
       "kind": "near-miss",
       "utterance": "방금 오타 하나 잘못 쳤네 다시 해줘",
-      "prior_owners": [],
+      "prior_owners": [
+        "rules/work-contract.md"
+      ],
       "expected_owners": [],
       "forbidden_owners": [
         "rules/failure-records.md"
       ],
-      "reason": "교정된 일회성 오타는 실패 지식이 아니다."
+      "reason": "작업 계약은 이미 읽었고, 교정된 일회성 오타는 실패 지식이 아니므로 새 소유자가 없다."
     },
     {
       "id": "version-control-initial",
@@ -418,6 +423,213 @@
         "rules/version-control.md"
       ],
       "reason": "이력 조회는 Git 쓰기가 아니다."
+    },
+    {
+      "id": "file-extraction-initial",
+      "kind": "initial",
+      "utterance": "이 저장소를 합치기 전에 재사용할 규칙과 원래 출처를 추출해줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/file-extraction.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "병합 전에 지식과 source lineage를 판정하는 요청은 파일 지식 추출 trigger다."
+    },
+    {
+      "id": "file-extraction-colloquial",
+      "kind": "colloquial",
+      "utterance": "파일들 섞기 전에 건질 내용이랑 어디서 왔는지부터 챙겨줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/file-extraction.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "고유 지식과 출처를 먼저 보존하라는 구어체 요청이다."
+    },
+    {
+      "id": "file-extraction-mid-task",
+      "kind": "mid-task",
+      "utterance": "삭제 후보를 정하기 전에 이 문서에만 있는 판단을 기존 정본에 흡수해",
+      "prior_owners": [
+        "rules/work-contract.md"
+      ],
+      "expected_owners": [
+        "rules/file-extraction.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "정리 도중 고유 판단을 추출해 기존 정본 후보로 보내는 경계이며, 발화만으로 활성 규칙 변경까지 확정되지는 않는다."
+    },
+    {
+      "id": "file-extraction-near-miss",
+      "kind": "near-miss",
+      "utterance": "이 파일이 무슨 내용인지 두 문장으로 설명해줘",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/file-extraction.md"
+      ],
+      "reason": "일회성 내용 설명은 재사용 지식·owner·source lineage를 추출하는 작업이 아니다."
+    },
+    {
+      "id": "file-cleanup-initial",
+      "kind": "initial",
+      "utterance": "내용과 출처는 이미 정본에 반영했어. 이 세 파일을 삭제해도 되는지 판정해줘",
+      "prior_owners": [
+        "rules/file-extraction.md"
+      ],
+      "expected_owners": [
+        "rules/file-cleanup.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "추출이 끝난 exact 파일의 삭제 가능성 판정은 파일 정리 trigger다."
+    },
+    {
+      "id": "file-cleanup-colloquial",
+      "kind": "colloquial",
+      "utterance": "건질 건 다 옮겼으니까 이제 찌꺼기 파일들 치워도 되는지 봐줘",
+      "prior_owners": [
+        "rules/file-extraction.md"
+      ],
+      "expected_owners": [
+        "rules/file-cleanup.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "흡수 이후 정리 후보를 판정하는 구어체 요청이다."
+    },
+    {
+      "id": "file-cleanup-mid-task",
+      "kind": "mid-task",
+      "utterance": "추출 결과 확인했어. 이제 중복 원본의 참조를 해제하고 정리 후보로 바꿔",
+      "prior_owners": [
+        "rules/work-contract.md",
+        "rules/file-extraction.md"
+      ],
+      "expected_owners": [
+        "rules/file-cleanup.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "추출 단계에서 의존 해제와 정리 판정 단계로 전환한다."
+    },
+    {
+      "id": "file-cleanup-near-miss",
+      "kind": "near-miss",
+      "utterance": "파일은 건드리지 말고 안에 재사용할 내용만 분석해줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/file-extraction.md"
+      ],
+      "forbidden_owners": [
+        "rules/file-cleanup.md"
+      ],
+      "reason": "명시적으로 mutation을 제외한 지식 추출 요청이므로 정리 규칙은 선택하지 않는다."
+    },
+    {
+      "id": "cross-validation-initial",
+      "kind": "initial",
+      "utterance": "다른 Agent가 작성한 평가서를 현재 파일과 교차검증해줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/cross-validation.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "다른 Agent의 결론을 기본 근거와 대조하는 명시적 교차검증 요청이다."
+    },
+    {
+      "id": "cross-validation-colloquial",
+      "kind": "colloquial",
+      "utterance": "둘 다 맞다고 하는데 같은 자료 보고 한 소리인지 다시 봐줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/cross-validation.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "공통 출처 일치와 독립 재현을 구분해 달라는 구어체 요청이다."
+    },
+    {
+      "id": "cross-validation-mid-task",
+      "kind": "mid-task",
+      "utterance": "두 보고서가 충돌하네. revision과 측정 방법을 맞춰서 다시 판정해",
+      "prior_owners": [
+        "rules/document-work.md"
+      ],
+      "expected_owners": [
+        "rules/cross-validation.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "보고서 작성 중 충돌한 결론을 근거별로 재검증하는 경계로 진입한다."
+    },
+    {
+      "id": "cross-validation-near-miss",
+      "kind": "near-miss",
+      "utterance": "이 보고서 한 개만 읽고 핵심을 요약해줘",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/cross-validation.md"
+      ],
+      "reason": "단일 보고서 요약은 여러 결론이나 독립 근거를 비교하지 않는다."
+    },
+    {
+      "id": "boundary-routing-initial",
+      "kind": "initial",
+      "utterance": "Consumer에서 Core 내부 Python 함수를 직접 import하도록 연결해줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/boundary-routing-and-dependency.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "Consumer의 비공개 Core Runtime 의존을 추가하려는 경계 변경 요청이다."
+    },
+    {
+      "id": "boundary-routing-colloquial",
+      "kind": "colloquial",
+      "utterance": "Host랑 Core가 어디서 직접 엮였는지 한번 훑어봐",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/boundary-routing-and-dependency.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "Core와 Consumer 사이의 직접 의존을 감사하는 구어체 요청이다."
+    },
+    {
+      "id": "boundary-routing-mid-task",
+      "kind": "mid-task",
+      "utterance": "이 기능은 공개 CLI에 없으니 Consumer에서 Core 내부 모듈을 우회 호출하자",
+      "prior_owners": [
+        "rules/work-contract.md"
+      ],
+      "expected_owners": [
+        "rules/boundary-routing-and-dependency.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "구현 중 공개 계약을 벗어나는 새 Runtime 의존 경계가 생겼다."
+    },
+    {
+      "id": "boundary-routing-near-miss",
+      "kind": "near-miss",
+      "utterance": "Core와 Consumer 구조가 어떻게 나뉘는지 설명해줘",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/boundary-routing-and-dependency.md"
+      ],
+      "reason": "기존 구조의 설명만 요청했으며 경계 참조를 변경하거나 감사하지 않는다."
+    },
+    {
+      "id": "extract-and-cleanup-composed",
+      "kind": "composed",
+      "utterance": "여러 프로젝트의 규칙 파일을 바꾸는 controlled 작업이야. 범위를 먼저 고정하고, Core 공통 규칙과 출처를 흡수한 뒤 중복 파일을 정리하는 두 단계로 진행해줘",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/work-contract.md",
+        "rules/staged-work-design.md",
+        "rules/file-extraction.md",
+        "rules/file-cleanup.md",
+        "rules/core-change-control.md",
+        "rules/rule-governance.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "다중 파일 Core 규칙 변경을 지식·출처 추출 뒤 정리 후보 판정으로 이어가는 의존 단계 작업이다."
     },
     {
       "id": "document-and-commit-composed",
