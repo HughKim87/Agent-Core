@@ -1,44 +1,26 @@
-"""Core Kernel 통합 검증 게이트.
-
-하나의 진입점으로 preflight, 무결성 검사, 회귀 테스트를 실행한다.
-필수 단계 실패와 선택 기능 부재를 서로 다른 상태로 구분한다.
-게이트 자체는 작업 트리를 바꾸지 않는다.
-"""
+"""Core 자체와 선택적 소비 계약을 한 진입점에서 검증하는 통합 게이트."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 import hashlib
-import json
 import os
 from pathlib import Path
-import re
 import subprocess
 import sys
 
 from .context import STARTUP_BUDGET_CHARS, build as build_context
-from .integrity import run_all
-from .primitives import CheckError
+from .declarations import consumer_contract, consumer_policy_path, declared_compatibility
+from .integrity import run_all, run_consumer
+from .primitives import CheckError, resolve_inside
 
 SKIP_DIRS = {".git", "__pycache__", ".obsidian"}
-COMPAT_BLOCK = re.compile(
-    r"<!--\s*core-compatibility:v1\s*-->\s*```json\s*(.*?)```", re.S
-)
 FALLBACK_MIN_PYTHON = (3, 10)
 
 
-def declared_compatibility(root: Path) -> dict[str, object]:
-    """지원 버전 선언을 조회한다. 값을 코드에 다시 적지 않는다."""
-    for path in sorted((root / "docs").glob("*.md")) if (root / "docs").is_dir() else []:
-        match = COMPAT_BLOCK.search(path.read_text(encoding="utf-8"))
-        if match:
-            return json.loads(match.group(1))
-    return {}
-
-
-def _min_python(root: Path) -> tuple[int, ...]:
-    declared = declared_compatibility(root).get("python_min")
+def _min_python(core_root: Path) -> tuple[int, ...]:
+    declared = declared_compatibility(core_root).get("python_min")
     if isinstance(declared, str):
         return tuple(int(part) for part in declared.split("."))
     return FALLBACK_MIN_PYTHON
@@ -47,7 +29,7 @@ def _min_python(root: Path) -> tuple[int, ...]:
 @dataclass
 class StepResult:
     name: str
-    status: str  # pass | fail | not_run | not_applicable
+    status: str
     detail: str = ""
     required: bool = True
 
@@ -62,6 +44,7 @@ class StepResult:
 
 @dataclass
 class GateResult:
+    contract_version: int | None = None
     steps: list[StepResult] = field(default_factory=list)
 
     @property
@@ -70,11 +53,6 @@ class GateResult:
 
     @property
     def failed_step(self) -> str | None:
-        """실패로 보는 것은 `fail`과 `not_run`이다.
-
-        `not_applicable`은 이유가 기록된 정당한 비해당이므로 실패가 아니다.
-        반면 `not_run`은 실행하지 않은 것이므로 통과가 아니다.
-        """
         for step in self.steps:
             if step.required and step.status in {"fail", "not_run"}:
                 return step.name
@@ -83,13 +61,13 @@ class GateResult:
     def as_dict(self) -> dict[str, object]:
         return {
             "ok": self.ok,
+            "contract_version": self.contract_version,
             "failed_step": self.failed_step,
-            "steps": [s.as_dict() for s in self.steps],
+            "steps": [step.as_dict() for step in self.steps],
         }
 
 
 def tree_digest(root: Path) -> str:
-    """추적 대상 파일의 내용 지문. 게이트가 트리를 바꿨는지 확인한다."""
     digest = hashlib.sha256()
     for path in sorted(root.rglob("*")):
         rel = path.relative_to(root)
@@ -102,8 +80,35 @@ def tree_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
-def _preflight(root: Path) -> Iterable[StepResult]:
-    minimum = _min_python(root)
+def consumer_tree_digest(core_root: Path, consumer_root: Path) -> str:
+    """보호 경로와 Core subtree를 읽지 않고 계약 표면만 지문화한다."""
+    contract = consumer_contract(core_root, consumer_root)
+    paths = {
+        consumer_policy_path(core_root, consumer_root),
+        resolve_inside(consumer_root, contract["state"]),
+    }
+    for value in contract["entry_pointers"].values():
+        paths.add(resolve_inside(consumer_root, value))
+    for value in contract["rule_roots"]:
+        paths.update(resolve_inside(consumer_root, value).rglob("*.md"))
+    gitmodules = consumer_root / ".gitmodules"
+    if gitmodules.is_file():
+        paths.add(gitmodules)
+    digest = hashlib.sha256()
+    for path in sorted(paths):
+        rel = path.relative_to(consumer_root)
+        digest.update(rel.as_posix().encode("utf-8"))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def _preflight(core_root: Path) -> Iterable[StepResult]:
+    try:
+        declared = declared_compatibility(core_root)
+        minimum = _min_python(core_root)
+    except (CheckError, ValueError) as exc:
+        yield StepResult("preflight-contract", "fail", str(exc))
+        return
     if sys.version_info[: len(minimum)] < minimum:
         yield StepResult(
             "preflight-runtime",
@@ -111,29 +116,36 @@ def _preflight(root: Path) -> Iterable[StepResult]:
             f"Python {'.'.join(map(str, minimum))} 이상이 필요하다. 현재 {sys.version.split()[0]}",
         )
         return
-    declared = declared_compatibility(root)
-    label = declared.get("core_version", "미선언")
     yield StepResult(
-        "preflight-runtime", "pass", f"Python {sys.version.split()[0]} / core {label}"
+        "preflight-runtime",
+        "pass",
+        f"Python {sys.version.split()[0]} / core {declared.get('core_version', '미선언')}",
     )
-
-    if not (root / "src").is_dir():
+    if not (core_root / "src").is_dir():
         yield StepResult("preflight-layout", "fail", "src 디렉터리가 없다")
         return
     yield StepResult("preflight-layout", "pass")
 
 
-def _integrity(root: Path) -> StepResult:
-    report = run_all(root)
+def _integrity(core_root: Path) -> StepResult:
+    report = run_all(core_root)
     if report.ok:
-        return StepResult("integrity", "pass", f"검사 {len(report.ran)}종, 위반 0")
-    messages = "; ".join(f"{f.check}:{f.path}" for f in report.findings[:5])
-    return StepResult("integrity", "fail", f"위반 {len(report.findings)}건 — {messages}")
+        return StepResult("core-integrity", "pass", f"검사 {len(report.ran)}종, 위반 0")
+    messages = "; ".join(f"{finding.check}:{finding.path}" for finding in report.findings[:5])
+    return StepResult("core-integrity", "fail", f"위반 {len(report.findings)}건 — {messages}")
 
 
-def _startup_context(root: Path) -> StepResult:
+def _consumer_integrity(core_root: Path, consumer_root: Path) -> StepResult:
+    report = run_consumer(core_root, consumer_root)
+    if report.ok:
+        return StepResult("consumer-integrity", "pass", f"검사 {len(report.ran)}종, 위반 0")
+    messages = "; ".join(f"{finding.check}:{finding.path}" for finding in report.findings[:5])
+    return StepResult("consumer-integrity", "fail", f"위반 {len(report.findings)}건 — {messages}")
+
+
+def _startup_context(core_root: Path, consumer_root: Path) -> StepResult:
     try:
-        package = build_context(root)
+        package = build_context(core_root, consumer_root)
     except CheckError as exc:
         return StepResult("startup-context", "fail", str(exc))
     return StepResult(
@@ -144,13 +156,11 @@ def _startup_context(root: Path) -> StepResult:
 REENTRY_FLAG = "CORE_CHECK_IN_GATE"
 
 
-def _tests(root: Path) -> StepResult:
-    tests_dir = root / "tests"
+def _tests(core_root: Path) -> StepResult:
+    tests_dir = core_root / "tests"
     if not tests_dir.is_dir():
         return StepResult("regression-tests", "not_applicable", "tests 디렉터리가 없다")
     if os.environ.get(REENTRY_FLAG) == "1":
-        # 게이트가 실행한 테스트 안에서 게이트를 다시 부르면 무한 재귀가 된다.
-        # 회귀 테스트는 이미 바깥 게이트가 실행 중이므로 여기서는 건너뛴다.
         return StepResult(
             "regression-tests", "not_applicable", "게이트 안에서 호출되어 재진입을 막았다"
         )
@@ -159,11 +169,11 @@ def _tests(root: Path) -> StepResult:
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONUTF8"] = "1"
     env["PYTHONPATH"] = os.pathsep.join(
-        [str(root / "src"), env.get("PYTHONPATH", "")]
+        [str(core_root / "src"), env.get("PYTHONPATH", "")]
     ).rstrip(os.pathsep)
     completed = subprocess.run(
         [sys.executable, "-B", "-m", "unittest", "discover", "-s", "tests", "-q"],
-        cwd=root,
+        cwd=core_root,
         env=env,
         capture_output=True,
         text=True,
@@ -176,7 +186,7 @@ def _tests(root: Path) -> StepResult:
     return StepResult("regression-tests", "fail", (completed.stderr or "")[-500:])
 
 
-def _optional(root: Path) -> StepResult:
+def _optional() -> StepResult:
     from .registry import REGISTRY
 
     if not REGISTRY.optional:
@@ -191,29 +201,63 @@ def _optional(root: Path) -> StepResult:
     )
 
 
-def run(root: Path) -> GateResult:
-    root = root.resolve()
-    before = tree_digest(root)
-
-    result = GateResult()
-    result.steps.extend(_preflight(root))
+def run(core_root: Path, consumer_root: Path | None = None) -> GateResult:
+    core_root = core_root.resolve()
+    consumer_root = consumer_root.resolve() if consumer_root is not None else None
+    before_core = tree_digest(core_root)
+    try:
+        version = declared_compatibility(core_root).get("contract_version")
+    except CheckError:
+        version = None
+    result = GateResult(contract_version=version if isinstance(version, int) else None)
+    result.steps.extend(_preflight(core_root))
     if result.failed_step is not None:
-        result.steps.append(StepResult("integrity", "not_run", "preflight 실패로 실행하지 않았다"))
-        result.steps.append(StepResult("startup-context", "not_run", "preflight 실패로 실행하지 않았다"))
+        result.steps.append(StepResult("core-integrity", "not_run", "preflight 실패로 실행하지 않았다"))
         result.steps.append(StepResult("regression-tests", "not_run", "preflight 실패로 실행하지 않았다"))
+        if consumer_root is not None:
+            result.steps.append(
+                StepResult("consumer-integrity", "not_run", "preflight 실패로 실행하지 않았다")
+            )
+            result.steps.append(StepResult("startup-context", "not_run", "preflight 실패로 실행하지 않았다"))
         return result
 
-    result.steps.append(_integrity(root))
-    result.steps.append(_startup_context(root))
-    result.steps.append(_tests(root))
-    result.steps.append(_optional(root))
+    result.steps.append(_integrity(core_root))
+    result.steps.append(_tests(core_root))
+    result.steps.append(_optional())
 
-    after = tree_digest(root)
+    if consumer_root is not None:
+        try:
+            before_consumer = consumer_tree_digest(core_root, consumer_root)
+        except CheckError:
+            before_consumer = None
+        consumer_step = _consumer_integrity(core_root, consumer_root)
+        result.steps.append(consumer_step)
+        if consumer_step.status == "pass":
+            result.steps.append(_startup_context(core_root, consumer_root))
+        else:
+            result.steps.append(
+                StepResult("startup-context", "not_run", "소비 계약 실패로 실행하지 않았다")
+            )
+        try:
+            after_consumer = consumer_tree_digest(core_root, consumer_root)
+        except CheckError:
+            after_consumer = None
+        result.steps.append(
+            StepResult(
+                "consumer-no-side-effects",
+                "pass" if before_consumer is not None and before_consumer == after_consumer else "fail",
+                "소비 계약 표면을 바꾸지 않았다"
+                if before_consumer is not None and before_consumer == after_consumer
+                else "소비 계약 표면의 무부작용을 확인할 수 없다",
+            )
+        )
+
+    after_core = tree_digest(core_root)
     result.steps.append(
         StepResult(
-            "no-side-effects",
-            "pass" if before == after else "fail",
-            "게이트가 작업 트리를 바꾸지 않았다" if before == after else "게이트가 작업 트리를 바꿨다",
+            "core-no-side-effects",
+            "pass" if before_core == after_core else "fail",
+            "게이트가 Core를 바꾸지 않았다" if before_core == after_core else "게이트가 Core를 바꿨다",
         )
     )
     return result

@@ -1,7 +1,4 @@
-"""문서·링크·Schema·코드 무결성과 계층 경계 검사.
-
-검사 대상과 소유자는 선언에서 조회한다. 문서 이름을 상수로 박지 않는다(A6).
-"""
+"""Core 자체와 선언된 소비 표면의 무결성 검사."""
 
 from __future__ import annotations
 
@@ -11,14 +8,36 @@ import json
 from pathlib import Path
 import re
 
-from .declarations import document_roles, module_layers, role_path, routed_rule_paths
-from .primitives import Finding, Report
-from .primitives import CheckError
+from .declarations import (
+    consumer_contract,
+    consumer_policy_path,
+    consumer_routed_rule_paths,
+    core_policy_path,
+    declared_compatibility,
+    document_roles,
+    module_layers,
+    routed_rule_paths,
+)
+from .primitives import CheckError, Finding, Report, resolve_inside
 from .registry import REGISTRY, register
 
 MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+AT_REFERENCE = re.compile(r"(?m)^@([^\s]+\.md)\s*$")
 DOC_HEADERS = ("- 목적:", "- 읽는 시점:", "- 책임:", "- 상태:", "- 관련 권위:")
-
+STATE_SECTIONS = (
+    "## 현재 단계",
+    "## 직전 게이트",
+    "## 승인 상태",
+    "## 차단",
+    "## 알려진 위험",
+    "## 첫 다음 행동",
+)
+STATE_BUDGET_CHARS = 3_000
+DYNAMIC_NUMBERS = re.compile(
+    r"(추적 파일\s*\d+|untracked\s*\d+|ignored\s*\d+|커밋\s*\d+\s*개|"
+    r"파일\s*\d+\s*개\s*추적|blob\s*\d+)"
+)
+VAGUE_ACTIONS = ("계속 진행한다", "검토한다", "확인한다")
 SKIP_DIRS = {".git", "tmp", "__pycache__", ".obsidian"}
 
 
@@ -33,16 +52,13 @@ def _rel(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-# --- 필수 검사 -------------------------------------------------------------
-
-
 @register("declaration-contracts")
 def check_declaration_contracts(root: Path) -> Iterable[Finding]:
-    """문서 역할, route 블록, 모듈 계층 선언이 단일하고 해석 가능한지 확인한다."""
     for label, loader in (
-        ("문서 역할", document_roles),
+        ("Core 문서 역할", document_roles),
         ("모듈 계층", module_layers),
-        ("규칙 route", routed_rule_paths),
+        ("Core 규칙 route", routed_rule_paths),
+        ("호환성", declared_compatibility),
     ):
         try:
             loader(root)
@@ -63,8 +79,6 @@ def check_text_encoding(root: Path) -> Iterable[Finding]:
                 continue
             if b"\x00" in raw:
                 yield Finding("text-encoding", rel, "NUL 바이트가 있다")
-            # splitlines()는 LF와 CRLF의 줄 종료 문자를 모두 제거한다. 줄 종료
-            # 자체는 공백이 아니며, 실제 줄 내용 끝의 공백과 탭만 위반이다.
             for number, line in enumerate(text.splitlines(), start=1):
                 if line != line.rstrip(" \t"):
                     yield Finding("text-encoding", rel, f"{number}행에 후행 공백이 있다")
@@ -102,31 +116,24 @@ def check_python_ast(root: Path) -> Iterable[Finding]:
 
 @register("document-headers")
 def check_document_headers(root: Path) -> Iterable[Finding]:
-    """O4. 유지 문서는 최소 설명 다섯 항목을 갖는다."""
-    try:
-        pointers = set(document_roles(root)["entry_pointers"])
-    except CheckError:
-        pointers = set()
     for path in _walk(root, ".md"):
-        rel = _rel(root, path)
         text = path.read_text(encoding="utf-8")
-        if rel in pointers:
-            continue
-        missing = [h for h in DOC_HEADERS if h not in text]
+        missing = [header for header in DOC_HEADERS if header not in text]
         if missing:
-            yield Finding("document-headers", rel, f"최소 설명 누락: {' '.join(missing)}")
+            yield Finding(
+                "document-headers", _rel(root, path), f"최소 설명 누락: {' '.join(missing)}"
+            )
 
 
 @register("rule-routes")
 def check_rule_routes(root: Path) -> Iterable[Finding]:
-    """A5. 모든 활성 규칙이 라우터에서 정확히 한 번 라우팅된다."""
     try:
         routes = routed_rule_paths(root)
     except CheckError as exc:
         yield Finding("rule-routes", "-", str(exc))
         return
     rules_dir = root / "rules"
-    active = sorted(f"rules/{p.name}" for p in rules_dir.glob("*.md")) if rules_dir.is_dir() else []
+    active = sorted(f"rules/{path.name}" for path in rules_dir.glob("*.md")) if rules_dir.is_dir() else []
     for rule in active:
         count = routes.count(rule)
         if count != 1:
@@ -138,7 +145,6 @@ def check_rule_routes(root: Path) -> Iterable[Finding]:
 
 @register("rule-cross-routing")
 def check_rule_cross_routing(root: Path) -> Iterable[Finding]:
-    """A4. 규칙 문서가 다른 규칙을 직접 라우팅하지 않는다."""
     rules_dir = root / "rules"
     if not rules_dir.is_dir():
         return
@@ -152,7 +158,6 @@ def check_rule_cross_routing(root: Path) -> Iterable[Finding]:
 
 @register("layer-boundaries")
 def check_layer_boundaries(root: Path) -> Iterable[Finding]:
-    """A1·A2·A3·A7. 전 모듈 배정, import 방향과 순환."""
     graph: dict[str, set[str]] = {}
     package = root / "src" / "core_check"
     if not package.is_dir():
@@ -178,8 +183,6 @@ def check_layer_boundaries(root: Path) -> Iterable[Finding]:
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:
-            # 구문 오류는 python-ast 검사가 소유한다. 한 검사의 실패가 다른 검사를
-            # 중단시키면 전체 결과가 원인을 숨긴다.
             continue
         deps: set[str] = set()
         for node in ast.walk(tree):
@@ -194,7 +197,7 @@ def check_layer_boundaries(root: Path) -> Iterable[Finding]:
         if layer == "L6" and deps:
             yield Finding("layer-boundaries", rel, f"L6이 내부 모듈을 import한다: {sorted(deps)}")
         if layer == "L5":
-            bad = [d for d in deps if "L7" in assignments.get(d, [])]
+            bad = [dep for dep in deps if "L7" in assignments.get(dep, [])]
             if bad:
                 yield Finding("layer-boundaries", rel, f"L5가 L7을 import한다: {bad}")
 
@@ -219,11 +222,6 @@ def check_layer_boundaries(root: Path) -> Iterable[Finding]:
 
 @register("no-hardcoded-doc-names")
 def check_no_hardcoded_doc_names(root: Path) -> Iterable[Finding]:
-    """A6. 검증 도구가 상위 계층 문서 이름을 상수로 갖지 않는다.
-
-    금지 목록 자체를 상수로 두면 이 검사가 스스로를 위반한다. 따라서 대상 이름은
-    저장소에서 발견해 얻는다.
-    """
     package = root / "src" / "core_check"
     if not package.is_dir():
         return
@@ -231,10 +229,7 @@ def check_no_hardcoded_doc_names(root: Path) -> Iterable[Finding]:
         roles = document_roles(root)
     except CheckError:
         return
-    discovered = {
-        Path(value).name
-        for value in [roles["policy"], roles["state"], *roles["entry_pointers"]]
-    }
+    discovered = {Path(value).name for value in roles.values() if isinstance(value, str)}
     for path in sorted(package.glob("*.py")):
         text = path.read_text(encoding="utf-8")
         for name in sorted(discovered):
@@ -244,42 +239,152 @@ def check_no_hardcoded_doc_names(root: Path) -> Iterable[Finding]:
                 )
 
 
-STATE_BUDGET_CHARS = 3_000
-
-
-@register("state-size-budget")
-def check_state_size(root: Path) -> Iterable[Finding]:
-    """O3. 현재 상태 문서가 단계 수에 비례해 커지지 않는다."""
-    try:
-        path = role_path(root, "state")
-    except CheckError as exc:
-        yield Finding("state-size-budget", "-", str(exc))
-        return
-    text = path.read_text(encoding="utf-8")
-    if len(text) > STATE_BUDGET_CHARS:
-        yield Finding(
-            "state-size-budget",
-            _rel(root, path),
-            f"{len(text)}자가 예산 {STATE_BUDGET_CHARS}자를 넘었다. "
-            "완료 이력이 누적되었을 가능성이 높다",
-        )
-
-
-@register("state-canonical-owner")
-def check_state_canonical_owner(root: Path) -> Iterable[Finding]:
-    """O1·O5. 현재 상태 정본이 하나이고 한시 자료를 정본으로 참조하지 않는다."""
-    try:
-        role_path(root, "state")
-    except CheckError as exc:
-        yield Finding("state-canonical-owner", "-", str(exc))
+@register("temporary-canonical-links")
+def check_temporary_canonical_links(root: Path) -> Iterable[Finding]:
     for path in _walk(root, ".md"):
         rel = _rel(root, path)
         for target in MD_LINK.findall(path.read_text(encoding="utf-8")):
             if target.startswith("tmp/") or "/tmp/" in target:
-                yield Finding("state-canonical-owner", rel, f"한시 자료를 참조한다: {target}")
+                yield Finding("temporary-canonical-links", rel, f"한시 자료를 참조한다: {target}")
 
 
-# --- 실행 ------------------------------------------------------------------
+def _state_findings(consumer_root: Path, state: Path) -> Iterable[Finding]:
+    text = state.read_text(encoding="utf-8")
+    rel = _rel(consumer_root, state)
+    for section in STATE_SECTIONS:
+        if section not in text:
+            yield Finding("consumer-state", rel, f"필수 절이 없다: {section}")
+    if len(text) > STATE_BUDGET_CHARS:
+        yield Finding("consumer-state", rel, f"{len(text)}자가 예산 {STATE_BUDGET_CHARS}자를 넘었다")
+    if DYNAMIC_NUMBERS.search(text):
+        yield Finding("consumer-state", rel, "동적 Git 수치가 문서에 고정되어 있다")
+    if "## 첫 다음 행동" in text:
+        tail = text.split("## 첫 다음 행동", 1)[1]
+        actions = [line.strip() for line in tail.splitlines() if re.match(r"^\d+\.", line.strip())]
+        if not actions:
+            yield Finding("consumer-state", rel, "번호가 매겨진 첫 다음 행동이 없다")
+        for action in actions:
+            normalized = action.rstrip(".")
+            if any(normalized.endswith(value) for value in VAGUE_ACTIONS):
+                yield Finding("consumer-state", rel, f"첫 다음 행동이 모호하다: {action}")
+    if "## 직전 게이트" in text and "## 승인 상태" in text:
+        gates = text.split("## 직전 게이트", 1)[1].split("## 승인 상태", 1)[0]
+        judged = [line for line in gates.splitlines() if "`pass`" in line or "`fail`" in line]
+        if len(judged) > 1:
+            yield Finding("consumer-state", rel, "직전 게이트 절에 과거 판정이 누적되어 있다")
+
+
+def state_contract_findings(consumer_root: Path, state: Path) -> list[Finding]:
+    """상태 계약의 독립 결함 주입 테스트용 공개 helper."""
+    return list(_state_findings(consumer_root.resolve(), state.resolve()))
+
+
+def _entry_targets(text: str) -> list[str]:
+    targets = MD_LINK.findall(text)
+    targets.extend(AT_REFERENCE.findall(text))
+    return [target.replace("\\", "/") for target in targets]
+
+
+def _consumer_contract_files(core_root: Path, consumer_root: Path, contract: dict[str, object]) -> list[Path]:
+    files = {
+        consumer_policy_path(core_root, consumer_root),
+        resolve_inside(consumer_root, contract["state"]),
+    }
+    for value in contract["entry_pointers"].values():
+        files.add(resolve_inside(consumer_root, value))
+    for value in contract["rule_roots"]:
+        files.update(resolve_inside(consumer_root, value).rglob("*.md"))
+    gitmodules = consumer_root / ".gitmodules"
+    if gitmodules.is_file():
+        files.add(gitmodules)
+    return sorted(path for path in files if path.is_file())
+
+
+def consumer_findings(core_root: Path, consumer_root: Path) -> Iterable[Finding]:
+    core_root = core_root.resolve()
+    consumer_root = consumer_root.resolve()
+    try:
+        contract = consumer_contract(core_root, consumer_root)
+        compatibility = declared_compatibility(core_root)
+    except CheckError as exc:
+        yield Finding("consumer-contract", "-", str(exc))
+        return
+
+    if contract["contract_version"] != compatibility.get("contract_version"):
+        yield Finding("consumer-contract", "-", "Core와 소비 계약의 contract_version이 다르다")
+
+    core_rel = Path(contract["core_path"]).as_posix().rstrip("/")
+    core_policy = core_policy_path(core_root).relative_to(core_root).as_posix()
+    policy = consumer_policy_path(core_root, consumer_root).relative_to(consumer_root).as_posix()
+    expected = [f"{core_rel}/{core_policy}", policy, Path(contract["state"]).as_posix()]
+    for agent, value in contract["entry_pointers"].items():
+        pointer = resolve_inside(consumer_root, value)
+        actual = _entry_targets(pointer.read_text(encoding="utf-8"))
+        if actual != expected:
+            yield Finding(
+                "consumer-entry", _rel(consumer_root, pointer), f"{agent} 진입 순서가 다르다: {actual}"
+            )
+
+    state = resolve_inside(consumer_root, contract["state"])
+    yield from _state_findings(consumer_root, state)
+
+    try:
+        routes = consumer_routed_rule_paths(core_root, consumer_root)
+    except CheckError as exc:
+        yield Finding("consumer-rule-routes", policy, str(exc))
+        routes = []
+    active: list[str] = []
+    for value in contract["rule_roots"]:
+        root = resolve_inside(consumer_root, value)
+        active.extend(_rel(consumer_root, path) for path in sorted(root.glob("*.md")))
+    for rule in active:
+        if routes.count(rule) != 1:
+            yield Finding("consumer-rule-routes", rule, f"route 수가 {routes.count(rule)}이다")
+    for route in routes:
+        if not resolve_inside(consumer_root, route).is_file():
+            yield Finding("consumer-rule-routes", route, "고아 route")
+
+    pointers = {Path(value).as_posix() for value in contract["entry_pointers"].values()}
+    for path in _consumer_contract_files(core_root, consumer_root, contract):
+        rel = _rel(consumer_root, path)
+        if path.suffix == ".md" and rel not in pointers:
+            text = path.read_text(encoding="utf-8")
+            missing = [header for header in DOC_HEADERS if header not in text]
+            if missing:
+                yield Finding("consumer-document-headers", rel, f"최소 설명 누락: {' '.join(missing)}")
+        if path.suffix == ".md":
+            for target in MD_LINK.findall(path.read_text(encoding="utf-8")):
+                if target.startswith(("http://", "https://", "#", "mailto:")):
+                    continue
+                resolved = (path.parent / target.split("#", 1)[0]).resolve()
+                if not resolved.exists():
+                    yield Finding("consumer-markdown-links", rel, f"깨진 링크: {target}")
+
+    gitmodules = consumer_root / ".gitmodules"
+    if not gitmodules.is_file():
+        yield Finding("consumer-submodule", ".gitmodules", "Core submodule 선언 파일이 없다")
+    else:
+        paths = re.findall(r"(?m)^\s*path\s*=\s*(.+?)\s*$", gitmodules.read_text(encoding="utf-8"))
+        normalized = {Path(value).as_posix() for value in paths}
+        if Path(contract["core_path"]).as_posix() not in normalized:
+            yield Finding("consumer-submodule", ".gitmodules", "core_path와 일치하는 submodule path가 없다")
+
+
+def run_consumer(core_root: Path, consumer_root: Path) -> Report:
+    report = Report()
+    report.ran.extend(
+        [
+            "consumer-contract",
+            "consumer-entry",
+            "consumer-state",
+            "consumer-rule-routes",
+            "consumer-document-headers",
+            "consumer-markdown-links",
+            "consumer-submodule",
+        ]
+    )
+    report.findings.extend(consumer_findings(core_root, consumer_root))
+    return report
 
 
 def run_all(root: Path) -> Report:

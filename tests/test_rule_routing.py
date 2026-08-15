@@ -129,7 +129,7 @@ class FixtureStructureTest(unittest.TestCase):
 
     def test_fixture_is_not_a_router(self) -> None:
         self.assertNotIn("router_owner", self.data)
-        self.assertEqual(self.data["router"], document_roles(ROOT)["policy"])
+        self.assertEqual(self.data["router"], f"core:{document_roles(ROOT)['core_policy']}")
 
 
 if __name__ == "__main__":

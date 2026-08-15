@@ -1,7 +1,7 @@
 {
   "fixture_version": 1,
   "purpose": "활성 route의 콜드 Agent 의미 재현에 쓰는 입력과 이번 전환에서 새로 읽을 소유자의 정확 기대 집합이며, 기계 테스트는 이 파일의 구조와 참조 위생만 검사한다. 활성 라우터나 자연어 판정 Runtime이 아니다.",
-  "router": "PROJECT_RULES.md",
+  "router": "core:PROJECT_RULES.md",
   "selection_contract": "exact",
   "cases": [
     {

@@ -1,96 +1,92 @@
 # 검증 수준과 완료 판정
 
-- 목적: 검증의 수준을 구분해 과장 없이 완료를 판정하게 한다.
-- 읽는 시점: 작업의 완료를 판정할 때, 검증 결과를 보고할 때, 어떤 검사가 필요한지 정할 때.
-- 책임: 에이전트가 도달 수준을 정직하게 기록하고 사용자가 최종 확인을 소유한다.
-- 상태: 활성 정본. Stage 14 성공 게이트 통과.
-- 관련 권위: [상시 정책](../PROJECT_RULES.md) §9.
+- 목적: Core 자체 검증과 소비 통합 검증의 수준·게이트·보고 한계를 소유한다.
+- 읽는 시점: 변경 전 검증을 설계하거나 완료를 판정·보고할 때.
+- 책임: 에이전트가 실제 도달 수준을 기록하고 사용자가 최종 확인을 소유한다.
+- 상태: 활성 정본. contract v2.
+- 관련 권위: [Core 상시 정책](../PROJECT_RULES.md) §9, [호환성](COMPATIBILITY.md).
 
 ---
 
 ## 1. 검증 수준
 
-낮은 수준에서 높은 수준으로 간다. 상위 수준은 하위 수준을 포함하지 않으며 각각 별개의 증거다.
-
-| 수준 | 의미 | 이것으로 말할 수 있는 것 |
-|---|---|---|
-| `generated` | 결과물을 만들었다 | 아무것도 |
-| `parsed` | 기계가 읽을 수 있다 | 형식이 깨지지 않았다 |
-| `structure-validated` | 링크·schema·AST·구조 검사를 통과했다 | 내부 참조가 어긋나지 않았다 |
-| `unit-tested` | 격리된 자동 테스트를 통과했다 | 계약이 의도대로 동작한다 |
-| `integrated` | 여러 구성요소를 연결한 검증을 통과했다 | 조합했을 때도 동작한다 |
-| `self-operated` | 실제 작업에서 처음부터 끝까지 사용됐다 | 실제로 쓸 수 있다 |
-| `cross-agent` | 다른 에이전트가 대화 없이 재개했다 | 에이전트에 종속되지 않는다 |
-| `user-confirmed` | 사용자가 결과를 확인했다 | 원하던 것이 맞다 |
-
-## 2. 확대 보고 금지
-
-- 도달하지 않은 수준을 도달한 것처럼 말하지 않는다.
-- 하위 수준의 통과를 상위 수준의 근거로 제시하지 않는다.
-- 합성 fixture 통과를 실제 사용 검증이라고 하지 않는다.
-- 일부 통과를 전체 통과로 보고하지 않는다.
-
-특히 다음 두 표현은 금지한다.
-
-| 금지 표현 | 실제로 말해야 하는 것 |
+| 수준 | 의미 |
 |---|---|
-| "실증했다" | 어떤 수준의 어떤 검사를 실행했는지 |
-| "전부 통과했다" | 무엇이 통과했고 무엇을 실행하지 않았는지 |
+| `generated` | 결과물을 만들었음 |
+| `parsed` | 형식을 기계가 읽을 수 있음 |
+| `structure-validated` | 선언·링크·schema·AST·경계 검사 통과 |
+| `unit-tested` | 격리된 정상·결함 주입 검사 통과 |
+| `integrated` | Core와 소비 구성요소를 연결한 gate 통과 |
+| `self-operated` | 실제 작업에서 처음부터 끝까지 사용 |
+| `cross-agent` | 다른 에이전트가 대화 없이 같은 상태를 복원 |
+| `user-confirmed` | 사용자가 원하는 결과임을 확인 |
 
-## 3. 위험별 최소 수준
+상위 이름이 하위 검사를 자동으로 포함하지 않는다. 실제 실행한 증거를 각각 기록한다.
 
-| 작업 등급 | 최소 수준 |
+## 2. 판정값
+
+| 값 | 의미 | 필수 게이트 처리 |
+|---|---|---|
+| `pass` | 실행했고 통과 | 성공 후보 |
+| `fail` | 실행했고 실패 | 전체 실패 |
+| `not_run` | 실행하지 않음 | 전체 실패 |
+| `not_applicable` | 이유가 있는 비해당 | 비실패 |
+
+## 3. Core 자체 gate
+
+소비 저장소 없이 다음을 검증한다.
+
+- 런타임·layout preflight
+- Core 역할·호환성 선언
+- 문서·링크·JSON·Python AST·텍스트
+- 규칙 route와 모듈 계층
+- 회귀·결함 주입 테스트
+- 실행 전후 Core tree 무부작용
+
+Core 자체 gate 통과만으로 Host 사용 가능성이나 read-only push 거부를 주장하지 않는다.
+
+## 4. 소비 통합 gate
+
+`--consumer-root`를 지정하면 Core 자체 gate에 다음을 추가한다.
+
+- 소비 계약 버전·역할·상대경로
+- 진입 포인터의 대상과 순서
+- 소비 상태 구조와 크기 예산
+- 소비 규칙 route
+- `.gitmodules`의 Core path
+- Core·consumer scope가 있는 context와 fingerprint
+- 보호 경로를 제외한 소비 계약 표면의 무부작용
+
+실제 gitlink 객체, Deploy Key fetch·push 권한, Codex·Claude 행동은 별도 통합·실제 사용 검증이 소유한다.
+
+## 5. 위험별 최소 수준
+
+| 작업 | 최소 증거 |
 |---|---|
 | `quick` | `parsed` |
 | `standard` | `structure-validated` |
-| `controlled` | `unit-tested` 또는 `integrated` |
-| 정책·규칙 변경 | `structure-validated` + 라우팅 검사 |
-| 검증 도구 변경 | `unit-tested` + 결함 주입 검사 |
-| Core 1차 완료 판정 | `integrated` + `self-operated` + `cross-agent` |
+| 정책·규칙 변경 | 구조·route 검사 + 관련 결함 주입 |
+| 검증 도구 변경 | `unit-tested` + 정상·오류·수행 불가 경계 |
+| Core release 후보 | Core gate + commit snapshot clean clone |
+| 소비 연결 후보 | 소비 gate + 부모·submodule Git 상태 대조 |
+| 범용 Host 사용 주장 | 서로 다른 실제 Host 2개 + `cross-agent` |
 
-## 4. 미실행의 처리
+## 6. 확대 보고 금지
 
-- 실행하지 않은 검사는 `not_run`이다. `pass`가 아니다.
-- 해당 없는 검사는 `not_applicable`이며 이유를 남긴다.
-- 기존 결함으로 실패한 검사는 새 결함과 구분하되 검증 범위를 줄여 숨기지 않는다.
+- 합성 fixture는 `synthetic`으로 표시한다.
+- 현재 checkout 통과를 commit snapshot 통과로 표현하지 않는다.
+- 첫 Host 통과를 범용 Host 검증으로 표현하지 않는다.
+- 정책상 금지를 실제 원격 권한 거부로 표현하지 않는다.
+- 실행하지 않은 환경·Python·Agent 검사를 지원 범위로 선언하지 않는다.
 
-## 5. 완료 보고의 형태
+## 7. 완료 보고
 
 완료 보고는 다음을 포함한다.
 
-1. 도달한 검증 수준
-2. 실제로 실행한 검사와 결과
-3. 실행하지 않은 검사와 그 이유
-4. 알려진 한계
+1. 변경한 정확한 scope와 경로
+2. 실행한 검사와 결과
+3. 실행하지 않은 검사와 이유
+4. 현재 checkout·commit snapshot·실제 사용 중 어느 수준인지
+5. 알려진 한계와 다음 게이트
 
-4번이 비어 있는 완료 보고는 대부분 4번을 확인하지 않은 것이다.
-
-## 6. 게이트 판정값
-
-| 값 | 의미 |
-|---|---|
-| `pass` | 검사를 실행했고 통과했다 |
-| `fail` | 검사를 실행했고 실패했다 |
-| `not_run` | 검사를 실행하지 않았다 |
-| `not_applicable` | 이 상황에 해당하지 않는다 |
-
-필수 게이트 중 하나라도 `pass`가 아니면 전체 결과는 성공이 아니다.
-
-## 7. 현재 Core의 도달 수준
-
-이 저장소의 각 영역이 현재 도달한 수준이다. 단계 진행에 따라 갱신한다.
-
-| 영역 | 도달 수준 | 미도달 사유 |
-|---|---|---|
-| 무결성·경계 검사 | `unit-tested` | 텍스트 경계, 선언, 계층 배정, 실패 예방 흡수의 정상·결함 주입 검사를 실행한다 |
-| 공개 인터페이스 | `integrated` | I6 완료 snapshot의 Windows clean clone과 Q1 현재 작업 트리에서 종단 호출을 확인했다 |
-| Core 자체 운영 | `self-operated` | I0~I6 개선을 Core 정책·상태·게이트로 순차 진행했다 |
-| 현재 상태 계약 | `cross-agent` | I6 콜드 Agent가 대화 없이 목적·단계·차단·첫 행동을 복원했다 |
-| 규칙 라우팅 구조·fixture 위생 | `structure-validated` | 링크·유일성·형태·fixture 참조를 기계 검사한다. 자연어 의미는 판정하지 않는다 |
-| 규칙 라우팅 의미 정확성 | `cross-agent` | Q1 콜드 재현에서 `prior_owners`를 제외한 새 소유자 exact-set 전체 일치, 실패 ID 없음 |
-| 단계 commit snapshot | `integrated` | 작업 트리 전용 route 결함 fixture와 I5 후보 commit snapshot의 Windows clean clone 전체 게이트를 통과했다 |
-| 실험 Runtime | `not_applicable` | Kernel 범위 판정에 따라 이식하지 않았다 |
-
-## 8. I6 완료 snapshot 증거
-
-2026-08-14 I6 완료 시점의 Windows checkout과 clean clone을 Python 3.10.20·3.12.13으로 각각 실행했다. 각 조합은 회귀 테스트, 통합 게이트, 무부작용 검사를 통과했다. 세부 실행 이력은 Git이, 현재 작업의 최신 판정은 `SESSION_HANDOFF.md`가 소유한다.
+필수 검사 중 `fail` 또는 `not_run`이 있으면 다음 단계로 전환하지 않는다.

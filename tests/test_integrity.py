@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from core_check import run_all  # noqa: E402
+from core_check.integrity import run_consumer  # noqa: E402
 from core_check.primitives import UnsafePathError, fingerprint, resolve_inside  # noqa: E402
 
 DOC_HEADERS = """- 목적: 결함 주입용 표본.
@@ -44,6 +45,26 @@ ROUTER_BODY = """# 라우터 표본
 STATE_BODY = """# 상태 표본
 
 {headers}
+## 현재 단계
+
+- 단계: 표본
+
+## 직전 게이트
+
+- 결과: `pass`
+
+## 승인 상태
+
+- 읽기 전용
+
+## 차단
+
+- 없음
+
+## 알려진 위험
+
+- 없음
+
 ## 첫 다음 행동
 
 1. 아무것도 하지 않는다.
@@ -58,14 +79,55 @@ RULE_BODY = """# 표본 규칙
 DOCUMENT_ROLES_BODY = """# 문서 역할 표본
 
 {headers}
-<!-- core-document-roles:v1 -->
+<!-- core-document-roles:v2 -->
 ```json
 {{
-  "policy": "ROUTER.md",
-  "state": "CURRENT.md",
-  "entry_pointers": ["ENTRY.md"]
+  "core_policy": "ROUTER.md",
+  "consumer_policy": "PROJECT_RULES.md"
 }}
 ```
+"""
+
+COMPATIBILITY_BODY = """# 호환성 표본
+
+{headers}
+<!-- core-compatibility:v1 -->
+```json
+{{
+  "core_version": "0.2.0",
+  "contract_version": 2,
+  "python_min": "3.10",
+  "required_dependencies": [],
+  "optional_dependencies": []
+}}
+```
+"""
+
+CONSUMER_POLICY_BODY = """# 소비 정책 표본
+
+{headers}
+<!-- agent-core-consumer:v1 -->
+```json
+{{
+  "contract_version": 2,
+  "consumer_role": "host",
+  "core_path": "core",
+  "state": "CURRENT.md",
+  "entry_pointers": {{
+    "codex": "AGENTS.md",
+    "claude": "CLAUDE.md"
+  }},
+  "rule_roots": ["rules"],
+  "protected_paths": ["private"]
+}}
+```
+<!-- /agent-core-consumer:v1 -->
+
+<!-- core-rule-routes:v1 -->
+| 행동 | 읽을 소유자 |
+|---|---|
+| 소비 행동 | [소비 규칙](rules/project.md) |
+<!-- /core-rule-routes:v1 -->
 """
 
 
@@ -90,10 +152,11 @@ def build_clean(root: Path) -> None:
     (root / "docs").mkdir(parents=True)
     (root / "src" / "core_check").mkdir(parents=True)
     (root / "ROUTER.md").write_text(ROUTER_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
-    (root / "CURRENT.md").write_text(STATE_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
-    (root / "ENTRY.md").write_text("# 진입 포인터\n\n[정책](ROUTER.md)\n", encoding="utf-8")
     (root / "docs" / "OWNERSHIP.md").write_text(
         DOCUMENT_ROLES_BODY.format(headers=DOC_HEADERS), encoding="utf-8"
+    )
+    (root / "docs" / "COMPATIBILITY.md").write_text(
+        COMPATIBILITY_BODY.format(headers=DOC_HEADERS), encoding="utf-8"
     )
     (root / "rules" / "sample.md").write_text(RULE_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
     (root / "src" / "core_check" / "primitives.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -109,6 +172,36 @@ def build_clean(root: Path) -> None:
         },
     )
     (root / "data.json").write_text('{"a": 1}\n', encoding="utf-8")
+
+
+def build_consumer(base: Path) -> tuple[Path, Path]:
+    consumer = base / "consumer"
+    core = consumer / "core"
+    consumer.mkdir(parents=True)
+    build_clean(core)
+    (consumer / "rules").mkdir()
+    (consumer / "rules" / "project.md").write_text(
+        RULE_BODY.format(headers=DOC_HEADERS), encoding="utf-8"
+    )
+    (consumer / "PROJECT_RULES.md").write_text(
+        CONSUMER_POLICY_BODY.format(headers=DOC_HEADERS), encoding="utf-8"
+    )
+    (consumer / "CURRENT.md").write_text(
+        STATE_BODY.format(headers=DOC_HEADERS), encoding="utf-8"
+    )
+    (consumer / "AGENTS.md").write_text(
+        "# Agent Entry\n\n[Core](core/ROUTER.md)\n[Policy](PROJECT_RULES.md)\n[State](CURRENT.md)\n",
+        encoding="utf-8",
+    )
+    (consumer / "CLAUDE.md").write_text(
+        "# Claude Entry\n\n@core/ROUTER.md\n@PROJECT_RULES.md\n@CURRENT.md\n",
+        encoding="utf-8",
+    )
+    (consumer / ".gitmodules").write_text(
+        '[submodule "core"]\n\tpath = core\n\turl = https://example.invalid/core.git\n',
+        encoding="utf-8",
+    )
+    return core, consumer
 
 
 def findings_for(root: Path, check: str) -> list[str]:
@@ -181,7 +274,7 @@ class FaultInjectionTest(unittest.TestCase):
         (self.root / "README.md").write_text("# 짧은 개요\n", encoding="utf-8")
         self.assertTrue(findings_for(self.root, "document-headers"))
 
-    def test_declared_entry_pointer_may_omit_document_headers(self) -> None:
+    def test_clean_core_documents_have_required_headers(self) -> None:
         self.assertEqual(findings_for(self.root, "document-headers"), [])
 
     def test_detects_unrouted_rule(self) -> None:
@@ -256,28 +349,23 @@ class FaultInjectionTest(unittest.TestCase):
 
     def test_detects_hardcoded_document_name(self) -> None:
         (self.root / "src" / "core_check" / "integrity.py").write_text(
-            'from .primitives import VALUE\nTARGET = "CURRENT.md"\n', encoding="utf-8"
+            'from .primitives import VALUE\nTARGET = "ROUTER.md"\n', encoding="utf-8"
         )
         self.assertTrue(findings_for(self.root, "no-hardcoded-doc-names"))
 
-    def test_detects_duplicate_state_owner(self) -> None:
+    def test_detects_duplicate_core_role_declaration(self) -> None:
         (self.root / "SECOND.md").write_text(
             DOCUMENT_ROLES_BODY.format(headers=DOC_HEADERS), encoding="utf-8"
         )
-        self.assertTrue(findings_for(self.root, "state-canonical-owner"))
+        self.assertTrue(findings_for(self.root, "declaration-contracts"))
 
-    def test_human_headings_do_not_define_policy_or_state_roles(self) -> None:
+    def test_human_headings_do_not_define_policy_role(self) -> None:
         router = (self.root / "ROUTER.md").read_text(encoding="utf-8").replace(
             "## 4. 규칙 라우팅", "## 행동 소유자"
         )
-        state = (self.root / "CURRENT.md").read_text(encoding="utf-8").replace(
-            "## 첫 다음 행동", "## 다음 실행"
-        )
         (self.root / "ROUTER.md").write_text(router, encoding="utf-8")
-        (self.root / "CURRENT.md").write_text(state, encoding="utf-8")
         self.assertEqual(findings_for(self.root, "declaration-contracts"), [])
         self.assertEqual(findings_for(self.root, "rule-routes"), [])
-        self.assertEqual(findings_for(self.root, "state-canonical-owner"), [])
 
     def test_detects_reference_to_temporary_material(self) -> None:
         (self.root / "tmp").mkdir()
@@ -285,7 +373,7 @@ class FaultInjectionTest(unittest.TestCase):
         (self.root / "rules" / "sample.md").write_text(
             RULE_BODY.format(headers=DOC_HEADERS) + "\n[한시 자료](tmp/note.md)\n", encoding="utf-8"
         )
-        self.assertTrue(findings_for(self.root, "state-canonical-owner"))
+        self.assertTrue(findings_for(self.root, "temporary-canonical-links"))
 
 
 class PrimitivesTest(unittest.TestCase):
@@ -392,75 +480,115 @@ class DerivedArtifactTest(unittest.TestCase):
 
 
 class ContextTest(unittest.TestCase):
-    """선택적 문서 읽기의 결정론과 예산 강제."""
+    """Core·consumer scope 선택의 결정론과 예산 강제."""
 
     def setUp(self) -> None:
         from core_check import context
 
         self.context = context
         self.tmp = tempfile.mkdtemp()
-        self.root = Path(self.tmp)
-        build_clean(self.root)
+        self.core, self.consumer = build_consumer(Path(self.tmp))
 
     def tearDown(self) -> None:
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_required_is_router_and_state_only(self) -> None:
-        package = self.context.build(self.root)
-        self.assertEqual(len(package.required), 2)
-        self.assertIn("ROUTER.md", package.required)
-        self.assertIn("CURRENT.md", package.required)
+    def test_required_is_core_policy_consumer_policy_and_state(self) -> None:
+        package = self.context.build(self.core, self.consumer)
+        self.assertEqual(len(package.required), 3)
+        self.assertEqual(
+            [ref.identifier for ref in package.required],
+            ["core:ROUTER.md", "consumer:PROJECT_RULES.md", "consumer:CURRENT.md"],
+        )
 
     def test_unmatched_rule_is_excluded_with_reason(self) -> None:
-        package = self.context.build(self.root)
-        self.assertIn("rules/sample.md", package.excluded)
-        self.assertTrue(package.excluded["rules/sample.md"])
+        package = self.context.build(self.core, self.consumer)
+        self.assertIn("core:rules/sample.md", package.excluded)
+        self.assertIn("consumer:rules/project.md", package.excluded)
 
     def test_matched_rule_is_included(self) -> None:
-        package = self.context.build(self.root, ["rules/sample.md"])
-        self.assertIn("rules/sample.md", package.optional)
-        self.assertNotIn("rules/sample.md", package.excluded)
+        package = self.context.build(self.core, self.consumer, ["core:rules/sample.md"])
+        self.assertEqual([ref.identifier for ref in package.optional], ["core:rules/sample.md"])
+        self.assertNotIn("core:rules/sample.md", package.excluded)
 
     def test_same_input_gives_same_digest(self) -> None:
-        first = self.context.build(self.root, ["rules/sample.md"])
-        second = self.context.build(self.root, ["rules/sample.md"])
+        first = self.context.build(self.core, self.consumer, ["consumer:rules/project.md"])
+        second = self.context.build(self.core, self.consumer, ["consumer:rules/project.md"])
         self.assertEqual(first.digest, second.digest)
 
     def test_different_selection_gives_different_digest(self) -> None:
-        first = self.context.build(self.root)
-        second = self.context.build(self.root, ["rules/sample.md"])
+        first = self.context.build(self.core, self.consumer)
+        second = self.context.build(self.core, self.consumer, ["core:rules/sample.md"])
         self.assertNotEqual(first.digest, second.digest)
 
     def test_unrouted_owner_is_rejected(self) -> None:
         from core_check.primitives import CheckError
 
         with self.assertRaises(CheckError):
-            self.context.build(self.root, ["rules/does-not-exist.md"])
+            self.context.build(self.core, self.consumer, ["core:rules/does-not-exist.md"])
 
     def test_budget_overflow_fails_instead_of_truncating(self) -> None:
         with self.assertRaises(self.context.ContextBudgetError):
-            self.context.build(self.root, budget=10)
+            self.context.build(self.core, self.consumer, budget=10)
 
     def test_failure_knowledge_is_not_in_default_selection(self) -> None:
-        failures = self.root / "failures"
+        failures = self.core / "failures"
         failures.mkdir()
         (failures / "case.md").write_text(RULE_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
-        package = self.context.build(self.root)
-        self.assertIn("failures/case.md", package.excluded)
+        package = self.context.build(self.core, self.consumer)
+        self.assertIn("core:failures/case.md", package.excluded)
 
-    def test_failure_documents_are_excluded_from_default_selection(self) -> None:
-        package = self.context.build(ROOT)
-        selected = set(package.required + package.optional)
-        failure_docs = {
-            p.relative_to(ROOT).as_posix() for p in (ROOT / "failures").glob("*.md")
-        }
-        self.assertTrue(failure_docs.isdisjoint(selected))
-        self.assertTrue(failure_docs <= set(package.excluded))
-
-    def test_real_repository_startup_context_is_within_budget(self) -> None:
-        package = self.context.build(ROOT)
+    def test_startup_context_is_within_budget(self) -> None:
+        package = self.context.build(self.core, self.consumer)
         self.assertLessEqual(package.chars, self.context.STARTUP_BUDGET_CHARS)
-        self.assertEqual(len(package.required), 2)
+        self.assertEqual(len(package.required), 3)
+
+
+class ConsumerContractTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.mkdtemp()
+        self.core, self.consumer = build_consumer(Path(self.tmp))
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_clean_consumer_contract_passes(self) -> None:
+        report = run_consumer(self.core, self.consumer)
+        self.assertTrue(report.ok, [finding.as_dict() for finding in report.findings])
+
+    def test_contract_version_mismatch_is_detected(self) -> None:
+        policy = self.consumer / "PROJECT_RULES.md"
+        policy.write_text(
+            policy.read_text(encoding="utf-8").replace('"contract_version": 2', '"contract_version": 99'),
+            encoding="utf-8",
+        )
+        self.assertFalse(run_consumer(self.core, self.consumer).ok)
+
+    def test_entry_order_mismatch_is_detected(self) -> None:
+        (self.consumer / "AGENTS.md").write_text(
+            "# Entry\n\n[Policy](PROJECT_RULES.md)\n[Core](core/ROUTER.md)\n[State](CURRENT.md)\n",
+            encoding="utf-8",
+        )
+        findings = run_consumer(self.core, self.consumer).findings
+        self.assertTrue(any(finding.check == "consumer-entry" for finding in findings))
+
+    def test_protected_path_is_not_read(self) -> None:
+        private = self.consumer / "private"
+        private.mkdir()
+        (private / "secret.txt").write_text("do-not-read\n", encoding="utf-8")
+        report = run_consumer(self.core, self.consumer)
+        self.assertTrue(report.ok, [finding.as_dict() for finding in report.findings])
+
+    def test_protected_path_cannot_overlap_rule_root(self) -> None:
+        policy = self.consumer / "PROJECT_RULES.md"
+        policy.write_text(
+            policy.read_text(encoding="utf-8").replace(
+                '"protected_paths": ["private"]',
+                '"protected_paths": ["rules/private"]',
+            ),
+            encoding="utf-8",
+        )
+        findings = run_consumer(self.core, self.consumer).findings
+        self.assertTrue(any(finding.check == "consumer-contract" for finding in findings))
 
 
 class FailureAbsorptionTest(unittest.TestCase):
@@ -540,8 +668,7 @@ class PublicInterfaceTest(unittest.TestCase):
 
         self.cli = cli
         self.tmp = tempfile.mkdtemp()
-        self.root = Path(self.tmp)
-        build_clean(self.root)
+        self.core, self.consumer = build_consumer(Path(self.tmp))
 
     def tearDown(self) -> None:
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -556,32 +683,67 @@ class PublicInterfaceTest(unittest.TestCase):
         return code, json.loads(buffer.getvalue())
 
     def test_verify_returns_zero_on_clean_tree(self) -> None:
-        code, payload = self._run("--root", str(self.root), "verify")
+        code, payload = self._run("--core-root", str(self.core), "verify")
+        self.assertEqual(code, self.cli.EXIT_OK)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["contract_version"], 2)
+        self.assertEqual(payload["scope"], "core")
+
+    def test_deprecated_root_alias_still_verifies_core(self) -> None:
+        code, payload = self._run("--root", str(self.core), "verify")
         self.assertEqual(code, self.cli.EXIT_OK)
         self.assertTrue(payload["ok"])
 
     def test_verify_returns_one_on_findings(self) -> None:
-        (self.root / "data.json").write_text("{broken", encoding="utf-8")
-        code, payload = self._run("--root", str(self.root), "verify")
+        (self.core / "data.json").write_text("{broken", encoding="utf-8")
+        code, payload = self._run("--core-root", str(self.core), "verify")
         self.assertEqual(code, self.cli.EXIT_FINDINGS)
         self.assertFalse(payload["ok"])
         self.assertTrue(payload["findings"])
 
     def test_missing_root_returns_two(self) -> None:
-        code, payload = self._run("--root", str(self.root / "nope"), "verify")
+        code, payload = self._run("--core-root", str(self.core / "nope"), "verify")
         self.assertEqual(code, self.cli.EXIT_UNUSABLE)
         self.assertIn("error", payload)
 
     def test_context_command_reports_selection(self) -> None:
-        code, payload = self._run("--root", str(self.root), "context", "--rule", "rules/sample.md")
+        code, payload = self._run(
+            "--core-root",
+            str(self.core),
+            "--consumer-root",
+            str(self.consumer),
+            "context",
+            "--rule",
+            "core:rules/sample.md",
+        )
         self.assertEqual(code, self.cli.EXIT_OK)
-        self.assertIn("rules/sample.md", payload["optional"])
-        self.assertEqual(len(payload["required"]), 2)
+        self.assertIn({"scope": "core", "path": "rules/sample.md"}, payload["optional"])
+        self.assertEqual(len(payload["required"]), 3)
 
     def test_context_rejects_unrouted_rule_with_structured_error(self) -> None:
-        code, payload = self._run("--root", str(self.root), "context", "--rule", "rules/nope.md")
+        code, payload = self._run(
+            "--core-root",
+            str(self.core),
+            "--consumer-root",
+            str(self.consumer),
+            "context",
+            "--rule",
+            "core:rules/nope.md",
+        )
         self.assertEqual(code, self.cli.EXIT_UNUSABLE)
         self.assertEqual(payload["kind"], "CheckError")
+
+    def test_context_requires_consumer_root(self) -> None:
+        code, payload = self._run("--core-root", str(self.core), "context")
+        self.assertEqual(code, self.cli.EXIT_UNUSABLE)
+        self.assertEqual(payload["kind"], "CheckError")
+
+    def test_verify_can_include_consumer_contract(self) -> None:
+        code, payload = self._run(
+            "--core-root", str(self.core), "--consumer-root", str(self.consumer), "verify"
+        )
+        self.assertEqual(code, self.cli.EXIT_OK)
+        self.assertEqual(payload["scope"], "core+consumer")
 
     def test_every_public_command_has_a_consumer_note(self) -> None:
         import inspect
@@ -691,7 +853,7 @@ class IntegrationGateTest(unittest.TestCase):
         (self.root / "data.json").write_text("{broken", encoding="utf-8")
         result = self.gate.run(self.root)
         self.assertFalse(result.ok)
-        self.assertEqual(result.failed_step, "integrity")
+        self.assertEqual(result.failed_step, "core-integrity")
 
     def test_preflight_failure_marks_later_steps_not_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -699,9 +861,9 @@ class IntegrationGateTest(unittest.TestCase):
             (root / "placeholder.txt").write_text("x\n", encoding="utf-8")
             result = self.gate.run(root)
             self.assertFalse(result.ok)
-            self.assertEqual(result.failed_step, "preflight-layout")
+            self.assertEqual(result.failed_step, "preflight-contract")
             statuses = {s.name: s.status for s in result.steps}
-            self.assertEqual(statuses["integrity"], "not_run")
+            self.assertEqual(statuses["core-integrity"], "not_run")
             self.assertEqual(statuses["regression-tests"], "not_run")
 
     def test_reentry_is_blocked(self) -> None:
@@ -726,6 +888,16 @@ class IntegrationGateTest(unittest.TestCase):
             [(s["name"], s["status"]) for s in second["steps"]],
         )
 
+    def test_consumer_gate_passes_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            before_core = self.gate.tree_digest(core)
+            before_consumer = self.gate.consumer_tree_digest(core, consumer)
+            result = self.gate.run(core, consumer)
+            self.assertTrue(result.ok, result.as_dict())
+            self.assertEqual(before_core, self.gate.tree_digest(core))
+            self.assertEqual(before_consumer, self.gate.consumer_tree_digest(core, consumer))
+
 
 class CompatibilityTest(unittest.TestCase):
     """선언과 실제 동작의 일치."""
@@ -741,13 +913,15 @@ class CompatibilityTest(unittest.TestCase):
             self.assertIn(key, self.declared)
 
     def test_declaration_is_the_only_source(self) -> None:
+        from core_check.declarations import COMPAT_BLOCK
+
         # 제외 판정은 저장소 뿌리 기준 상대 경로로 한다. 절대 경로로 판정하면
         # 저장소가 `tmp` 같은 이름의 디렉터리 아래에 체크아웃될 때 전부 건너뛴다.
         blocks = [
             p
             for p in ROOT.rglob("*.md")
             if not {".git", "tmp"} & set(p.relative_to(ROOT).parts)
-            and self.gate.COMPAT_BLOCK.search(p.read_text(encoding="utf-8"))
+            and COMPAT_BLOCK.search(p.read_text(encoding="utf-8"))
         ]
         self.assertEqual(len(blocks), 1, f"호환성 선언이 {len(blocks)}곳에 있다")
 
@@ -762,10 +936,11 @@ class CompatibilityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             build_clean(root)
-            (root / "docs").mkdir(exist_ok=True)
-            (root / "docs" / "c.md").write_text(
-                "<!-- core-compatibility:v1 -->\n```json\n"
-                '{"python_min": "99.0"}\n```\n<!-- /core-compatibility -->\n',
+            compatibility = root / "docs" / "COMPATIBILITY.md"
+            compatibility.write_text(
+                compatibility.read_text(encoding="utf-8").replace(
+                    '"python_min": "3.10"', '"python_min": "99.0"'
+                ),
                 encoding="utf-8",
             )
             result = self.gate.run(root)

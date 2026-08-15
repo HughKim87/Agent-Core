@@ -1,82 +1,91 @@
-"""현재 상태 문서가 인수인계 계약을 따르는지 검사한다."""
+"""소비 저장소가 제공하는 현재 상태 계약의 결함 주입 검사."""
 
 from __future__ import annotations
 
 from pathlib import Path
-import re
+import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-STATE = ROOT / "SESSION_HANDOFF.md"
+sys.path.insert(0, str(ROOT / "src"))
 
-REQUIRED_SECTIONS = (
-    "## 현재 단계",
-    "## 직전 게이트",
-    "## 승인 상태",
-    "## 차단",
-    "## 알려진 위험",
-    "## 첫 다음 행동",
-)
+from core_check.integrity import state_contract_findings  # noqa: E402
 
-# 단계 수에 비례해 커지면 안 된다. 실측 기반 예산.
-SIZE_BUDGET_CHARS = 3_000
+VALID_STATE = """# 상태 표본
 
-# 문서에 고정하면 실제와 어긋나는 동적 수치
-DYNAMIC_NUMBERS = re.compile(
-    r"(추적 파일\s*\d+|untracked\s*\d+|ignored\s*\d+|커밋\s*\d+\s*개|"
-    r"파일\s*\d+\s*개\s*추적|blob\s*\d+)"
-)
+- 목적: 현재 작업 상태.
+- 읽는 시점: 세션 시작 시.
+- 책임: 작업 에이전트.
+- 상태: 활성 정본.
+- 관련 권위: 소비 정책.
 
-VAGUE_ACTIONS = ("계속 진행한다", "검토한다.", "확인한다.")
+## 현재 단계
+
+- 단계: 표본
+
+## 직전 게이트
+
+- 결과: `pass`
+
+## 승인 상태
+
+- 읽기 전용
+
+## 차단
+
+- 없음
+
+## 알려진 위험
+
+- 없음
+
+## 첫 다음 행동
+
+1. `PROJECT_RULES.md`의 선언을 파싱한다.
+"""
 
 
 class StateContractTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.text = STATE.read_text(encoding="utf-8")
+    def _findings(self, text: str) -> list:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "CURRENT.md"
+            state.write_text(text, encoding="utf-8")
+            return state_contract_findings(root, state)
 
-    def test_required_sections_exist(self) -> None:
-        for section in REQUIRED_SECTIONS:
-            self.assertIn(section, self.text, f"{section} 절이 없다")
+    def test_valid_consumer_state_passes(self) -> None:
+        self.assertEqual(self._findings(VALID_STATE), [])
 
-    def test_no_dynamic_numbers(self) -> None:
-        found = DYNAMIC_NUMBERS.findall(self.text)
-        self.assertEqual(found, [], f"동적 수치가 고정되어 있다: {found}")
+    def test_missing_required_section_is_detected(self) -> None:
+        findings = self._findings(VALID_STATE.replace("## 차단", "## 다른 절"))
+        self.assertTrue(any("필수 절" in finding.message for finding in findings))
 
-    def test_first_action_is_numbered_and_specific(self) -> None:
-        tail = self.text.split("## 첫 다음 행동", 1)[1]
-        actions = [l.strip() for l in tail.splitlines() if re.match(r"^\d+\.", l.strip())]
-        self.assertTrue(actions, "첫 다음 행동이 번호 목록으로 없다")
-        for action in actions:
-            self.assertFalse(
-                action.rstrip(".").endswith(VAGUE_ACTIONS),
-                f"첫 다음 행동이 모호하다: {action}",
-            )
+    def test_dynamic_git_number_is_detected(self) -> None:
+        findings = self._findings(VALID_STATE.replace("- 없음", "- 추적 파일 40", 1))
+        self.assertTrue(any("동적 Git 수치" in finding.message for finding in findings))
 
-    def test_single_state_owner(self) -> None:
-        # 제외 판정은 저장소 뿌리 기준 상대 경로로 한다. 절대 경로로 판정하면
-        # 저장소가 `tmp` 같은 이름의 디렉터리 아래에 체크아웃될 때 전부 건너뛴다.
-        others = [
-            p
-            for p in ROOT.rglob("*.md")
-            if not {".git", "tmp"} & set(p.relative_to(ROOT).parts)
-            and p != STATE
-            and "## 첫 다음 행동" in p.read_text(encoding="utf-8")
-        ]
-        self.assertEqual(others, [], "현재 상태 정본이 둘 이상이다")
-
-    def test_no_completed_stage_history_accumulates(self) -> None:
-        gates = self.text.split("## 직전 게이트", 1)[1].split("## 승인 상태", 1)[0]
-        judged = [l for l in gates.splitlines() if "`pass`" in l or "`fail`" in l]
-        self.assertLessEqual(
-            len(judged), 1, f"직전 게이트 절에 판정이 {len(judged)}건 누적되어 있다"
+    def test_vague_first_action_is_detected(self) -> None:
+        findings = self._findings(
+            VALID_STATE.replace("1. `PROJECT_RULES.md`의 선언을 파싱한다.", "1. 확인한다.")
         )
+        self.assertTrue(any("모호" in finding.message for finding in findings))
 
-    def test_size_stays_within_budget(self) -> None:
-        self.assertLessEqual(
-            len(self.text),
-            SIZE_BUDGET_CHARS,
-            "현재 상태 문서가 예산을 넘었다. 완료 이력이 누적되었을 가능성이 높다",
+    def test_missing_numbered_action_is_detected(self) -> None:
+        findings = self._findings(
+            VALID_STATE.replace("1. `PROJECT_RULES.md`의 선언을 파싱한다.", "선언을 파싱한다.")
         )
+        self.assertTrue(any("번호" in finding.message for finding in findings))
+
+    def test_accumulated_gate_history_is_detected(self) -> None:
+        findings = self._findings(
+            VALID_STATE.replace("- 결과: `pass`", "- 첫 결과: `pass`\n- 둘째 결과: `fail`")
+        )
+        self.assertTrue(any("누적" in finding.message for finding in findings))
+
+    def test_size_budget_is_enforced(self) -> None:
+        findings = self._findings(VALID_STATE + ("x" * 3_000))
+        self.assertTrue(any("예산" in finding.message for finding in findings))
 
 
 if __name__ == "__main__":
