@@ -98,7 +98,8 @@ COMPATIBILITY_BODY = """# 호환성 표본
   "contract_version": 2,
   "python_min": "3.10",
   "required_dependencies": [],
-  "optional_dependencies": []
+  "optional_dependencies": [],
+  "optional_capabilities": {{}}
 }}
 ```
 """
@@ -909,8 +910,17 @@ class CompatibilityTest(unittest.TestCase):
         self.declared = gate.declared_compatibility(ROOT)
 
     def test_declaration_exists_and_is_complete(self) -> None:
-        for key in ("core_version", "contract_version", "python_min", "required_dependencies"):
+        for key in (
+            "core_version",
+            "contract_version",
+            "python_min",
+            "required_dependencies",
+            "optional_capabilities",
+        ):
             self.assertIn(key, self.declared)
+
+    def test_no_optional_capability_is_public_before_implementation(self) -> None:
+        self.assertEqual(self.declared["optional_capabilities"], {})
 
     def test_declaration_is_the_only_source(self) -> None:
         from core_check.declarations import COMPAT_BLOCK

@@ -17,7 +17,8 @@
   "contract_version": 2,
   "python_min": "3.10",
   "required_dependencies": [],
-  "optional_dependencies": []
+  "optional_dependencies": [],
+  "optional_capabilities": {}
 }
 ```
 <!-- /core-compatibility -->
@@ -31,6 +32,7 @@
 | `core_version` | 배포되는 Core 저장소 단위 | 검증된 Core release마다 |
 | `contract_version` | CLI·선언·규칙 계약의 세대 | 소비자 이전이 필요한 비호환 변경 |
 | `python_min` | 필수 검증의 최소 Python | 하위 런타임 지원을 종료할 때 |
+| `optional_capabilities` | 실제 제공되는 선택 기능의 ID·버전·명령·schema | 선택 기능을 공개하거나 호환 경계를 바꿀 때 |
 
 ## 3. contract 2 공개 계약
 
@@ -40,6 +42,17 @@
 - `context` 문서 경로는 `scope`와 `path` 객체로 반환한다.
 - `verify`, `context`, `gate` 명령과 종료 상태 0·1·2를 제공한다.
 - v2 동안 `--root`는 `--core-root`의 deprecated alias다.
+
+## 3A. 선택 기능 공개 경계
+
+- `optional_capabilities`에 없는 기능은 흡수가 승인됐더라도 아직 공개 기능이 아니다.
+- 선택 기능은 기본 비활성이며 명시적 호출만 허용한다.
+- 각 항목은 기능 ID, 계약 버전, 공개 명령과 schema 경로를 함께 선언해야 한다.
+- 내부 Python module 경로와 참고 구현의 이름은 공개 계약이 아니다.
+- 실제 Runtime 데이터와 결과는 소비 저장소가 소유하며 Core 저장소에 쓰지 않는다.
+- 선택 기능이 없으면 필수 gate는 `not_applicable`로 처리하고 계속 성립해야 한다.
+
+현재 `optional_capabilities`가 비어 있으므로 contract 2의 공개 명령은 `verify`, `context`, `gate`뿐이다. 승인된 공통 데이터 흡수 범위는 구현·회귀·호환성 등록이 완료되는 기능부터 별도 후보 snapshot에서 공개한다.
 
 ## 4. 호환·비호환
 
