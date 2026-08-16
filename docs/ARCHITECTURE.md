@@ -65,7 +65,12 @@ L7이 없어도 Core import, Core 자체 `verify`, Core 자체 `gate`가 성립�
   "L6": [
     "src/core_check/primitives.py"
   ],
-  "L7": []
+  "L7": [
+    "experimental/__init__.py",
+    "experimental/shared_data/__init__.py",
+    "experimental/shared_data/record.py",
+    "experimental/shared_data/store.py"
+  ]
 }
 ```
 

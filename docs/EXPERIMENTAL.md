@@ -46,11 +46,11 @@
 
 ## 4. 현재 기능과 승인된 흡수 후보
 
-현재 구현돼 `available`로 선언된 실험 Runtime은 없다.
+현재 `available`로 공개된 실험 Runtime은 없다. [공통 record·원자적 저장 기반](../experimental/shared_data/RECORD_STORAGE_CONTRACT.md)은 `experimental/shared_data/`에 `implemented_private`로 구현됐으며 공개 CLI가 없어 `optional_capabilities`에는 등록하지 않았다.
 
 다음 도메인 중립 기능은 사용자의 명시적 승인에 따라 `approved_for_absorption` 상태다.
 
-- 공통 record·원자적 저장
+- 공통 record·원자적 저장 — `implemented_private`
 - source·knowledge·decision·수명주기
 - 문서·`data_key` 기반 evidence context package
 - 작업 상태·실행 계약의 비활성 호환 Runtime
@@ -86,6 +86,7 @@
 | `채택` | 필수 Kernel로 승격한다 |
 | `실험 유지` | `experimental/` 에 두고 승격 조건과 기한을 명시한다 |
 | `흡수 승인` | L7 구현 대상으로 보존하되 아직 `available`이나 필수 기능으로 주장하지 않는다 |
+| `내부 구현` | 구현·회귀는 존재하지만 공개 계약에 등록하지 않아 소비자가 의존할 수 없다 |
 | `제외` | 이 저장소에 옮기지 않는다 |
 
 과거 후보 Runtime의 `제외` 판정은 최신 사용자의 공통 데이터 보존 요구와 흡수 승인으로 대체됐다. 이 변경은 L7 흡수만 허용하며 필수 Kernel 승격을 뜻하지 않는다. 승격은 §2의 기준으로 별도 판정한다.

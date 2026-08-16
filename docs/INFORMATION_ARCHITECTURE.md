@@ -41,6 +41,7 @@
 | 공개 버전·호환성 | `docs/COMPATIBILITY.md` |
 | 소비 절차 | `docs/CONSUMER_GUIDE.md` |
 | 검증 구현 | `src/core_check/` |
+| 선택 데이터 계약·구현 | `experimental/` |
 | 회귀·결함 주입 | `tests/` |
 | Core 완료 이력 | Core Git commit |
 
@@ -70,6 +71,7 @@ Core 저장소에는 자동 진입 파일, 현재 상태, 특정 Maintainer·Hos
 ├─ PROJECT_RULES.md
 ├─ README.md
 ├─ docs/
+├─ experimental/
 ├─ rules/
 ├─ src/
 └─ tests/

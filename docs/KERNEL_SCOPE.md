@@ -56,13 +56,13 @@
 
 다음 기능은 필수 Kernel이 아니라 L7 선택 계층으로 일반화해 흡수하도록 승인됐다.
 
-- strict JSON·UTF-8·경로 안전을 갖는 공통 record 외피와 원자적 저장
+- strict JSON·UTF-8·경로 안전을 갖는 [공통 record 외피와 원자적 저장](../experimental/shared_data/RECORD_STORAGE_CONTRACT.md) — `implemented_private`
 - source·knowledge·decision의 검증과 승인 기반 수명주기
 - 문서와 문서 내부 `data_key`를 직접 선택하는 결정론적 evidence context package
 - 기존 작업 상태·실행 계약을 잃지 않기 위한 비활성 호환 Runtime
 - 위 기능을 증명하는 schema·계약·회귀·결함 주입 테스트
 
-이 목록은 구현 완료나 공개 제공을 뜻하지 않는다. 기능별 구현과 검증이 완료되고 [호환성 선언](COMPATIBILITY.md)에 공개 인터페이스가 등록되기 전까지 상태는 `approved_for_absorption`이다.
+상태가 적히지 않은 항목은 아직 `approved_for_absorption`이다. `implemented_private`는 구현·회귀가 존재하지만 공개 제공은 뜻하지 않는다. [호환성 선언](COMPATIBILITY.md)에 인터페이스가 등록되기 전에는 어떤 항목도 외부 공개 기능이 아니다.
 
 선택 데이터 계층은 다음 경계를 지킨다.
 
