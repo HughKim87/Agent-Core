@@ -432,10 +432,7 @@ class IsolationTests(unittest.TestCase):
     def test_implementation_has_no_project_domain_or_hardcoded_protected_paths(self) -> None:
         implementation = "\n".join(
             path.read_text(encoding="utf-8")
-            for path in (
-                ROOT / "experimental" / "shared_data" / "record.py",
-                ROOT / "experimental" / "shared_data" / "store.py",
-            )
+            for path in sorted((ROOT / "experimental" / "shared_data").glob("*.py"))
         ).casefold()
         for forbidden in (
             "youtube",

@@ -78,4 +78,4 @@
 - 정상·손상·경쟁·replace 실패 경로에서 원본 보존과 임시 파일 정리를 확인한다.
 - schema field와 Runtime field 집합을 대조한다.
 - Core 필수 패키지가 L7을 import하지 않고 `optional_capabilities`가 비어 있는지 확인한다.
-- 지식 유형·수명주기·Evidence Context·공개 CLI는 후속 단계가 소유하며 이 계약에 선행 구현하지 않는다.
+- 지식 유형·수명주기는 [별도 L7 계약](KNOWLEDGE_LIFECYCLE_CONTRACT.md)이 이 저장 기반 위에서 소유한다. Evidence Context·작업 상태 Runtime·공개 CLI는 후속 단계다.

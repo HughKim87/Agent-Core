@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-core://experimental/shared_data/schemas/lifecycle-event-payload-v1.schema.json",
+  "title": "Lifecycle Event Payload v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["target_id", "target_type", "state_record_id", "actor", "action", "from_state", "to_state", "reason", "approval_kind", "source_ids", "related_target_ids", "replacement_id", "decision_id"],
+  "properties": {
+    "target_id": {"type": "string", "format": "uuid"},
+    "target_type": {"enum": ["source", "knowledge", "decision"]},
+    "state_record_id": {"type": "string", "format": "uuid"},
+    "actor": {"type": "string", "minLength": 1},
+    "action": {"enum": ["register", "request_review", "approve_current", "declare_conflict", "supersede", "reject", "retire"]},
+    "from_state": {"oneOf": [{"type": "null"}, {"enum": ["candidate", "current", "review_required", "superseded", "rejected", "retired"]}]},
+    "to_state": {"enum": ["candidate", "current", "review_required", "superseded", "rejected", "retired"]},
+    "reason": {"type": "string", "minLength": 1},
+    "approval_kind": {"enum": ["agent_in_scope", "user", "standing_policy"]},
+    "source_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "format": "uuid"}},
+    "related_target_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "format": "uuid"}},
+    "replacement_id": {"oneOf": [{"type": "null"}, {"type": "string", "format": "uuid"}]},
+    "decision_id": {"oneOf": [{"type": "null"}, {"type": "string", "format": "uuid"}]}
+  }
+}

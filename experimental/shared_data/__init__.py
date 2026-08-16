@@ -1,4 +1,9 @@
-"""아직 공개되지 않은 도메인 중립 공통 record·저장 기반."""
+"""아직 공개되지 않은 도메인 중립 공통 데이터 기반."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from pathlib import Path
 
 from .record import (
     DataPathError,
@@ -26,6 +31,63 @@ from .store import (
     decode_stream,
     stream_content_hash,
 )
+from .knowledge import (
+    DECISION_APPROVAL_KINDS,
+    DECISION_FIELDS,
+    KNOWLEDGE_CLASSES,
+    KNOWLEDGE_FIELDS,
+    KNOWLEDGE_RECORD_TYPES,
+    KNOWLEDGE_VERIFICATION_STATUSES,
+    SOURCE_EVIDENCE_ROLES,
+    SOURCE_FIELDS,
+    SOURCE_KINDS,
+    SOURCE_VERIFICATION_STATUSES,
+    KnowledgeRecordError,
+    KnowledgeService,
+    SourceIntegrityError,
+    validate_decision_payload,
+    validate_knowledge_payload,
+    validate_source_payload,
+)
+from .lifecycle import (
+    ACTIONS,
+    APPROVAL_KINDS,
+    CURRENT_APPROVAL_KINDS,
+    EVENT_FIELDS,
+    LIFECYCLE_RECORD_TYPES,
+    LIFECYCLE_STATES,
+    LIFECYCLE_STREAMS,
+    STATE_FIELDS,
+    TARGET_TYPES,
+    TERMINAL_STATES,
+    InvalidLifecycleTransition,
+    LifecycleError,
+    LifecycleProjectionPending,
+    LifecycleService,
+    lifecycle_state_record_id,
+    replay_lifecycle_events,
+    validate_lifecycle_event_payload,
+    validate_lifecycle_state_payload,
+)
+
+
+def create_knowledge_store(
+    consumer_root: Path | str,
+    *,
+    storage_root: Path | str,
+    protected_paths: Iterable[Path | str] = (),
+    write_enabled: bool = False,
+) -> RecordStore:
+    """7C 지식·수명주기용 고정 allowlist를 가진 내부 store를 구성한다."""
+
+    return RecordStore(
+        consumer_root,
+        storage_root=storage_root,
+        protected_paths=protected_paths,
+        approved_record_types=KNOWLEDGE_RECORD_TYPES | LIFECYCLE_RECORD_TYPES,
+        approved_streams=LIFECYCLE_STREAMS,
+        write_enabled=write_enabled,
+    )
 
 __all__ = [
     "DataPathError",
@@ -50,4 +112,39 @@ __all__ = [
     "WriteNotEnabledError",
     "decode_stream",
     "stream_content_hash",
+    "DECISION_APPROVAL_KINDS",
+    "DECISION_FIELDS",
+    "KNOWLEDGE_CLASSES",
+    "KNOWLEDGE_FIELDS",
+    "KNOWLEDGE_RECORD_TYPES",
+    "KNOWLEDGE_VERIFICATION_STATUSES",
+    "SOURCE_EVIDENCE_ROLES",
+    "SOURCE_FIELDS",
+    "SOURCE_KINDS",
+    "SOURCE_VERIFICATION_STATUSES",
+    "KnowledgeRecordError",
+    "KnowledgeService",
+    "SourceIntegrityError",
+    "validate_decision_payload",
+    "validate_knowledge_payload",
+    "validate_source_payload",
+    "ACTIONS",
+    "APPROVAL_KINDS",
+    "CURRENT_APPROVAL_KINDS",
+    "EVENT_FIELDS",
+    "LIFECYCLE_RECORD_TYPES",
+    "LIFECYCLE_STATES",
+    "LIFECYCLE_STREAMS",
+    "STATE_FIELDS",
+    "TARGET_TYPES",
+    "TERMINAL_STATES",
+    "InvalidLifecycleTransition",
+    "LifecycleError",
+    "LifecycleProjectionPending",
+    "LifecycleService",
+    "lifecycle_state_record_id",
+    "replay_lifecycle_events",
+    "validate_lifecycle_event_payload",
+    "validate_lifecycle_state_payload",
+    "create_knowledge_store",
 ]

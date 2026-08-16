@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-core://experimental/shared_data/schemas/decision-payload-v1.schema.json",
+  "title": "Decision Payload v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["problem", "requirements", "options", "selected_option", "rationale", "impacts", "source_ids", "requires_user_approval", "approval_kind", "approved_by", "decided_at"],
+  "properties": {
+    "problem": {"type": "string", "minLength": 1},
+    "requirements": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "options": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "impact"],
+        "properties": {
+          "label": {"type": "string", "minLength": 1},
+          "impact": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "selected_option": {"type": "string", "minLength": 1},
+    "rationale": {"type": "string", "minLength": 1},
+    "impacts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "source_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "format": "uuid"}},
+    "requires_user_approval": {"type": "boolean"},
+    "approval_kind": {"enum": ["user", "standing_policy", "agent_in_scope"]},
+    "approved_by": {"type": "string", "minLength": 1},
+    "decided_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"}
+  }
+}
