@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 import hashlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -186,19 +187,50 @@ def _tests(core_root: Path) -> StepResult:
     return StepResult("regression-tests", "fail", (completed.stderr or "")[-500:])
 
 
-def _optional() -> StepResult:
-    from .registry import REGISTRY
-
-    if not REGISTRY.optional:
+def _optional(core_root: Path) -> StepResult:
+    try:
+        capabilities = declared_compatibility(core_root).get("optional_capabilities", {})
+    except CheckError as exc:
+        return StepResult("optional-features", "fail", str(exc))
+    if not capabilities:
         return StepResult(
             "optional-features",
             "not_applicable",
             "선택 기능이 등록되지 않았다. 필수 기능 실패가 아니다",
             required=False,
         )
-    return StepResult(
-        "optional-features", "pass", f"{len(REGISTRY.optional)}종 등록", required=False
-    )
+    environment = os.environ.copy()
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    environment["PYTHONUTF8"] = "1"
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str(core_root), str(core_root / "src"), environment.get("PYTHONPATH", "")]
+    ).rstrip(os.pathsep)
+    for capability_id, declaration in sorted(capabilities.items()):
+        completed = subprocess.run(
+            [sys.executable, "-B", "-m", declaration["entry_module"], "info"],
+            cwd=core_root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            payload = {}
+        if (
+            completed.returncode != 0
+            or payload.get("ok") is not True
+            or payload.get("capability") != capability_id
+            or payload.get("capability_version") != declaration["version"]
+            or payload.get("commands") != declaration["commands"]
+            or payload.get("request_schema") != declaration["request_schema"]
+            or payload.get("result_schema") != declaration["result_schema"]
+        ):
+            detail = completed.stderr.strip() or completed.stdout.strip() or "info 결과가 선언과 다르다"
+            return StepResult("optional-features", "fail", f"{capability_id}: {detail[-500:]}")
+    return StepResult("optional-features", "pass", f"공개 선택 기능 {len(capabilities)}종 검증")
 
 
 def run(core_root: Path, consumer_root: Path | None = None) -> GateResult:
@@ -223,7 +255,7 @@ def run(core_root: Path, consumer_root: Path | None = None) -> GateResult:
 
     result.steps.append(_integrity(core_root))
     result.steps.append(_tests(core_root))
-    result.steps.append(_optional())
+    result.steps.append(_optional(core_root))
 
     if consumer_root is not None:
         try:

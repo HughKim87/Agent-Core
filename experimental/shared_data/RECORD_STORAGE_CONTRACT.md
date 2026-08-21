@@ -3,18 +3,18 @@
 - 목적: 도메인 의미가 없는 JSON record 외피와 소비 저장소 소유의 원자적 파일 저장 불변식을 정의한다.
 - 읽는 시점: L7 공통 record·event 저장을 구현·검증하거나 후속 지식·수명주기 기능을 연결할 때.
 - 책임: `record.py`가 외피·경로 원시, `store.py`가 저장·동시성, `schemas/common-record-v1.schema.json`이 외피 구조를 소유한다.
-- 상태: L7 내부 구현 완료. 공개 호환성에는 아직 등록되지 않은 `implemented_private` 계약.
+- 상태: L7 구현 완료. `shared_data` v1 공개 CLI·schema가 제공하는 `available` 계약.
 - 관련 권위: [Kernel 범위](../../docs/KERNEL_SCOPE.md), [계층과 공개 경계](../../docs/ARCHITECTURE.md), [호환성](../../docs/COMPATIBILITY.md).
 
 ---
 
 ## 1. 공개 상태와 소유권
 
-- 이 기능은 `optional_capabilities`에 등록되지 않았으므로 외부 소비자의 공개 API가 아니다.
+- 외부 소비자는 `optional_capabilities.shared_data` v1의 `info`·`invoke` 명령과 선언된 schema에만 의존한다. 내부 Python 모듈은 공개 API가 아니다.
 - 실제 record·event·lock·임시 파일은 명시적으로 전달된 소비 root와 storage root가 소유한다.
 - Core 저장소 안에 Runtime 데이터를 만들지 않는다.
 - 저장 root와 보호 경로는 호출자가 소비 계약에서 주입하며 구현이 프로젝트 경로명을 하드코딩하지 않는다.
-- 쓰기는 기본 비활성이고 `write_enabled=True`를 명시한 내부 호출만 가능하다. 공개 쓰기 승인은 후속 CLI 계약이 별도로 소유한다.
+- 쓰기는 기본 비활성이다. 공개 CLI도 `--write`를 명시한 `invoke`에서만 쓰기를 열며 소비 정책의 행동 승인 자체를 대신하지 않는다.
 
 ## 2. Common Record v1
 
@@ -77,5 +77,5 @@
 - 회귀는 격리된 임시 소비 root만 사용하고 실제 소비 데이터에 접근하지 않는다.
 - 정상·손상·경쟁·replace 실패 경로에서 원본 보존과 임시 파일 정리를 확인한다.
 - schema field와 Runtime field 집합을 대조한다.
-- Core 필수 패키지가 L7을 import하지 않고 `optional_capabilities`가 비어 있는지 확인한다.
-- 지식 유형·수명주기는 [별도 L7 계약](KNOWLEDGE_LIFECYCLE_CONTRACT.md)이 이 저장 기반 위에서 소유한다. Evidence Context·작업 상태 Runtime·공개 CLI는 후속 단계다.
+- Core 필수 패키지가 L7을 import하지 않고, 선언된 공개 entry module의 `info` 결과가 호환성 선언과 같은지 확인한다.
+- 지식 유형·수명주기는 [별도 L7 계약](KNOWLEDGE_LIFECYCLE_CONTRACT.md)이 이 저장 기반 위에서 소유한다. Evidence Context와 작업 상태 Runtime도 각 계약이 의미를 소유하며 `shared_data` v1 CLI가 전송 경계만 통합한다.

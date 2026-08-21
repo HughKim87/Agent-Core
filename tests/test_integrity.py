@@ -919,8 +919,13 @@ class CompatibilityTest(unittest.TestCase):
         ):
             self.assertIn(key, self.declared)
 
-    def test_no_optional_capability_is_public_before_implementation(self) -> None:
-        self.assertEqual(self.declared["optional_capabilities"], {})
+    def test_declared_optional_capability_has_a_complete_public_boundary(self) -> None:
+        capability = self.declared["optional_capabilities"]["shared_data"]
+        self.assertEqual(capability["version"], 1)
+        self.assertEqual(capability["commands"], ["info", "invoke"])
+        for field in ("request_schema", "result_schema"):
+            self.assertTrue((ROOT / capability[field]).is_file())
+        self.assertTrue(capability["schemas"])
 
     def test_declaration_is_the_only_source(self) -> None:
         from core_check.declarations import COMPAT_BLOCK

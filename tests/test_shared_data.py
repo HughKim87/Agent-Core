@@ -457,8 +457,12 @@ class IsolationTests(unittest.TestCase):
                 elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                     self.assertIn(node.module.split(".")[0], standard, path.name)
 
-    def test_private_implementation_is_not_published_as_optional_capability(self) -> None:
-        self.assertEqual(declared_compatibility(ROOT)["optional_capabilities"], {})
+    def test_shared_data_is_published_only_through_the_versioned_cli_boundary(self) -> None:
+        capability = declared_compatibility(ROOT)["optional_capabilities"]["shared_data"]
+        self.assertEqual(capability["version"], 1)
+        self.assertEqual(capability["entry_module"], "experimental.shared_data")
+        self.assertEqual(capability["commands"], ["info", "invoke"])
+        self.assertNotIn("experimental.shared_data.context", json.dumps(capability))
 
 
 if __name__ == "__main__":

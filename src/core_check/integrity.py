@@ -396,5 +396,10 @@ def run_all(root: Path) -> Report:
         report.ran.append(name)
         report.findings.extend(fn(root))
     if not REGISTRY.optional:
-        report.skipped["optional-checks"] = "선택 기능이 등록되지 않았다. 실패가 아니다."
+        try:
+            declared_optional = declared_compatibility(root).get("optional_capabilities", {})
+        except CheckError:
+            declared_optional = {}
+        if not declared_optional:
+            report.skipped["optional-checks"] = "선택 기능이 등록되지 않았다. 실패가 아니다."
     return report

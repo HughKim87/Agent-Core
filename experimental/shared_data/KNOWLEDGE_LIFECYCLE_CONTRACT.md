@@ -3,14 +3,14 @@
 - 목적: 소비 저장소가 소유하는 출처·단일 지식 주장·결정을 불변 record로 보존하고 현재 채택·검토·대체 상태를 승인 근거가 있는 event로 추적한다.
 - 읽는 시점: L7 `source`·`knowledge`·`decision` 또는 lifecycle event·snapshot을 구현·검증할 때.
 - 책임: `knowledge.py`가 지식 의미·source 참조 무결성, `lifecycle.py`가 전이·승인·projection, 이 디렉터리의 payload schema가 저장 구조를 소유한다.
-- 상태: L7 내부 구현 완료. 공개 호환성에 등록되지 않은 `implemented_private` 계약.
+- 상태: L7 구현 완료. `shared_data` v1 공개 CLI·schema가 제공하는 `available` 계약.
 - 관련 권위: [공통 Record·저장 기반](RECORD_STORAGE_CONTRACT.md), [Kernel 범위](../../docs/KERNEL_SCOPE.md), [계층과 공개 경계](../../docs/ARCHITECTURE.md).
 
 ---
 
 ## 1. 격리와 저장 소유권
 
-- 이 기능은 `optional_capabilities`에 등록되지 않아 외부 소비자가 의존할 수 있는 공개 API가 아니다.
+- 외부 소비자는 `optional_capabilities.shared_data` v1의 `info`·`invoke` 명령과 선언된 schema에만 의존한다. 내부 Python 모듈은 공개 API가 아니다.
 - 호출자는 `RecordStore`의 소비 root·storage root·보호 경로·쓰기 활성화를 명시한다. Core 저장소에는 Runtime 데이터를 만들지 않는다.
 - `KnowledgeService`와 `LifecycleService`는 호출자가 구성한 같은 store를 사용한다. `create_knowledge_store`는 이 계약의 고정 type·stream allowlist만 편의상 구성한다.
 - 실제 회귀는 격리된 임시 소비 root에서만 수행한다. 보호 경로의 존재 확인·열거·읽기는 하지 않는다.
@@ -77,5 +77,5 @@ Schema는 payload의 저장 구조를, Python 검증기는 canonical UUIDv4·실
 ## 6. 제외와 후속
 
 - 실패 Markdown projection과 실패 전용 lifecycle은 흡수하지 않는다. 실패 경험은 활성 규칙·회귀와 원래 Git lineage가 소유한다.
-- Evidence Context package는 후속 [Evidence Context 계약](EVIDENCE_CONTEXT_CONTRACT.md)이 소유한다. 작업 상태 Runtime, 공개 CLI·호환 adapter, Maintainer의 기존 `file_data` 의존 전환은 이 계약에 포함하지 않는다.
+- Evidence Context package는 [Evidence Context 계약](EVIDENCE_CONTEXT_CONTRACT.md)이, 작업 상태 Runtime은 [작업 상태 계약](WORK_STATE_CONTRACT.md)이 소유한다. Maintainer의 기존 `file_data` 의존 전환은 이 계약에 포함하지 않는다.
 - `optional_capabilities` 등록과 실제 소비 공개는 후속 후보 snapshot의 별도 승인·호환성·통합 gate가 필요하다.

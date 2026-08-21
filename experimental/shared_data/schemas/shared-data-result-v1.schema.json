@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "shared-data-result-v1.schema.json",
+  "title": "Agent Core Shared Data Result v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["ok", "capability", "capability_version"],
+  "properties": {
+    "ok": {"type": "boolean"},
+    "capability": {"const": "shared_data"},
+    "capability_version": {"const": 1},
+    "operation": {"type": ["string", "null"]},
+    "result": {},
+    "error": {"type": "string"},
+    "kind": {"type": "string"},
+    "recoverable": {"type": "boolean"},
+    "unexpected": {"type": "boolean"}
+  }
+}

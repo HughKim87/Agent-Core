@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "shared-data-request-v1.schema.json",
+  "title": "Agent Core Shared Data Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operation", "arguments"],
+  "properties": {
+    "operation": {
+      "enum": [
+        "initialize",
+        "source.create", "source.get", "source.list", "source.verify",
+        "knowledge.create", "knowledge.get", "knowledge.list",
+        "decision.create", "decision.get", "decision.list",
+        "lifecycle.register", "lifecycle.transition", "lifecycle.get", "lifecycle.list",
+        "lifecycle.current", "lifecycle.history", "lifecycle.rebuild",
+        "lifecycle.register_existing", "lifecycle.audit",
+        "context.build", "context.validate",
+        "work.create", "work.get", "work.list", "work.transition", "work.rebuild",
+        "execution.fingerprint", "request.compare"
+      ]
+    },
+    "arguments": {"type": "object"}
+  }
+}

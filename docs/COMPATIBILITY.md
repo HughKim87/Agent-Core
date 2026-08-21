@@ -3,7 +3,7 @@
 - 목적: 지원 런타임, 공개 계약 버전, 호환·비호환 변경과 이전 절차를 단일 선언으로 소유한다.
 - 읽는 시점: Core를 연결·갱신하거나 공개 인터페이스를 바꿀 때.
 - 책임: Core Maintainer가 선언과 구현을 일치시키고 사용자가 비호환 변경을 승인한다.
-- 상태: 활성 정본. Core 0.2.0 / contract 2.
+- 상태: 활성 정본. Core 0.3.0 / contract 2.
 - 관련 권위: [Core 상시 정책](../PROJECT_RULES.md), [공개 경계](ARCHITECTURE.md).
 
 ---
@@ -13,12 +13,32 @@
 <!-- core-compatibility:v1 -->
 ```json
 {
-  "core_version": "0.2.0",
+  "core_version": "0.3.0",
   "contract_version": 2,
   "python_min": "3.10",
   "required_dependencies": [],
   "optional_dependencies": [],
-  "optional_capabilities": {}
+  "optional_capabilities": {
+    "shared_data": {
+      "version": 1,
+      "entry_module": "experimental.shared_data",
+      "commands": ["info", "invoke"],
+      "request_schema": "experimental/shared_data/schemas/shared-data-request-v1.schema.json",
+      "result_schema": "experimental/shared_data/schemas/shared-data-result-v1.schema.json",
+      "schemas": [
+        "experimental/shared_data/schemas/common-record-v1.schema.json",
+        "experimental/shared_data/schemas/source-payload-v1.schema.json",
+        "experimental/shared_data/schemas/knowledge-payload-v1.schema.json",
+        "experimental/shared_data/schemas/decision-payload-v1.schema.json",
+        "experimental/shared_data/schemas/lifecycle-event-payload-v1.schema.json",
+        "experimental/shared_data/schemas/lifecycle-state-payload-v1.schema.json",
+        "experimental/shared_data/schemas/context-package-v1.schema.json",
+        "experimental/shared_data/schemas/work-request-payload-v1.schema.json",
+        "experimental/shared_data/schemas/work-event-payload-v1.schema.json",
+        "experimental/shared_data/schemas/work-state-payload-v1.schema.json"
+      ]
+    }
+  }
 }
 ```
 <!-- /core-compatibility -->
@@ -52,7 +72,7 @@
 - 실제 Runtime 데이터와 결과는 소비 저장소가 소유하며 Core 저장소에 쓰지 않는다.
 - 선택 기능이 없으면 필수 gate는 `not_applicable`로 처리하고 계속 성립해야 한다.
 
-현재 `optional_capabilities`가 비어 있으므로 contract 2의 공개 명령은 `verify`, `context`, `gate`뿐이다. 승인된 공통 데이터 흡수 범위는 구현·회귀·호환성 등록이 완료되는 기능부터 별도 후보 snapshot에서 공개한다.
+`shared_data` v1은 `python -B -m experimental.shared_data info|invoke` 실행 entry만 공개한다. `invoke`는 JSON request v1을 stdin으로 하나 받아 JSON result v1을 stdout으로 하나 반환한다. 세부 operation과 데이터 구조는 선언된 schema가 소유한다. `experimental.shared_data` 아래 구현 모듈의 직접 import는 공개 계약이 아니다.
 
 ## 4. 호환·비호환
 

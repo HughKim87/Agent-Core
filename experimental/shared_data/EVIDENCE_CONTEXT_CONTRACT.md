@@ -3,7 +3,7 @@
 - 목적: 소비자가 명시한 Markdown 문서·`data_key`와 현재 L7 지식을 문자 예산 안에서 하나의 결정론적 근거 package로 결합한다.
 - 읽는 시점: L7 Evidence Context를 구현·검증하거나 공개 기능 승격을 판단할 때.
 - 책임: `context.py`가 경로·선택·예산·fingerprint를, `schemas/context-package-v1.schema.json`이 출력 구조를 소유한다.
-- 상태: L7 내부 구현 완료. 공개 호환성에 등록되지 않은 `implemented_private` 계약.
+- 상태: L7 구현 완료. `shared_data` v1 공개 CLI·schema가 제공하는 `available` 계약.
 - 관련 권위: [지식·Lifecycle 계약](KNOWLEDGE_LIFECYCLE_CONTRACT.md), [보호 데이터](../../rules/protected-data.md), [계층과 공개 경계](../../docs/ARCHITECTURE.md).
 
 ---
@@ -33,6 +33,5 @@
 ## 4. 제외
 
 - 실패 Markdown과 과거 failure record의 자동 검색은 포함하지 않는다. 예방 지식은 활성 규칙·회귀가 소유한다.
-- work-state 의미와 실행, 공개 CLI, 네트워크 전송, 모델 호출은 포함하지 않는다.
-- L7 내부 Python 경로는 아직 공개 API가 아니다. 공개 전환은 호환성 선언과 versioned CLI·schema를 한 snapshot에서 추가하는 후속 단계가 소유한다.
-
+- work-state 의미와 실행, 네트워크 전송, 모델 호출은 포함하지 않는다. `shared_data` CLI는 이 계약의 입력·출력을 전달할 뿐 새 의미를 소유하지 않는다.
+- L7 내부 Python 경로는 공개 API가 아니다. 외부 소비자는 `shared_data` v1의 `context.build`·`context.validate` operation과 선언된 schema만 사용한다.

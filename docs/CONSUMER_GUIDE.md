@@ -131,6 +131,34 @@ python -B -m core_check --core-root <CORE_PATH> --consumer-root . gate
 
 `not_run`이 있는 결과는 성공이 아니다.
 
+## 6A. 선택 기능 `shared_data` v1
+
+선택 데이터 Runtime을 사용할 때만 Core root와 `src`를 함께 Python module 검색 경로에 둔다.
+
+```powershell
+$coreRoot = (Resolve-Path -LiteralPath '<CORE_PATH>').Path
+$env:PYTHONPATH = ($coreRoot, (Join-Path $coreRoot 'src') -join ';')
+python -B -m experimental.shared_data info
+```
+
+`info`는 기능 버전, 공개 명령, operation과 request/result schema 경로를 반환한다. 실제 호출은 소비 root·Runtime storage root·보호 경계를 명시하고 request v1 JSON 하나를 stdin으로 보낸다.
+
+```powershell
+$request = '{"operation":"source.list","arguments":{}}'
+$request | python -B -m experimental.shared_data `
+  --consumer-root . `
+  --storage-root runtime/agent-core `
+  --protected-path private-material `
+  invoke
+```
+
+- 읽기 호출은 `--write` 없이 실행한다.
+- `initialize`, `*.create`, lifecycle/work 전이·재구축처럼 데이터를 바꾸는 호출은 현재 행동이 소비 정책에서 승인된 경우에만 `--write`를 추가한다.
+- `--write`는 기술적 쓰기 잠금을 열 뿐 사용자 승인이나 원격 권한을 만들지 않는다.
+- storage root와 보호 경로는 소비 root 상대경로다. 보호 경로의 존재를 확인하거나 내용을 전달하지 않는다.
+- request는 BOM·NUL 없는 strict UTF-8 JSON이며 최대 1 MiB다. stdout은 result v1 JSON 하나이고 종료 코드는 성공 `0`, 계약·Runtime 거부 `1`, 실행 불가 `2`다.
+- 공개 operation과 payload 구조는 [호환성 선언](COMPATIBILITY.md)이 가리키는 schema가 정본이다. `experimental.shared_data.*` 내부 Python import에는 의존하지 않는다.
+
 ## 7. Core 버전 갱신
 
 1. 소비 저장소 작업 트리를 깨끗하게 만든다.

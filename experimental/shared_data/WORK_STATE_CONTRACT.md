@@ -3,7 +3,7 @@
 - 목적: 사용자 요청, 승인·제외 범위, 작업 사건과 개별 작업의 현재 상태를 세션 기억과 독립적으로 재구성한다.
 - 읽는 시점: L7 work request·event·snapshot 또는 controlled 단계 설계 포인터를 구현·검증할 때.
 - 책임: `work_state.py`가 event 정본·전이·projection, `execution.py`가 실행 등급·설계 fingerprint, work schema가 저장 구조를 소유한다.
-- 상태: L7 내부 구현 완료. 기본 비활성이며 공개 호환성에 등록되지 않은 `implemented_private` 계약.
+- 상태: L7 구현 완료. 기본 비활성이며 `shared_data` v1 공개 CLI·schema가 제공하는 `available` 계약.
 - 관련 권위: [공통 Record·저장](RECORD_STORAGE_CONTRACT.md), [단계 작업 설계](../../rules/staged-work-design.md), [보호 데이터](../../rules/protected-data.md).
 
 ---
@@ -55,5 +55,4 @@ snapshot은 요청, 현재 상태, 중복 없는 완료 항목·관련 ID·근�
 
 - subprocess, 도메인 workflow, 모델·브라우저·네트워크 호출, 자동 승인·자동 재시도는 구현하지 않는다.
 - handoff 문서를 자동 편집하거나 완료 work를 시작 context에 자동 삽입하지 않는다.
-- 내부 Python 경로는 아직 공개 API가 아니다. versioned CLI·schema·호환성 선언은 후속 공개 단계가 소유한다.
-
+- 내부 Python 경로는 공개 API가 아니다. 외부 소비자는 `shared_data` v1의 `work.*`·`execution.fingerprint`·`request.compare` operation과 선언된 schema만 사용한다.
