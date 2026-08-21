@@ -69,6 +69,15 @@ from .lifecycle import (
     validate_lifecycle_event_payload,
     validate_lifecycle_state_payload,
 )
+from .context import (
+    DEFAULT_MAX_CHARACTERS,
+    PACKAGE_FIELDS,
+    PACKAGE_VERSION,
+    EvidenceContextError,
+    EvidenceContextLimitError,
+    EvidenceContextService,
+    validate_context_package,
+)
 
 
 def create_knowledge_store(
@@ -146,5 +155,12 @@ __all__ = [
     "replay_lifecycle_events",
     "validate_lifecycle_event_payload",
     "validate_lifecycle_state_payload",
+    "DEFAULT_MAX_CHARACTERS",
+    "PACKAGE_FIELDS",
+    "PACKAGE_VERSION",
+    "EvidenceContextError",
+    "EvidenceContextLimitError",
+    "EvidenceContextService",
+    "validate_context_package",
     "create_knowledge_store",
 ]

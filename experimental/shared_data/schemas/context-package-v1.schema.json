@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "context-package-v1.schema.json",
+  "title": "Evidence Context Package v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["package_version", "purpose", "settings", "selected", "excluded", "metrics", "fingerprint"],
+  "properties": {
+    "package_version": {"const": 1},
+    "purpose": {"type": "string", "minLength": 1},
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_characters", "search", "filters", "candidate_documents"],
+      "properties": {
+        "max_characters": {"type": "integer", "minimum": 1},
+        "search": {"type": ["string", "null"]},
+        "filters": {"type": "object", "additionalProperties": {"type": "string"}},
+        "candidate_documents": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "selected": {"type": "array", "items": {"type": "object"}},
+    "excluded": {"type": "array", "items": {"type": "object"}},
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selected_items", "selected_characters", "excluded_items"],
+      "properties": {
+        "selected_items": {"type": "integer", "minimum": 0},
+        "selected_characters": {"type": "integer", "minimum": 0},
+        "excluded_items": {"type": "integer", "minimum": 0}
+      }
+    },
+    "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}

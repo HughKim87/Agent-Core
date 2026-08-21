@@ -46,13 +46,13 @@
 
 ## 4. 현재 기능과 승인된 흡수 후보
 
-현재 `available`로 공개된 실험 Runtime은 없다. [공통 record·원자적 저장 기반](../experimental/shared_data/RECORD_STORAGE_CONTRACT.md)과 그 위의 [지식 유형·승인 기반 lifecycle](../experimental/shared_data/KNOWLEDGE_LIFECYCLE_CONTRACT.md)은 `experimental/shared_data/`에 `implemented_private`로 구현됐으며 공개 CLI가 없어 `optional_capabilities`에는 등록하지 않았다.
+현재 `available`로 공개된 실험 Runtime은 없다. [공통 record·원자적 저장 기반](../experimental/shared_data/RECORD_STORAGE_CONTRACT.md), 그 위의 [지식 유형·승인 기반 lifecycle](../experimental/shared_data/KNOWLEDGE_LIFECYCLE_CONTRACT.md), [Evidence Context package](../experimental/shared_data/EVIDENCE_CONTEXT_CONTRACT.md)는 `experimental/shared_data/`에 `implemented_private`로 구현됐으며 공개 CLI가 없어 `optional_capabilities`에는 등록하지 않았다.
 
 다음 도메인 중립 기능은 사용자의 명시적 승인에 따라 `approved_for_absorption` 상태다.
 
 - 공통 record·원자적 저장 — `implemented_private`
 - source·knowledge·decision·수명주기 — `implemented_private`
-- 문서·`data_key` 기반 evidence context package
+- 문서·`data_key` 기반 evidence context package — `implemented_private`
 - 작업 상태·실행 계약의 비활성 호환 Runtime
 
 승인 상태는 구현 완료를 뜻하지 않는다. 각 기능은 의존 순서대로 계약·schema·회귀 테스트와 함께 이전하고 [호환성 선언](COMPATIBILITY.md)의 `optional_capabilities`에 등록되기 전까지 소비자가 사용할 수 없다.

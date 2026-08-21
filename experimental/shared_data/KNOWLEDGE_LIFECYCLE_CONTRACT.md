@@ -77,5 +77,5 @@ Schema는 payload의 저장 구조를, Python 검증기는 canonical UUIDv4·실
 ## 6. 제외와 후속
 
 - 실패 Markdown projection과 실패 전용 lifecycle은 흡수하지 않는다. 실패 경험은 활성 규칙·회귀와 원래 Git lineage가 소유한다.
-- Evidence Context package, 작업 상태 Runtime, 공개 CLI·호환 adapter, Maintainer의 기존 `file_data` 의존 전환은 이 단계에 포함하지 않는다.
+- Evidence Context package는 후속 [Evidence Context 계약](EVIDENCE_CONTEXT_CONTRACT.md)이 소유한다. 작업 상태 Runtime, 공개 CLI·호환 adapter, Maintainer의 기존 `file_data` 의존 전환은 이 계약에 포함하지 않는다.
 - `optional_capabilities` 등록과 실제 소비 공개는 후속 후보 snapshot의 별도 승인·호환성·통합 gate가 필요하다.
