@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-request-payload-v1.schema.json",
+  "title": "Work Request Payload v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["desired_outcome", "authorized_actions", "excluded_scope", "input_refs", "protection_boundaries", "required_decisions", "verification_levels"],
+  "properties": {
+    "desired_outcome": {"type": "string", "minLength": 1},
+    "authorized_actions": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "excluded_scope": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "input_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "protection_boundaries": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "required_decisions": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "verification_levels": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tier", "phase_id", "design_ref", "design_fingerprint"],
+      "properties": {
+        "tier": {"enum": ["quick", "standard", "controlled"]},
+        "phase_id": {"type": ["string", "null"]},
+        "design_ref": {"type": ["string", "null"]},
+        "design_fingerprint": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    }
+  }
+}

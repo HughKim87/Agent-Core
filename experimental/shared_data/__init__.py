@@ -78,6 +78,38 @@ from .context import (
     EvidenceContextService,
     validate_context_package,
 )
+from .execution import (
+    DESIGN_HASH_PATTERN,
+    EXECUTION_FIELDS,
+    EXECUTION_TIERS,
+    DesignContractError,
+    DesignInvalidatedError,
+    DesignRequiredError,
+    compare_request_contract,
+    compute_design_fingerprint,
+    normalize_execution,
+    request_execution,
+    validate_execution_contract,
+)
+from .work_state import (
+    ALLOWED_TRANSITIONS,
+    EVENT_OUTCOMES,
+    EXPECTED_OUTCOME_BY_STATUS,
+    OPTIONAL_REQUEST_FIELDS,
+    REQUEST_FIELDS,
+    WORK_EVENT_FIELDS,
+    WORK_RECORD_TYPES,
+    WORK_STATE_FIELDS,
+    WORK_STATUSES,
+    WORK_STREAMS,
+    InvalidWorkTransition,
+    WorkProjectionPending,
+    WorkStateError,
+    WorkStateService,
+    replay_work_events,
+    validate_work_event_payload,
+    validate_work_request,
+)
 
 
 def create_knowledge_store(
@@ -95,6 +127,25 @@ def create_knowledge_store(
         protected_paths=protected_paths,
         approved_record_types=KNOWLEDGE_RECORD_TYPES | LIFECYCLE_RECORD_TYPES,
         approved_streams=LIFECYCLE_STREAMS,
+        write_enabled=write_enabled,
+    )
+
+
+def create_shared_data_store(
+    consumer_root: Path | str,
+    *,
+    storage_root: Path | str,
+    protected_paths: Iterable[Path | str] = (),
+    write_enabled: bool = False,
+) -> RecordStore:
+    """지식·lifecycle·work 호환 Runtime의 전체 고정 allowlist store를 구성한다."""
+
+    return RecordStore(
+        consumer_root,
+        storage_root=storage_root,
+        protected_paths=protected_paths,
+        approved_record_types=KNOWLEDGE_RECORD_TYPES | LIFECYCLE_RECORD_TYPES | WORK_RECORD_TYPES,
+        approved_streams=LIFECYCLE_STREAMS | WORK_STREAMS,
         write_enabled=write_enabled,
     )
 
@@ -162,5 +213,34 @@ __all__ = [
     "EvidenceContextLimitError",
     "EvidenceContextService",
     "validate_context_package",
+    "DESIGN_HASH_PATTERN",
+    "EXECUTION_FIELDS",
+    "EXECUTION_TIERS",
+    "DesignContractError",
+    "DesignInvalidatedError",
+    "DesignRequiredError",
+    "compare_request_contract",
+    "compute_design_fingerprint",
+    "normalize_execution",
+    "request_execution",
+    "validate_execution_contract",
+    "ALLOWED_TRANSITIONS",
+    "EVENT_OUTCOMES",
+    "EXPECTED_OUTCOME_BY_STATUS",
+    "OPTIONAL_REQUEST_FIELDS",
+    "REQUEST_FIELDS",
+    "WORK_EVENT_FIELDS",
+    "WORK_RECORD_TYPES",
+    "WORK_STATE_FIELDS",
+    "WORK_STATUSES",
+    "WORK_STREAMS",
+    "InvalidWorkTransition",
+    "WorkProjectionPending",
+    "WorkStateError",
+    "WorkStateService",
+    "replay_work_events",
+    "validate_work_event_payload",
+    "validate_work_request",
     "create_knowledge_store",
+    "create_shared_data_store",
 ]

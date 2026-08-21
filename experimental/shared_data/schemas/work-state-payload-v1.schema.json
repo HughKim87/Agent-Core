@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-state-payload-v1.schema.json",
+  "title": "Work State Payload v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["work_id", "request", "status", "completed_items", "blockers", "next_action", "related_record_ids", "evidence_refs", "last_event_id"],
+  "properties": {
+    "work_id": {"type": "string", "format": "uuid"},
+    "request": {"$ref": "work-request-payload-v1.schema.json"},
+    "status": {"enum": ["requested", "in_progress", "completed", "failed", "blocked"]},
+    "completed_items": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "blockers": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "next_action": {"type": ["string", "null"]},
+    "related_record_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "last_event_id": {"type": "string", "format": "uuid"}
+  }
+}

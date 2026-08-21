@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-event-payload-v1.schema.json",
+  "title": "Work Event Payload v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["work_id", "actor", "action", "outcome", "from_status", "to_status", "request", "completed_items", "blockers", "next_action", "related_record_ids", "evidence_refs"],
+  "properties": {
+    "work_id": {"type": "string", "format": "uuid"},
+    "actor": {"type": "string", "minLength": 1},
+    "action": {"type": "string", "minLength": 1},
+    "outcome": {"enum": ["success", "failure", "blocked", "rejected"]},
+    "from_status": {"type": ["string", "null"], "enum": ["requested", "in_progress", "completed", "failed", "blocked", null]},
+    "to_status": {"type": ["string", "null"], "enum": ["requested", "in_progress", "completed", "failed", "blocked", null]},
+    "request": {"oneOf": [{"$ref": "work-request-payload-v1.schema.json"}, {"type": "null"}]},
+    "completed_items": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "blockers": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "next_action": {"type": ["string", "null"]},
+    "related_record_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+  }
+}
