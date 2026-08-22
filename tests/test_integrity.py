@@ -516,6 +516,17 @@ class ContextTest(unittest.TestCase):
         second = self.context.build(self.core, self.consumer, ["consumer:rules/project.md"])
         self.assertEqual(first.digest, second.digest)
 
+    def test_duplicate_selection_is_idempotent(self) -> None:
+        single = self.context.build(self.core, self.consumer, ["consumer:rules/project.md"])
+        duplicate = self.context.build(
+            self.core,
+            self.consumer,
+            ["consumer:rules/project.md", "consumer:rules/project.md"],
+        )
+        self.assertEqual(single.optional, duplicate.optional)
+        self.assertEqual(single.chars, duplicate.chars)
+        self.assertEqual(single.digest, duplicate.digest)
+
     def test_different_selection_gives_different_digest(self) -> None:
         first = self.context.build(self.core, self.consumer)
         second = self.context.build(self.core, self.consumer, ["core:rules/sample.md"])
@@ -563,6 +574,29 @@ class ConsumerContractTest(unittest.TestCase):
             encoding="utf-8",
         )
         self.assertFalse(run_consumer(self.core, self.consumer).ok)
+
+    def test_invalid_contract_reports_only_executed_check(self) -> None:
+        policy = self.consumer / "PROJECT_RULES.md"
+        policy.write_text(
+            policy.read_text(encoding="utf-8").replace(
+                '"consumer_role": "host"', '"consumer_role": "invalid"'
+            ),
+            encoding="utf-8",
+        )
+        report = run_consumer(self.core, self.consumer)
+        self.assertEqual(report.ran, ["consumer-contract"])
+        self.assertEqual(
+            set(report.skipped),
+            {
+                "consumer-entry",
+                "consumer-state",
+                "consumer-rule-routes",
+                "consumer-document-headers",
+                "consumer-markdown-links",
+                "consumer-submodule",
+            },
+        )
+        self.assertTrue(all("실행하지 않았다" in reason for reason in report.skipped.values()))
 
     def test_entry_order_mismatch_is_detected(self) -> None:
         (self.consumer / "AGENTS.md").write_text(
@@ -810,8 +844,7 @@ class IntegrationGateTest(unittest.TestCase):
     """통합 게이트의 단계 결과, 상태 구분, 부작용 없음.
 
     실제 저장소 전체를 대상으로 게이트를 돌리면 게이트가 회귀 테스트를 하위
-    프로세스로 실행하므로 이 테스트 자체가 다시 실행된다. 재진입 방지가 있어도
-    시간이 배로 든다. 따라서 단위 테스트는 합성 트리만 사용하고 실제 저장소
+    프로세스로 실행한다. 따라서 단위 테스트는 합성 트리만 사용하고 실제 저장소
     게이트는 CLI 종단 호출로 별도 확인한다.
     """
 
@@ -867,18 +900,31 @@ class IntegrationGateTest(unittest.TestCase):
             self.assertEqual(statuses["core-integrity"], "not_run")
             self.assertEqual(statuses["regression-tests"], "not_run")
 
-    def test_reentry_is_blocked(self) -> None:
+    def test_external_environment_cannot_skip_regression_failure(self) -> None:
         import os
 
-        (self.root / "tests").mkdir()
-        os.environ[self.gate.REENTRY_FLAG] = "1"
+        tests = self.root / "tests"
+        tests.mkdir()
+        (tests / "test_failure.py").write_text(
+            "import unittest\n\n"
+            "class FailureTest(unittest.TestCase):\n"
+            "    def test_failure(self):\n"
+            "        self.fail('injected regression')\n",
+            encoding="utf-8",
+        )
+        flag = "CORE_CHECK_IN_GATE"
+        previous = os.environ.get(flag)
+        os.environ[flag] = "1"
         try:
             result = self.gate.run(self.root)
         finally:
-            os.environ.pop(self.gate.REENTRY_FLAG, None)
+            if previous is None:
+                os.environ.pop(flag, None)
+            else:
+                os.environ[flag] = previous
         step = [s for s in result.steps if s.name == "regression-tests"][0]
-        self.assertEqual(step.status, "not_applicable")
-        self.assertIn("재진입", step.detail)
+        self.assertEqual(step.status, "fail")
+        self.assertFalse(result.ok)
 
     def test_gate_result_is_reproducible(self) -> None:
         first = self.gate.run(self.root).as_dict()

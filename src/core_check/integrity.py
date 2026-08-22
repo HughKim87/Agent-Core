@@ -39,6 +39,15 @@ DYNAMIC_NUMBERS = re.compile(
 )
 VAGUE_ACTIONS = ("계속 진행한다", "검토한다", "확인한다")
 SKIP_DIRS = {".git", "tmp", "__pycache__", ".obsidian"}
+CONSUMER_CHECKS = (
+    "consumer-contract",
+    "consumer-entry",
+    "consumer-state",
+    "consumer-rule-routes",
+    "consumer-document-headers",
+    "consumer-markdown-links",
+    "consumer-submodule",
+)
 
 
 def _walk(root: Path, suffix: str) -> Iterator[Path]:
@@ -300,14 +309,25 @@ def _consumer_contract_files(core_root: Path, consumer_root: Path, contract: dic
     return sorted(path for path in files if path.is_file())
 
 
-def consumer_findings(core_root: Path, consumer_root: Path) -> Iterable[Finding]:
+def consumer_findings(
+    core_root: Path, consumer_root: Path, *, report: Report | None = None
+) -> Iterable[Finding]:
     core_root = core_root.resolve()
     consumer_root = consumer_root.resolve()
+
+    def started(name: str) -> None:
+        if report is not None and name not in report.ran:
+            report.ran.append(name)
+
+    started("consumer-contract")
     try:
         contract = consumer_contract(core_root, consumer_root)
         compatibility = declared_compatibility(core_root)
     except CheckError as exc:
         yield Finding("consumer-contract", "-", str(exc))
+        if report is not None:
+            reason = "consumer-contract를 해석하지 못해 실행하지 않았다"
+            report.skipped.update({name: reason for name in CONSUMER_CHECKS[1:]})
         return
 
     if contract["contract_version"] != compatibility.get("contract_version"):
@@ -317,6 +337,7 @@ def consumer_findings(core_root: Path, consumer_root: Path) -> Iterable[Finding]
     core_policy = core_policy_path(core_root).relative_to(core_root).as_posix()
     policy = consumer_policy_path(core_root, consumer_root).relative_to(consumer_root).as_posix()
     expected = [f"{core_rel}/{core_policy}", policy, Path(contract["state"]).as_posix()]
+    started("consumer-entry")
     for agent, value in contract["entry_pointers"].items():
         pointer = resolve_inside(consumer_root, value)
         actual = _entry_targets(pointer.read_text(encoding="utf-8"))
@@ -326,8 +347,10 @@ def consumer_findings(core_root: Path, consumer_root: Path) -> Iterable[Finding]
             )
 
     state = resolve_inside(consumer_root, contract["state"])
+    started("consumer-state")
     yield from _state_findings(consumer_root, state)
 
+    started("consumer-rule-routes")
     try:
         routes = consumer_routed_rule_paths(core_root, consumer_root)
     except CheckError as exc:
@@ -345,6 +368,8 @@ def consumer_findings(core_root: Path, consumer_root: Path) -> Iterable[Finding]
             yield Finding("consumer-rule-routes", route, "고아 route")
 
     pointers = {Path(value).as_posix() for value in contract["entry_pointers"].values()}
+    started("consumer-document-headers")
+    started("consumer-markdown-links")
     for path in _consumer_contract_files(core_root, consumer_root, contract):
         rel = _rel(consumer_root, path)
         if path.suffix == ".md" and rel not in pointers:
@@ -361,6 +386,7 @@ def consumer_findings(core_root: Path, consumer_root: Path) -> Iterable[Finding]
                     yield Finding("consumer-markdown-links", rel, f"깨진 링크: {target}")
 
     gitmodules = consumer_root / ".gitmodules"
+    started("consumer-submodule")
     if not gitmodules.is_file():
         yield Finding("consumer-submodule", ".gitmodules", "Core submodule 선언 파일이 없다")
     else:
@@ -372,18 +398,7 @@ def consumer_findings(core_root: Path, consumer_root: Path) -> Iterable[Finding]
 
 def run_consumer(core_root: Path, consumer_root: Path) -> Report:
     report = Report()
-    report.ran.extend(
-        [
-            "consumer-contract",
-            "consumer-entry",
-            "consumer-state",
-            "consumer-rule-routes",
-            "consumer-document-headers",
-            "consumer-markdown-links",
-            "consumer-submodule",
-        ]
-    )
-    report.findings.extend(consumer_findings(core_root, consumer_root))
+    report.findings.extend(consumer_findings(core_root, consumer_root, report=report))
     return report
 
 

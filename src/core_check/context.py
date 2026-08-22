@@ -100,7 +100,7 @@ def build(
         ref = ContextRef("consumer", Path(path).as_posix())
         available[ref.identifier] = ref
 
-    for name in matched:
+    for name in dict.fromkeys(matched):
         if name not in available:
             raise CheckError(f"라우팅되지 않은 scoped 소유자를 요청했다: {name}")
         package.optional.append(available[name])

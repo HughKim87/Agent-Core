@@ -154,19 +154,11 @@ def _startup_context(core_root: Path, consumer_root: Path) -> StepResult:
     )
 
 
-REENTRY_FLAG = "CORE_CHECK_IN_GATE"
-
-
 def _tests(core_root: Path) -> StepResult:
     tests_dir = core_root / "tests"
     if not tests_dir.is_dir():
         return StepResult("regression-tests", "not_applicable", "tests 디렉터리가 없다")
-    if os.environ.get(REENTRY_FLAG) == "1":
-        return StepResult(
-            "regression-tests", "not_applicable", "게이트 안에서 호출되어 재진입을 막았다"
-        )
     env = os.environ.copy()
-    env[REENTRY_FLAG] = "1"
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONUTF8"] = "1"
     env["PYTHONPATH"] = os.pathsep.join(
