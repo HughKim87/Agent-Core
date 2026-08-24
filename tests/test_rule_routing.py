@@ -15,6 +15,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 RULES_DIR = ROOT / "rules"
 FIXTURE = ROOT / "tests" / "fixtures" / "rule-routing-intents-v1.json"
+FAILURE_FIXTURE = ROOT / "tests" / "fixtures" / "failure-stop-scenarios-v1.json"
 sys.path.insert(0, str(ROOT / "src"))
 
 from core_check.declarations import document_roles, routed_rule_paths  # noqa: E402
@@ -130,6 +131,67 @@ class FixtureStructureTest(unittest.TestCase):
     def test_fixture_is_not_a_router(self) -> None:
         self.assertNotIn("router_owner", self.data)
         self.assertEqual(self.data["router"], f"core:{document_roles(ROOT)['core_policy']}")
+
+
+class FailureStopScenarioTest(unittest.TestCase):
+    """현재 세션의 같은 작업 실패는 세 번째 실패에서 중단된다."""
+
+    def setUp(self) -> None:
+        self.data = json.loads(read(FAILURE_FIXTURE))
+
+    def test_fixture_contract_and_rule_fragments(self) -> None:
+        self.assertEqual(self.data["fixture_version"], 1)
+        self.assertEqual(self.data["failure_limit"], 3)
+        ids = [case["id"] for case in self.data["cases"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        for relative, fragments in self.data["rule_fragments"].items():
+            text = read(ROOT / relative)
+            for fragment in fragments:
+                self.assertIn(fragment, text, f"{relative}에 정책 문구가 없다: {fragment}")
+
+    def test_scenarios(self) -> None:
+        limit = self.data["failure_limit"]
+        for case in self.data["cases"]:
+            counts: dict[str, int] = {}
+            stopped: set[str] = set()
+            actual = []
+            for event in case["events"]:
+                kind = event["type"]
+                task = event.get("task")
+                if kind == "new-session":
+                    counts.clear()
+                    stopped.clear()
+                    actual.append({"count": 0, "stopped": False, "action": "reset-session"})
+                    continue
+                count = counts.get(task, 0)
+                if kind in {"failure", "unmet-requirement-correction"}:
+                    count += 1
+                    counts[task] = count
+                    if count >= limit:
+                        stopped.add(task)
+                        action = "stop"
+                    else:
+                        action = "continue"
+                elif kind == "attempt":
+                    action = "blocked" if task in stopped else "allowed"
+                elif kind == "requirement-change":
+                    counts.pop(task, None)
+                    stopped.discard(task)
+                    count = 0
+                    action = "new-contract"
+                elif kind == "success":
+                    counts.pop(task, None)
+                    stopped.discard(task)
+                    count = 0
+                    action = "complete"
+                elif kind == "handoff":
+                    action = "handoff"
+                elif kind == "safe-stop":
+                    action = "safe-stop"
+                else:
+                    self.fail(f"{case['id']}에 알 수 없는 event type이 있다: {kind}")
+                actual.append({"count": count, "stopped": task in stopped, "action": action})
+            self.assertEqual(actual, case["expected"], case["id"])
 
 
 if __name__ == "__main__":

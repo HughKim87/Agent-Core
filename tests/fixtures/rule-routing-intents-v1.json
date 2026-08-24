@@ -352,7 +352,7 @@
     {
       "id": "failure-records-mid-task",
       "kind": "mid-task",
-      "utterance": "세 번째 같은 방식으로 실패했어. 원인과 재시작 조건을 현재 상태에 남겨",
+      "utterance": "도구와 방법을 바꿨지만 같은 작업이 세 번째 실패했어. 실행을 중단하고 원인과 재시작 조건을 현재 상태에 남겨",
       "prior_owners": [
         "rules/work-contract.md"
       ],
@@ -361,12 +361,12 @@
         "rules/failure-records.md"
       ],
       "forbidden_owners": [],
-      "reason": "반복 실패 임계에 도달하면 같은 방법을 중단하고 원인·재시작 조건을 현재 상태에 기록한다."
+      "reason": "방법이 달라도 같은 작업의 실패는 누적되며 세 번째 실패에서 실행을 중단하고 현재 상태를 갱신한다."
     },
     {
       "id": "failure-records-near-miss",
       "kind": "near-miss",
-      "utterance": "방금 오타 하나 잘못 쳤네 다시 해줘",
+      "utterance": "원하는 결과 자체를 바꿀게. 기존 작업은 그만하고 새 요구로 진행해줘",
       "prior_owners": [
         "rules/work-contract.md"
       ],
@@ -374,7 +374,7 @@
       "forbidden_owners": [
         "rules/failure-records.md"
       ],
-      "reason": "작업 계약은 이미 읽었고, 교정된 일회성 오타는 실패 지식이 아니므로 새 소유자가 없다."
+      "reason": "작업 계약은 이미 읽었고 실제 요구 변경은 기존 작업의 실패로 누적하지 않으므로 실패 소유자로 새로 route하지 않는다."
     },
     {
       "id": "version-control-initial",
