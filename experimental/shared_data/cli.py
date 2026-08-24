@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+UTC = timezone.utc
 import json
 from pathlib import Path
 import sys
@@ -403,4 +404,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

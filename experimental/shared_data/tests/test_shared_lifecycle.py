@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+UTC = timezone.utc
 import json
 from pathlib import Path
 import sys
@@ -12,7 +13,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from experimental.shared_data import (  # noqa: E402

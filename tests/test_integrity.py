@@ -148,6 +148,31 @@ def write_layers(root: Path, layers: dict[str, list[str]]) -> None:
     (root / "docs" / "ARCHITECTURE.md").write_text(layers_body(layers), encoding="utf-8")
 
 
+def declare_optional_shared_data(root: Path, *, partial: bool = False) -> None:
+    capability = {
+        "shared_data": {
+            "version": 1,
+            "entry_module": "experimental.shared_data",
+            "commands": ["info", "invoke"],
+            "request_schema": "experimental/shared_data/schemas/request.json",
+            "result_schema": "experimental/shared_data/schemas/result.json",
+            "schemas": ["experimental/shared_data/schemas/common.json"],
+        }
+    }
+    compatibility = root / "docs" / "COMPATIBILITY.md"
+    compatibility.write_text(
+        compatibility.read_text(encoding="utf-8").replace(
+            '"optional_capabilities": {}',
+            '"optional_capabilities": ' + json.dumps(capability, ensure_ascii=False),
+        ),
+        encoding="utf-8",
+    )
+    if partial:
+        module = root / "experimental" / "shared_data"
+        module.mkdir(parents=True)
+        (module / "__main__.py").write_text("\n", encoding="utf-8")
+
+
 def build_clean(root: Path) -> None:
     (root / "rules").mkdir(parents=True)
     (root / "docs").mkdir(parents=True)
@@ -225,6 +250,16 @@ class BaselineTest(unittest.TestCase):
             report = run_all(root)
             self.assertIn("optional-checks", report.skipped)
             self.assertTrue(report.ok)
+
+    def test_declared_optional_capability_may_be_completely_absent(self) -> None:
+        from core_check.declarations import declared_compatibility
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build_clean(root)
+            declare_optional_shared_data(root)
+            declared = declared_compatibility(root)
+            self.assertIn("shared_data", declared["optional_capabilities"])
 
 
 class FaultInjectionTest(unittest.TestCase):
@@ -323,6 +358,38 @@ class FaultInjectionTest(unittest.TestCase):
         )
         messages = findings_for(self.root, "layer-boundaries")
         self.assertTrue(any("L7" in m for m in messages), messages)
+
+    def test_allows_completely_absent_experimental_l7_group(self) -> None:
+        write_layers(
+            self.root,
+            {
+                "L5": ["src/core_check/integrity.py"],
+                "L6": ["src/core_check/primitives.py"],
+                "L7": [
+                    "experimental/shared_data/__init__.py",
+                    "experimental/shared_data/__main__.py",
+                ],
+            },
+        )
+        self.assertEqual(findings_for(self.root, "layer-boundaries"), [])
+
+    def test_detects_partial_experimental_l7_group(self) -> None:
+        module = self.root / "experimental" / "shared_data"
+        module.mkdir(parents=True)
+        (module / "__init__.py").write_text("\n", encoding="utf-8")
+        write_layers(
+            self.root,
+            {
+                "L5": ["src/core_check/integrity.py"],
+                "L6": ["src/core_check/primitives.py"],
+                "L7": [
+                    "experimental/shared_data/__init__.py",
+                    "experimental/shared_data/__main__.py",
+                ],
+            },
+        )
+        messages = findings_for(self.root, "layer-boundaries")
+        self.assertTrue(any("배정 대상 파일이 없다" in message for message in messages), messages)
 
     def test_detects_import_cycle(self) -> None:
         pkg = self.root / "src" / "core_check"
@@ -876,6 +943,21 @@ class IntegrationGateTest(unittest.TestCase):
         self.assertFalse(optional.required)
         self.assertTrue(result.ok)
 
+    def test_declared_optional_capability_complete_absence_is_not_applicable(self) -> None:
+        declare_optional_shared_data(self.root)
+        result = self.gate.run(self.root)
+        optional = [s for s in result.steps if s.name == "optional-features"][0]
+        self.assertEqual(optional.status, "not_applicable")
+        self.assertFalse(optional.required)
+        self.assertTrue(result.ok, result.as_dict())
+
+    def test_declared_optional_capability_partial_installation_fails_preflight(self) -> None:
+        declare_optional_shared_data(self.root, partial=True)
+        result = self.gate.run(self.root)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.failed_step, "preflight-contract")
+        self.assertIn("부분 설치", result.steps[0].detail)
+
     def test_not_applicable_does_not_fail_but_not_run_does(self) -> None:
         result = self.gate.run(self.root)
         regression = [s for s in result.steps if s.name == "regression-tests"][0]
@@ -966,12 +1048,17 @@ class CompatibilityTest(unittest.TestCase):
             self.assertIn(key, self.declared)
 
     def test_declared_optional_capability_has_a_complete_public_boundary(self) -> None:
+        from core_check.declarations import optional_capability_installation_state
+
         capability = self.declared["optional_capabilities"]["shared_data"]
         self.assertEqual(capability["version"], 1)
         self.assertEqual(capability["commands"], ["info", "invoke"])
-        for field in ("request_schema", "result_schema"):
-            self.assertTrue((ROOT / capability[field]).is_file())
         self.assertTrue(capability["schemas"])
+        state = optional_capability_installation_state(ROOT, "shared_data", capability)
+        self.assertIn(state, {"installed", "absent"})
+        if state == "installed":
+            for field in ("request_schema", "result_schema"):
+                self.assertTrue((ROOT / capability[field]).is_file())
 
     def test_declaration_is_the_only_source(self) -> None:
         from core_check.declarations import COMPAT_BLOCK

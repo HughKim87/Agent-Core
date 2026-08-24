@@ -46,7 +46,7 @@
 
 ## 4. 현재 기능과 승인된 흡수 후보
 
-`shared_data` v1은 [호환성 선언](COMPATIBILITY.md)에 `available`로 등록된 선택 Runtime이다. [공통 record·원자적 저장 기반](../experimental/shared_data/RECORD_STORAGE_CONTRACT.md), 그 위의 [지식 유형·승인 기반 lifecycle](../experimental/shared_data/KNOWLEDGE_LIFECYCLE_CONTRACT.md), [Evidence Context package](../experimental/shared_data/EVIDENCE_CONTEXT_CONTRACT.md), [작업 상태·실행 호환 Runtime](../experimental/shared_data/WORK_STATE_CONTRACT.md)을 하나의 versioned JSON CLI·schema 경계로 제공한다.
+`shared_data` v1은 [호환성 선언](COMPATIBILITY.md)에 등록된 선택 Runtime이다. 설치된 경우 공통 record·원자적 저장, 지식 유형·승인 기반 lifecycle, Evidence Context package, 작업 상태·실행 호환 Runtime을 하나의 versioned JSON CLI·schema 경계로 제공한다. 완전히 부재하면 필수 Core 실패가 아니며, 일부 파일만 남은 부분 설치는 계약 실패다.
 
 다음 도메인 중립 기능은 사용자의 명시적 승인에 따라 흡수와 공개 경계 등록을 완료했다.
 

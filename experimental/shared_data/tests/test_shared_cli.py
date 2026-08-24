@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 SOURCE_ID = "123e4567-e89b-42d3-a456-426614174031"
 WORK_ID = "123e4567-e89b-42d3-a456-426614174032"

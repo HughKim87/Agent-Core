@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import ast
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+UTC = timezone.utc
 import json
 from pathlib import Path
 import sys
@@ -12,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -412,6 +413,7 @@ class IsolationTests(unittest.TestCase):
         actual = {
             path.relative_to(ROOT).as_posix()
             for path in (ROOT / "experimental").rglob("*.py")
+            if "tests" not in path.relative_to(ROOT / "experimental").parts
         }
         self.assertEqual(set(module_layers(ROOT)["L7"]), actual)
 

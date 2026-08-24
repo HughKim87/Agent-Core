@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+UTC = timezone.utc
 import hashlib
 from pathlib import Path
 import re

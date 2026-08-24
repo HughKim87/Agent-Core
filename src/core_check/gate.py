@@ -12,7 +12,12 @@ import subprocess
 import sys
 
 from .context import STARTUP_BUDGET_CHARS, build as build_context
-from .declarations import consumer_contract, consumer_policy_path, declared_compatibility
+from .declarations import (
+    consumer_contract,
+    consumer_policy_path,
+    declared_compatibility,
+    optional_capability_installation_state,
+)
 from .integrity import run_all, run_consumer
 from .primitives import CheckError, resolve_inside
 
@@ -197,7 +202,17 @@ def _optional(core_root: Path) -> StepResult:
     environment["PYTHONPATH"] = os.pathsep.join(
         [str(core_root), str(core_root / "src"), environment.get("PYTHONPATH", "")]
     ).rstrip(os.pathsep)
+    installed = 0
+    absent = 0
     for capability_id, declaration in sorted(capabilities.items()):
+        try:
+            state = optional_capability_installation_state(core_root, capability_id, declaration)
+        except CheckError as exc:
+            return StepResult("optional-features", "fail", str(exc))
+        if state == "absent":
+            absent += 1
+            continue
+        installed += 1
         completed = subprocess.run(
             [sys.executable, "-B", "-m", declaration["entry_module"], "info"],
             cwd=core_root,
@@ -222,7 +237,31 @@ def _optional(core_root: Path) -> StepResult:
         ):
             detail = completed.stderr.strip() or completed.stdout.strip() or "info 결과가 선언과 다르다"
             return StepResult("optional-features", "fail", f"{capability_id}: {detail[-500:]}")
-    return StepResult("optional-features", "pass", f"공개 선택 기능 {len(capabilities)}종 검증")
+        tests_dir = core_root / declaration["entry_module"].replace(".", "/") / "tests"
+        if tests_dir.is_dir():
+            tested = subprocess.run(
+                [sys.executable, "-B", "-m", "unittest", "discover", "-s", str(tests_dir), "-q"],
+                cwd=core_root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            if tested.returncode != 0:
+                return StepResult(
+                    "optional-features", "fail", f"{capability_id} tests: {(tested.stderr or '')[-500:]}"
+                )
+    if installed == 0:
+        return StepResult(
+            "optional-features",
+            "not_applicable",
+            f"선택 기능 {absent}종이 완전히 부재한다. 필수 기능 실패가 아니다",
+            required=False,
+        )
+    return StepResult(
+        "optional-features", "pass", f"공개 선택 기능 {installed}종 검증, 완전 부재 {absent}종"
+    )
 
 
 def run(core_root: Path, consumer_root: Path | None = None) -> GateResult:

@@ -178,10 +178,19 @@ def check_layer_boundaries(root: Path) -> Iterable[Finding]:
         return
 
     assignments: dict[str, list[str]] = {}
+    absent_l7_paths: set[str] = set()
+    l7_groups: dict[tuple[str, str], list[str]] = {}
+    for declared in layers["L7"]:
+        parts = Path(declared).parts
+        if len(parts) >= 2 and parts[0] == "experimental":
+            l7_groups.setdefault((parts[0], parts[1]), []).append(declared)
+    for paths in l7_groups.values():
+        if not any((root / declared).is_file() for declared in paths):
+            absent_l7_paths.update(paths)
     for layer, paths in layers.items():
         for declared in paths:
             assignments.setdefault(declared, []).append(layer)
-            if not (root / declared).is_file():
+            if not (root / declared).is_file() and declared not in absent_l7_paths:
                 yield Finding("layer-boundaries", declared, f"{layer} 배정 대상 파일이 없다")
 
     for path in sorted(package.glob("*.py")):

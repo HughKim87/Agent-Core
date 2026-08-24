@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+UTC = timezone.utc
 import hashlib
 import json
 import os

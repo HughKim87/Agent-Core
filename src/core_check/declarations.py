@@ -94,6 +94,40 @@ def _relative_path(root: Path, value: object, label: str, *, must_exist: str | N
     return resolved
 
 
+def optional_capability_installation_state(
+    core_root: Path, capability_id: str, declaration: dict[str, object]
+) -> str:
+    """선택 기능의 완전 설치·완전 부재를 구분하고 부분 결손을 거부한다."""
+    module = declaration["entry_module"]
+    module_root = _relative_path(
+        core_root, str(module).replace(".", "/"), f"{capability_id}.entry_module"
+    )
+    artifacts: list[tuple[Path, str]] = [
+        (module_root, "dir"),
+        (module_root / "__main__.py", "file"),
+    ]
+    for field in ("request_schema", "result_schema"):
+        artifacts.append(
+            (_relative_path(core_root, declaration[field], f"{capability_id}.{field}"), "file")
+        )
+    for schema in declaration["schemas"]:  # type: ignore[union-attr]
+        artifacts.append(
+            (_relative_path(core_root, schema, f"{capability_id}.schemas"), "file")
+        )
+
+    present = [path.is_dir() if kind == "dir" else path.is_file() for path, kind in artifacts]
+    if not any(present):
+        return "absent"
+    missing = [
+        path.relative_to(core_root).as_posix()
+        for (path, _kind), exists in zip(artifacts, present)
+        if not exists
+    ]
+    if missing:
+        raise CheckError(f"{capability_id} 선택 기능이 부분 설치 상태다: {missing}")
+    return "installed"
+
+
 def document_roles(core_root: Path) -> dict[str, object]:
     roles = _single_json_declaration(core_root, DOCUMENT_ROLES_BLOCK, "Core 문서 역할")
     _relative_path(core_root, roles.get("core_policy"), "Core 정책", must_exist="file")
@@ -257,11 +291,7 @@ def declared_compatibility(core_root: Path) -> dict[str, object]:
         module = raw["entry_module"]
         if not isinstance(module, str) or re.fullmatch(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*", module) is None:
             raise CheckError(f"{capability_id}.entry_module이 유효하지 않다")
-        module_root = _relative_path(
-            core_root, module.replace(".", "/"), f"{capability_id}.entry_module", must_exist="dir"
-        )
-        if not (module_root / "__main__.py").is_file():
-            raise CheckError(f"{capability_id}.entry_module에 __main__.py가 없다")
+        _relative_path(core_root, module.replace(".", "/"), f"{capability_id}.entry_module")
         commands = raw["commands"]
         if (
             not isinstance(commands, list)
@@ -271,7 +301,7 @@ def declared_compatibility(core_root: Path) -> dict[str, object]:
         ):
             raise CheckError(f"{capability_id}.commands는 중복 없는 문자열 목록이어야 한다")
         for field in ("request_schema", "result_schema"):
-            _relative_path(core_root, raw[field], f"{capability_id}.{field}", must_exist="file")
+            _relative_path(core_root, raw[field], f"{capability_id}.{field}")
         schemas = raw["schemas"]
         if (
             not isinstance(schemas, list)
@@ -281,5 +311,6 @@ def declared_compatibility(core_root: Path) -> dict[str, object]:
         ):
             raise CheckError(f"{capability_id}.schemas는 중복 없는 schema 경로 목록이어야 한다")
         for schema in schemas:
-            _relative_path(core_root, schema, f"{capability_id}.schemas", must_exist="file")
+            _relative_path(core_root, schema, f"{capability_id}.schemas")
+        optional_capability_installation_state(core_root, capability_id, raw)
     return declaration
