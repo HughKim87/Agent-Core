@@ -12,6 +12,8 @@ Core 저장소는 공통 정책, 규칙, 계약, 검증기와 명시적으로 �
 
 ## 시작하기
 
+Agent Core를 Host로 사용하는 저장소는 [소비자 사용 안내](docs/CONSUMER_GUIDE.md)에 따라 저장소의 진입 파일과 소비 계약을 구성한다.
+
 - 실제 저장소에 연결하고 갱신·검증하는 방법: [소비자 사용 안내](docs/CONSUMER_GUIDE.md)
 - Core가 해결하는 문제와 보장: [Core 헌장](docs/CHARTER.md)
 - Core와 소비 저장소의 정보 소유권: [정보 소유 구조](docs/INFORMATION_ARCHITECTURE.md)
