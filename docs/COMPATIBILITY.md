@@ -58,6 +58,7 @@
 
 - Core 내부 자동 진입 파일과 현재 상태를 제공하지 않는다.
 - 소비 저장소가 `agent-core-consumer:v1` 선언과 진입·정책·상태를 제공한다.
+- 소비 계약의 선택 필드 `required_core_capabilities`는 기능 ID별 최소 양의 정수 버전을 선언한다. key가 없거나 빈 객체인 기존 Host는 선택 기능 요구가 없다.
 - CLI는 `--core-root`와 `--consumer-root`를 구분한다.
 - `context` 문서 경로는 `scope`와 `path` 객체로 반환한다.
 - `verify`, `context`, `gate` 명령과 종료 상태 0·1·2를 제공한다.

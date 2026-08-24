@@ -69,6 +69,7 @@ git submodule update --init --recursive
     "codex": "AGENTS.md",
     "claude": "CLAUDE.md"
   },
+  "required_core_capabilities": {},
   "rule_roots": ["rules"],
   "protected_paths": []
 }
@@ -76,6 +77,7 @@ git submodule update --init --recursive
 <!-- /agent-core-consumer:v1 -->
 
 - `consumer_role`은 `maintainer` 또는 `host`다.
+- `required_core_capabilities`는 필요한 선택 기능의 최소 버전만 선언한다. 요구가 없으면 생략하거나 빈 객체로 둔다. 예: `{"shared_data": 1}`.
 - `rule_roots`가 없으면 빈 배열로 둔다. 빈 미래 디렉터리를 만들지 않는다.
 - `protected_paths`는 보호해야 하는 상대경로만 선언한다. 검사기는 그 경로를 읽거나 열거하지 않는다.
 - `protected_paths`는 Core, 정책, 상태, 진입 포인터, `rule_roots`와 겹칠 수 없다. 겹치면 보호 경계를 지킬 수 없으므로 계약 오류다.

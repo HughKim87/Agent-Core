@@ -227,6 +227,23 @@ def consumer_contract(core_root: Path, consumer_root: Path) -> dict[str, object]
         for value in rule_roots
     ]
 
+    required_capabilities = contract.get("required_core_capabilities", {})
+    if not isinstance(required_capabilities, dict):
+        raise CheckError("required_core_capabilities는 object여야 한다")
+    for capability_id, minimum_version in required_capabilities.items():
+        if (
+            not isinstance(capability_id, str)
+            or re.fullmatch(r"[a-z][a-z0-9_]*", capability_id) is None
+        ):
+            raise CheckError(f"요구 선택 기능 ID가 lower snake case가 아니다: {capability_id}")
+        if (
+            isinstance(minimum_version, bool)
+            or not isinstance(minimum_version, int)
+            or minimum_version < 1
+        ):
+            raise CheckError(f"required_core_capabilities.{capability_id}는 양의 정수여야 한다")
+    contract["required_core_capabilities"] = dict(required_capabilities)
+
     protected = contract.get("protected_paths")
     if not isinstance(protected, list) or not all(isinstance(p, str) and p for p in protected):
         raise CheckError("protected_paths는 상대경로 배열이어야 한다")

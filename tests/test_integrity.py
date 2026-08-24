@@ -148,7 +148,9 @@ def write_layers(root: Path, layers: dict[str, list[str]]) -> None:
     (root / "docs" / "ARCHITECTURE.md").write_text(layers_body(layers), encoding="utf-8")
 
 
-def declare_optional_shared_data(root: Path, *, partial: bool = False) -> None:
+def declare_optional_shared_data(
+    root: Path, *, partial: bool = False, installed: bool = False
+) -> None:
     capability = {
         "shared_data": {
             "version": 1,
@@ -167,10 +169,17 @@ def declare_optional_shared_data(root: Path, *, partial: bool = False) -> None:
         ),
         encoding="utf-8",
     )
-    if partial:
+    if partial and installed:
+        raise ValueError("partial과 installed는 함께 사용할 수 없다")
+    if partial or installed:
         module = root / "experimental" / "shared_data"
         module.mkdir(parents=True)
         (module / "__main__.py").write_text("\n", encoding="utf-8")
+    if installed:
+        schemas = root / "experimental" / "shared_data" / "schemas"
+        schemas.mkdir()
+        for name in ("request.json", "result.json", "common.json"):
+            (schemas / name).write_text("{}\n", encoding="utf-8")
 
 
 def build_clean(root: Path) -> None:
@@ -630,6 +639,18 @@ class ConsumerContractTest(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.tmp, ignore_errors=True)
 
+    def _require_capabilities(self, capabilities: object) -> None:
+        policy = self.consumer / "PROJECT_RULES.md"
+        policy.write_text(
+            policy.read_text(encoding="utf-8").replace(
+                '"protected_paths": ["private"]',
+                '"required_core_capabilities": '
+                + json.dumps(capabilities, ensure_ascii=False)
+                + ',\n  "protected_paths": ["private"]',
+            ),
+            encoding="utf-8",
+        )
+
     def test_clean_consumer_contract_passes(self) -> None:
         report = run_consumer(self.core, self.consumer)
         self.assertTrue(report.ok, [finding.as_dict() for finding in report.findings])
@@ -655,6 +676,7 @@ class ConsumerContractTest(unittest.TestCase):
         self.assertEqual(
             set(report.skipped),
             {
+                "consumer-capabilities",
                 "consumer-entry",
                 "consumer-state",
                 "consumer-rule-routes",
@@ -664,6 +686,41 @@ class ConsumerContractTest(unittest.TestCase):
             },
         )
         self.assertTrue(all("실행하지 않았다" in reason for reason in report.skipped.values()))
+
+    def test_missing_required_capability_key_keeps_existing_host_compatible(self) -> None:
+        self.assertTrue(run_consumer(self.core, self.consumer).ok)
+
+    def test_installed_required_capability_passes(self) -> None:
+        declare_optional_shared_data(self.core, installed=True)
+        self._require_capabilities({"shared_data": 1})
+        report = run_consumer(self.core, self.consumer)
+        self.assertTrue(report.ok, [finding.as_dict() for finding in report.findings])
+
+    def test_absent_required_capability_fails(self) -> None:
+        declare_optional_shared_data(self.core)
+        self._require_capabilities({"shared_data": 1})
+        findings = run_consumer(self.core, self.consumer).findings
+        self.assertTrue(
+            any(finding.check == "consumer-capabilities" for finding in findings),
+            [finding.as_dict() for finding in findings],
+        )
+
+    def test_required_capability_version_must_be_positive(self) -> None:
+        self._require_capabilities({"shared_data": 0})
+        findings = run_consumer(self.core, self.consumer).findings
+        self.assertTrue(any(finding.check == "consumer-contract" for finding in findings))
+
+    def test_required_capability_version_must_be_available(self) -> None:
+        declare_optional_shared_data(self.core, installed=True)
+        self._require_capabilities({"shared_data": 2})
+        findings = run_consumer(self.core, self.consumer).findings
+        self.assertTrue(
+            any(
+                finding.check == "consumer-capabilities" and "요구 버전" in finding.message
+                for finding in findings
+            ),
+            [finding.as_dict() for finding in findings],
+        )
 
     def test_entry_order_mismatch_is_detected(self) -> None:
         (self.consumer / "AGENTS.md").write_text(

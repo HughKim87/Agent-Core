@@ -16,6 +16,7 @@ from .declarations import (
     declared_compatibility,
     document_roles,
     module_layers,
+    optional_capability_installation_state,
     routed_rule_paths,
 )
 from .primitives import CheckError, Finding, Report, resolve_inside
@@ -41,6 +42,7 @@ VAGUE_ACTIONS = ("계속 진행한다", "검토한다", "확인한다")
 SKIP_DIRS = {".git", "tmp", "__pycache__", ".obsidian"}
 CONSUMER_CHECKS = (
     "consumer-contract",
+    "consumer-capabilities",
     "consumer-entry",
     "consumer-state",
     "consumer-rule-routes",
@@ -341,6 +343,29 @@ def consumer_findings(
 
     if contract["contract_version"] != compatibility.get("contract_version"):
         yield Finding("consumer-contract", "-", "Core와 소비 계약의 contract_version이 다르다")
+
+    started("consumer-capabilities")
+    available = compatibility.get("optional_capabilities", {})
+    for capability_id, required_version in contract["required_core_capabilities"].items():
+        declaration = available.get(capability_id)
+        if not isinstance(declaration, dict):
+            yield Finding(
+                "consumer-capabilities", capability_id, "Core 호환성 선언에 선택 기능이 없다"
+            )
+            continue
+        try:
+            state = optional_capability_installation_state(core_root, capability_id, declaration)
+        except CheckError as exc:
+            yield Finding("consumer-capabilities", capability_id, str(exc))
+            continue
+        if state != "installed":
+            yield Finding("consumer-capabilities", capability_id, "요구 선택 기능이 설치되지 않았다")
+        elif declaration["version"] < required_version:
+            yield Finding(
+                "consumer-capabilities",
+                capability_id,
+                f"요구 버전 {required_version}, 제공 버전 {declaration['version']}",
+            )
 
     core_rel = Path(contract["core_path"]).as_posix().rstrip("/")
     core_policy = core_policy_path(core_root).relative_to(core_root).as_posix()
