@@ -1,7 +1,7 @@
 # Agent Core
 
-- 목적: Agent Core의 역할, 저장소 구조, 공개 진입점을 한눈에 설명한다.
-- 읽는 시점: Core의 책임과 구성요소, 사용 시작점을 처음 확인할 때.
+- 목적: Agent Core의 저장소 구조, 계층, 구성요소의 책임을 설명한다.
+- 읽는 시점: Core의 내부 구조와 구성요소 관계를 확인할 때.
 - 책임: Core Maintainer가 구현 구조와 정본 링크에 맞게 유지한다.
 - 상태: 활성 개요. 정본이 아닌 파생 표현.
 - 관련 권위: [Core 헌장](docs/CHARTER.md), [정보 소유 구조](docs/INFORMATION_ARCHITECTURE.md), [계층 구조](docs/ARCHITECTURE.md).
@@ -53,50 +53,37 @@ Agent-Core/
 
 `src/core_check`는 Core 자체와 Consumer 계약 표면을 읽기 전용으로 검사하는 필수 경로다. `experimental/shared_data`는 source·knowledge·decision·lifecycle·evidence context·work state를 다루는 선택 경로이며, 실제 데이터는 항상 Consumer root 안에 둔다.
 
-## 검증 흐름
+## 계층별 책임
 
-| 명령 | 역할 | Consumer 필요 여부 |
-|---|---|---:|
-| `verify` | 선언, 문서, 링크, JSON, Python AST, 규칙 route, 계층 경계를 검사 | 선택 |
-| `context` | Core 정책·Consumer 정책·현재 상태와 선택된 규칙으로 시작 문맥 및 fingerprint 생성 | 필요 |
-| `gate` | preflight, 무결성, 회귀 테스트, 선택 기능, 무부작용 검사를 통합 실행 | 선택 |
+| 계층 | 위치 | 책임 |
+|---|---|---|
+| L1 | `PROJECT_RULES.md` | Core 공통 정책과 규칙 선택 경로 |
+| L2 | `rules/` | 조건별 작업 절차, 안전 경계, 검증 규칙 |
+| L3 | `docs/` | Core·Consumer 계약, 정보 소유권, 호환성 및 구조 정본 |
+| L5 | `src/core_check/` | 선언 해석, 무결성 검사, 시작 context, 통합 gate |
+| L6 | `src/core_check/primitives.py` | 경로 안전, 오류·finding·report, fingerprint 원시 기능 |
+| L7 | `experimental/shared_data/` | 필수 Kernel과 격리된 선택 데이터 Runtime |
 
-Core 저장소 자체를 확인하는 최소 실행 예시는 다음과 같다.
+## 의존 방향
 
-```powershell
-$env:PYTHONPATH = (Resolve-Path -LiteralPath 'src').Path
-python -B -m core_check --core-root . verify
-python -B -m core_check --core-root . gate
+```text
+L1 정책 ──routes──> L2 규칙
+   │
+   └──────────────> L3 계약·구조 선언
+                         │
+L6 기반 원시 <──────── L5 검증 커널
+                         │
+                         └── 공개 검사 결과
+
+L7 선택 Runtime ──> L6 기반 원시·L5 등록 경계
+L5 검증 커널      -X-> L7 선택 Runtime
 ```
 
-명령은 JSON을 stdout으로 반환하며 종료 상태는 성공, 계약·무결성 위반, 실행 불가를 구분한다. Consumer 연결과 선택 기능 호출을 포함한 전체 절차는 [소비자 사용 안내](docs/CONSUMER_GUIDE.md), 판정 의미는 [검증 계약](docs/VERIFICATION.md), 지원 런타임과 공개 계약은 [호환성 선언](docs/COMPATIBILITY.md)이 정본이다.
+- L1은 Core 규칙의 유일한 router다.
+- L5는 정책·규칙·계약을 데이터로 읽고 검사한다.
+- L6은 다른 내부 모듈에 의존하지 않는다.
+- L5는 L7을 import하지 않으므로 선택 계층이 없어도 필수 Kernel이 성립한다.
+- L7의 실제 데이터와 파생 결과는 Core가 아닌 Consumer root에 저장된다.
+- 내부 import 순환과 scope 밖 경로 해석은 허용되지 않는다.
 
-## 사용 시작점
-
-### Core를 프로젝트에 연결할 때
-
-1. [소비자 사용 안내](docs/CONSUMER_GUIDE.md)에서 submodule 연결과 소비 선언 형식을 확인한다.
-2. Consumer root에 `AGENTS.md`, `CLAUDE.md`, 프로젝트 `PROJECT_RULES.md`, 현재 상태 문서를 둔다.
-3. Core의 `verify`, `context`, `gate`를 Consumer root와 함께 실행한다.
-
-### Core 자체를 변경할 때
-
-1. [Core 상시 정책](PROJECT_RULES.md)에서 현재 행동에 맞는 규칙을 선택한다.
-2. [Kernel 범위](docs/KERNEL_SCOPE.md)와 [계층 구조](docs/ARCHITECTURE.md)에서 배치·의존 경계를 확인한다.
-3. 변경 영향에 맞는 검사를 실행하고 [검증 계약](docs/VERIFICATION.md)에 따라 완료 수준을 보고한다.
-
-## 문서 안내
-
-| 질문 | 정본 |
-|---|---|
-| Core가 해결하는 문제와 보장은 무엇인가? | [Core 헌장](docs/CHARTER.md) |
-| Core와 Consumer는 무엇을 각각 소유하는가? | [정보 소유 구조](docs/INFORMATION_ARCHITECTURE.md) |
-| 계층과 import·경로 경계는 어떻게 되는가? | [계층 구조](docs/ARCHITECTURE.md) |
-| 무엇이 필수·선택·제외 범위인가? | [Kernel 범위](docs/KERNEL_SCOPE.md) |
-| 프로젝트에 어떻게 연결하고 검증하는가? | [소비자 사용 안내](docs/CONSUMER_GUIDE.md) |
-| Codex·Claude 진입 파일은 어떻게 구성하는가? | [에이전트 진입 계약](docs/AGENT_ENTRY.md) |
-| 현재 공개 버전과 호환 범위는 무엇인가? | [버전과 호환성](docs/COMPATIBILITY.md) |
-| 어떤 검사가 완료를 증명하는가? | [검증 계약](docs/VERIFICATION.md) |
-| 선택 기능은 어떻게 격리·승격되는가? | [실험 기능 계약](docs/EXPERIMENTAL.md) |
-
-이 README는 구조를 설명하는 개요다. 정책, 절차, 버전, 현재 상태의 정본을 복제하지 않으며 충돌할 경우 위에 연결된 각 정본을 따른다.
+이 README는 Core 구조만 설명하는 개요다. 세부 구조의 정본은 [계층 구조](docs/ARCHITECTURE.md), 정보 배치의 정본은 [정보 소유 구조](docs/INFORMATION_ARCHITECTURE.md)가 소유한다.
