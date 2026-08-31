@@ -17,7 +17,7 @@
   "contract_version": 2,
   "python_min": "3.10",
   "required_dependencies": [],
-  "optional_dependencies": [],
+  "optional_dependencies": ["git"],
   "optional_capabilities": {
     "shared_data": {
       "version": 1,
@@ -52,13 +52,15 @@
 | `core_version` | 배포되는 Core 저장소 단위 | 검증된 Core release마다 |
 | `contract_version` | CLI·선언·규칙 계약의 세대 | 소비자 이전이 필요한 비호환 변경 |
 | `python_min` | 필수 검증의 최소 Python | 하위 런타임 지원을 종료할 때 |
+| `required_dependencies` | Core 자체 필수 경로가 호출하는 외부 실행 도구 이름 | 필수 도구를 추가·제거할 때 |
+| `optional_dependencies` | 역할별 소비 경계에서 조건부로 요구할 수 있는 외부 실행 도구 이름 | 조건부 도구를 추가·제거할 때 |
 | `optional_capabilities` | 실제 제공되는 선택 기능의 ID·버전·명령·schema | 선택 기능을 공개하거나 호환 경계를 바꿀 때 |
 
 ## 3. contract 2 공개 계약
 
 - Core 내부 자동 진입 파일과 현재 상태를 제공하지 않는다.
 - 소비 저장소가 `agent-core-consumer:v1` 선언과 진입·정책·상태를 제공한다.
-- 소비 계약의 선택 필드 `required_core_capabilities`는 기능 ID별 최소 양의 정수 버전을 선언한다. key가 없거나 빈 객체인 기존 Host는 선택 기능 요구가 없다.
+- 소비 계약의 선택 필드 `required_core_capabilities`는 기능 ID별 최소 양의 정수 버전을 선언한다. key가 없거나 빈 객체인 기존 Host는 선택 기능 요구가 없고 정적 discovery 외의 선택 기능을 호출할 권한도 없다.
 - CLI는 `--core-root`와 `--consumer-root`를 구분한다.
 - `context` 문서 경로는 `scope`와 `path` 객체로 반환한다.
 - `verify`, `context`, `gate` 명령과 종료 상태 0·1·2를 제공한다.
@@ -73,7 +75,11 @@
 - 실제 Runtime 데이터와 결과는 소비 저장소가 소유하며 Core 저장소에 쓰지 않는다.
 - 선택 기능이 없으면 필수 gate는 `not_applicable`로 처리하고 계속 성립해야 한다.
 
-`shared_data` v1은 `python -B -m experimental.shared_data info|invoke` 실행 entry만 공개한다. `invoke`는 JSON request v1을 stdin으로 하나 받아 JSON result v1을 stdout으로 하나 반환한다. 세부 operation과 데이터 구조는 선언된 schema가 소유한다. `experimental.shared_data` 아래 구현 모듈의 직접 import는 공개 계약이 아니다.
+`shared_data` v1은 격리 모드(`python -B -I`)에서 실행 중인 Core root와 `src`만 module 검색 경로 맨 앞에 넣고 선언된 `experimental.shared_data` entry의 `info|invoke`를 실행하는 bootstrap만 공개한다. `invoke`는 JSON request v1을 stdin으로 하나 받아 JSON result v1을 stdout으로 하나 반환한다. 세부 operation과 데이터 구조는 선언된 schema가 소유한다. bare module 실행과 `experimental.shared_data` 아래 구현 모듈의 직접 import는 공개 계약이 아니다.
+
+`info`는 역할·Consumer 입력·Runtime storage와 무관하고 쓰기 가능 경로를 열지 않는 정적 discovery다. Core tree·Git 의미 상태의 전후 불변을 정상·예외 경로 모두에서 증명하며 dirty Core에서도 실행할 수 있지만 기능 소비·가용성·완료 성공 근거가 아니다. Git 기준선을 증명할 수 없으면 fail-closed한다.
+
+`shared_data invoke`는 verified Consumer 계약, Core와 정확히 같은 `contract_version`, Consumer의 `required_core_capabilities.shared_data` 최소 버전 선언을 요구한다. Runtime storage가 계약의 `core_path`와 겹치거나 Consumer 밖이면 dispatch 전에 실패한다. 통과한 storage는 Consumer 상대 canonical 경로로 dispatch되고 `core_path`는 내부 보호 경로에 합산되어 각 storage 해석 때 다시 검사된다. Host 역할에서는 기능 실행 전 clean 기준과 실행 후 Core 불변을 함께 요구한다.
 
 ## 4. 호환·비호환
 
@@ -94,7 +100,10 @@
 
 ## 6. 의존성과 텍스트
 
-- 필수 의존성은 Python 표준 라이브러리뿐이다.
+- Core 자체 필수 경로의 Python package 의존성은 표준 라이브러리뿐이고 필수 외부 실행 도구는 없다.
+- `git` CLI는 Core 자체 검증에는 선택 사항이지만, 소비 계약의 submodule revision과 `host`의 Core clean 상태를 증명하는 역할별 소비 gate에서는 필수다. Host gate는 `git`이 없으면 읽기 전용 기준을 증명할 수 없으므로 실패한다.
+- Host clean 증명은 검사 중 content 변환을 실행하지 않는다. tracked 경로에 `filter`, `working-tree-encoding` 또는 `ident` attribute가 필요하면 해당 checkout은 Host gate에서 지원하지 않고 fail-closed한다.
+- Host clean 증명의 tracked 일반 파일 내용은 Git 줄바꿈 정규화 전의 실제 worktree bytes로 HEAD blob과 대조한다. 따라서 `git status`가 clean이어도 checkout bytes가 다르면 실패한다.
 - 선택 기능이 없어도 필수 검증이 통과해야 한다.
 - 추적 텍스트 표준은 UTF-8과 LF다.
 - LF와 CRLF는 정상 줄 종료로 해석하고 실제 후행 공백·탭만 위반으로 판정한다.

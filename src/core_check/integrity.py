@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterable, Iterator
+import hashlib
 import json
-from pathlib import Path
+import os
+from pathlib import Path, PurePosixPath
 import re
+import stat
+import subprocess
 
 from .declarations import (
     consumer_contract,
@@ -38,10 +42,65 @@ DYNAMIC_NUMBERS = re.compile(
     r"(추적 파일\s*\d+|untracked\s*\d+|ignored\s*\d+|커밋\s*\d+\s*개|"
     r"파일\s*\d+\s*개\s*추적|blob\s*\d+)"
 )
-VAGUE_ACTIONS = ("계속 진행한다", "검토한다", "확인한다")
+STATE_NUMBER = r"(?:`?\d+`?|한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)"
+STATE_COUNT = rf"{STATE_NUMBER}\s*개"
+STATE_FILE_BASE = r"(?<![0-9A-Za-z가-힣_])(?:파일|경로)"
+STATE_FILE_TERM = rf"{STATE_FILE_BASE}(?:은|는|이|가|을|를|의|도)?(?![0-9A-Za-z가-힣_])"
+STATE_FILE_COUNT_NOUN = rf"{STATE_FILE_BASE}\s*(?:개수|수)(?:은|는|이|가|을|를)?"
+STATE_COUNT_END = rf"{STATE_COUNT}(?:다|임|이다|입니다|뿐)?(?=\s*$|\s*[.,;)])"
+STATE_FILE_COUNTS = re.compile(
+    rf"(?:{STATE_COUNT}(?:의)?\s*{STATE_FILE_BASE}(?:이다|입니다|임)?"
+    rf"(?![0-9A-Za-z가-힣_])|{STATE_FILE_TERM}\s*:?\s*(?:총\s*)?{STATE_COUNT}"
+    rf"(?:다|임|이다|입니다|뿐)?(?=\s*$|\s*[.,;)])|"
+    rf"{STATE_FILE_COUNT_NOUN}\s*:?\s*(?:총\s*)?{STATE_COUNT_END})",
+    re.MULTILINE,
+)
+EPHEMERAL_FAILURE_STATE = (
+    re.compile(r"실패\s*(?:횟수|건수|카운터|누적)"),
+    re.compile(
+        r"(?:연속\s*)?실패(?:는|은|가|이)?\s*[:：]?\s*"
+        r"(?:\d+|한|두|세|네)\s*(?:회|번)"
+    ),
+    re.compile(r"(?:\d+|한|두|세|네)\s*(?:회|번)\s*실패"),
+    re.compile(r"재시도\s*[:：]?\s*(?:\d+|한|두|세|네)\s*(?:회|번)"),
+    re.compile(r"시도(?:(?:한|했던)|해\s*본)?\s*방법"),
+    re.compile(r"방법(?:의)?\s*순서"),
+    re.compile(r"중단\s*(?:플래그|여부|상태|유무)"),
+    re.compile(r"중단됨\s*[:：]\s*(?:true|false|yes|no|예|아니오)", re.IGNORECASE),
+)
+ACTION_EXECUTABLE_END = re.compile(
+    r"(?:한다|시킨다|기다린다|유지한다|남긴다|중단한다)\.?$"
+)
+VAGUE_ACTION_END = re.compile(r"(?:계속|진행|검토|확인)한다\.?$")
+GENERIC_ACTION = re.compile(
+    r"(?:(?:계속|다음|후속|현재|해당)(?:/후속)?\s*)?"
+    r"(?:작업|단계|내용|상태)?(?:을|를)?\s*(?:계속|진행|검토|확인)?한다?\.?$"
+)
+ACTION_PATH = re.compile(
+    r"(?:[A-Za-z0-9_.-]+[/\\])+[A-Za-z0-9_.-]+|"
+    r"[A-Za-z0-9_.-]+\.(?:md|py|json|toml|ya?ml)"
+)
+ACTION_SPECIFIC_TERM = re.compile(
+    r"(?:현재 단계|직전 게이트|승인 상태|승인 범위|차단|알려진 위험|"
+    r"첫 다음 행동|필수 절|변경 경로|검증 결과|후보 commit|"
+    r"통과하면|실패하면|없으면|있으면|지시하면|승인하면|판정)"
+)
+FORBIDDEN_STATE_SECTION = re.compile(
+    r"(?:(?<!미)완료|이력|기록|과거\s*판정|구현.*상태|"
+    r"작업.*(?:과정|내역)|변경.*내역)"
+)
+GATE_JUDGMENT = re.compile(
+    r"(?:`(?:pass|fail|not_run|not_applicable)`|"
+    r"(?<![A-Za-z0-9_.-])(?:pass|fail|not_run|not_applicable)"
+    r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9_])|"
+    r"[:：]\s*(?:통과|실패)(?![0-9A-Za-z가-힣_-]|\.[0-9A-Za-z가-힣_])|"
+    r"^\s*-\s*(?:통과|실패)(?![0-9A-Za-z가-힣_-]|\.[0-9A-Za-z가-힣_]))",
+    re.IGNORECASE | re.MULTILINE,
+)
 SKIP_DIRS = {".git", "tmp", "__pycache__", ".obsidian"}
 CONSUMER_CHECKS = (
     "consumer-contract",
+    "consumer-core-read-only",
     "consumer-capabilities",
     "consumer-entry",
     "consumer-state",
@@ -50,6 +109,324 @@ CONSUMER_CHECKS = (
     "consumer-markdown-links",
     "consumer-submodule",
 )
+
+
+def _host_git_context(core_root: Path) -> tuple[dict[str, str], list[str]]:
+    environment = os.environ.copy()
+    for name in list(environment):
+        if name.startswith("GIT_"):
+            environment.pop(name, None)
+    environment.update(
+        {
+            "GIT_OPTIONAL_LOCKS": "0",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+    )
+    git_prefix = [
+        "git",
+        "-c",
+        f"safe.directory={core_root.resolve().as_posix()}",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.untrackedCache=false",
+    ]
+    return environment, git_prefix
+
+
+def _run_host_git(
+    core_root: Path,
+    *arguments: str,
+    input_text: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    environment, git_prefix = _host_git_context(core_root)
+    return subprocess.run(
+        [*git_prefix, *arguments],
+        cwd=core_root,
+        env=environment,
+        input=input_text,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+
+def _tracked_content_attributes(
+    core_root: Path, relatives: Iterable[str]
+) -> tuple[bool, str]:
+    """tracked 일반 파일의 content 변환 attribute를 단일 Git 호출로 검사한다."""
+    paths = tuple(relatives)
+    if not paths:
+        return True, "ok"
+    attributes = ("filter", "working-tree-encoding", "ident")
+    try:
+        completed = _run_host_git(
+            core_root,
+            "check-attr",
+            "-z",
+            "--stdin",
+            *attributes,
+            input_text="\0".join(paths) + "\0",
+        )
+    except OSError as exc:
+        return False, f"tracked 경로의 Git attribute를 읽을 수 없다: {exc}"
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or "Git attribute 확인 실패"
+        return False, detail[-500:]
+    fields = [field for field in completed.stdout.split("\0") if field]
+    if len(fields) % 3 != 0:
+        return False, "tracked 경로의 Git attribute를 판정할 수 없다"
+    expected = {(relative, attribute) for relative in paths for attribute in attributes}
+    observed: set[tuple[str, str]] = set()
+    unsafe: list[str] = []
+    for relative, attribute, value in zip(
+        fields[0::3], fields[1::3], fields[2::3], strict=True
+    ):
+        key = (relative, attribute)
+        if key not in expected or key in observed:
+            return False, "tracked 경로의 Git attribute를 판정할 수 없다"
+        observed.add(key)
+        if value not in {"unspecified", "unset"}:
+            unsafe.append(f"{relative}: {attribute}={value}")
+    if observed != expected:
+        return False, "tracked 경로의 Git attribute를 판정할 수 없다"
+    if unsafe:
+        return False, (
+            "content 변환 가능성이 있는 attribute를 허용하지 않는다: "
+            + "; ".join(unsafe[:5])
+        )
+    return True, "ok"
+
+
+def _parse_index_entries(raw: str) -> dict[str, tuple[str, str]]:
+    entries: dict[str, tuple[str, str]] = {}
+    for record in (value for value in raw.split("\0") if value):
+        header, separator, relative = record.partition("\t")
+        fields = header.split()
+        if not separator or len(fields) != 3 or fields[2] != "0" or relative in entries:
+            raise ValueError("Git index 항목 형식을 판정할 수 없다")
+        entries[relative] = (fields[0], fields[1])
+    return entries
+
+
+def _parse_head_entries(raw: str) -> dict[str, tuple[str, str]]:
+    entries: dict[str, tuple[str, str]] = {}
+    for record in (value for value in raw.split("\0") if value):
+        header, separator, relative = record.partition("\t")
+        fields = header.split()
+        if not separator or len(fields) != 3 or relative in entries:
+            raise ValueError("Git HEAD 항목 형식을 판정할 수 없다")
+        entries[relative] = (fields[0], fields[2])
+    return entries
+
+
+def _blob_oid(content: bytes, algorithm: str) -> str:
+    digest = hashlib.new(algorithm)
+    digest.update(f"blob {len(content)}\0".encode("ascii"))
+    digest.update(content)
+    return digest.hexdigest()
+
+
+def host_core_git_fingerprint(core_root: Path) -> str:
+    """Host 실행 전후의 HEAD와 index 의미 상태를 읽기 전용으로 지문화한다."""
+    digest = hashlib.sha256()
+    outputs: dict[tuple[str, ...], str] = {}
+    for arguments in (
+        ("rev-parse", "--verify", "HEAD^{commit}"),
+        ("rev-parse", "--show-object-format"),
+        ("ls-files", "--stage", "-z"),
+        ("ls-files", "-v", "-z"),
+        ("config", "--local", "--null", "--list"),
+    ):
+        try:
+            completed = _run_host_git(core_root, *arguments)
+        except OSError as exc:
+            raise CheckError(f"Host Core Git 상태를 실행할 수 없다: {exc}") from exc
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip() or "Git 상태 확인 실패"
+            raise CheckError(detail[-500:])
+        payload = completed.stdout.encode("utf-8")
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+        outputs[arguments] = completed.stdout
+    try:
+        index_entries = _parse_index_entries(outputs[("ls-files", "--stage", "-z")])
+    except ValueError as exc:
+        raise CheckError(str(exc)) from exc
+    for relative, (mode, _) in sorted(index_entries.items()):
+        if mode != "160000":
+            continue
+        nested_root = core_root.joinpath(*PurePosixPath(relative).parts)
+        nested = host_core_git_fingerprint(nested_root).encode("ascii")
+        relative_bytes = relative.encode("utf-8")
+        digest.update(len(relative_bytes).to_bytes(8, "big"))
+        digest.update(relative_bytes)
+        digest.update(len(nested).to_bytes(8, "big"))
+        digest.update(nested)
+    return digest.hexdigest()
+
+
+def host_core_cleanliness(core_root: Path) -> tuple[bool, str]:
+    """Host Core가 HEAD와 byte 단위로 같은 checkout인지 판정한다."""
+    try:
+        toplevel = _run_host_git(core_root, "rev-parse", "--show-toplevel")
+    except OSError as exc:
+        return False, f"Git 상태를 실행할 수 없다: {exc}"
+    if toplevel.returncode != 0:
+        detail = toplevel.stderr.strip() or toplevel.stdout.strip() or "Git root 확인 실패"
+        return False, detail[-500:]
+    try:
+        same_root = Path(toplevel.stdout.strip()).resolve().samefile(core_root.resolve())
+    except OSError as exc:
+        return False, f"Git root를 대조할 수 없다: {exc}"
+    if not same_root:
+        return False, f"Git top-level이 core_root와 다르다: {toplevel.stdout.strip()}"
+
+    try:
+        tracked = _run_host_git(core_root, "ls-files", "-v", "-z")
+    except OSError as exc:
+        return False, f"Git index를 실행할 수 없다: {exc}"
+    if tracked.returncode != 0:
+        detail = tracked.stderr.strip() or tracked.stdout.strip() or "Git index 확인 실패"
+        return False, detail[-500:]
+    records = [record for record in tracked.stdout.split("\0") if record]
+    malformed = [record for record in records if len(record) < 3 or record[1] != " "]
+    if malformed:
+        return False, "Git index 항목 형식을 판정할 수 없다"
+    flagged = [record for record in records if record[0] != "H"]
+    if flagged:
+        return False, f"Git index 우회 flag가 있다: {'; '.join(flagged[:5])}"
+
+    try:
+        staged = _run_host_git(core_root, "ls-files", "--stage", "-z")
+        head = _run_host_git(core_root, "ls-tree", "-r", "-z", "--full-tree", "HEAD")
+        object_format = _run_host_git(core_root, "rev-parse", "--show-object-format")
+    except OSError as exc:
+        return False, f"Git 객체 상태를 실행할 수 없다: {exc}"
+    for label, completed_object in (
+        ("index", staged),
+        ("HEAD", head),
+        ("object format", object_format),
+    ):
+        if completed_object.returncode != 0:
+            detail = (
+                completed_object.stderr.strip()
+                or completed_object.stdout.strip()
+                or f"Git {label} 확인 실패"
+            )
+            return False, detail[-500:]
+    try:
+        index_entries = _parse_index_entries(staged.stdout)
+        head_entries = _parse_head_entries(head.stdout)
+    except ValueError as exc:
+        return False, str(exc)
+    if index_entries != head_entries:
+        differences = sorted(
+            relative
+            for relative in set(index_entries) | set(head_entries)
+            if index_entries.get(relative) != head_entries.get(relative)
+        )
+        return False, f"HEAD와 index가 다르다: {'; '.join(differences[:5])}"
+    algorithm = object_format.stdout.strip()
+    if algorithm not in hashlib.algorithms_available:
+        return False, f"지원하지 않는 Git object format이다: {algorithm}"
+
+    regular_paths = sorted(
+        relative for relative, (mode, _) in index_entries.items()
+        if mode in {"100644", "100755"}
+    )
+    attributes_safe, attributes_detail = _tracked_content_attributes(core_root, regular_paths)
+    if not attributes_safe:
+        return False, attributes_detail
+
+    try:
+        completed = _run_host_git(
+            core_root,
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignored=matching",
+            "--ignore-submodules=none",
+        )
+    except OSError as exc:
+        return False, f"Git 상태를 실행할 수 없다: {exc}"
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "Git 상태 확인 실패"
+        return False, detail[-500:]
+    entries = [line for line in completed.stdout.splitlines() if line]
+    if entries:
+        return False, "; ".join(entries[:5])
+
+    submodule_directories: set[Path] = set()
+    for relative, (mode, expected_oid) in index_entries.items():
+        worktree_path = core_root.joinpath(*PurePosixPath(relative).parts)
+        try:
+            file_stat = worktree_path.lstat()
+        except OSError as exc:
+            return False, f"tracked 경로를 읽을 수 없다: {relative}: {exc}"
+        if mode in {"100644", "100755"}:
+            if not stat.S_ISREG(file_stat.st_mode):
+                return False, f"tracked entry type이 다르다: {relative}"
+            try:
+                raw_content = worktree_path.read_bytes()
+            except OSError as exc:
+                return False, f"tracked 파일을 읽을 수 없다: {relative}: {exc}"
+            if _blob_oid(raw_content, algorithm) != expected_oid:
+                return False, f"tracked blob 내용이 HEAD와 다르다: {relative}"
+            if os.name != "nt":
+                executable = bool(file_stat.st_mode & 0o111)
+                if executable != (mode == "100755"):
+                    return False, f"tracked 실행 mode가 HEAD와 다르다: {relative}"
+        elif mode == "120000":
+            if not stat.S_ISLNK(file_stat.st_mode):
+                return False, f"tracked symlink type이 다르다: {relative}"
+            try:
+                target = os.fsencode(os.readlink(worktree_path))
+            except OSError as exc:
+                return False, f"tracked symlink를 읽을 수 없다: {relative}: {exc}"
+            if _blob_oid(target, algorithm) != expected_oid:
+                return False, f"tracked symlink target이 HEAD와 다르다: {relative}"
+        elif mode == "160000":
+            if not stat.S_ISDIR(file_stat.st_mode):
+                return False, f"tracked gitlink type이 다르다: {relative}"
+            submodule_directories.add(worktree_path)
+            try:
+                nested_head = _run_host_git(worktree_path, "rev-parse", "--verify", "HEAD^{commit}")
+            except OSError as exc:
+                return False, f"tracked gitlink를 읽을 수 없다: {relative}: {exc}"
+            if nested_head.returncode != 0 or nested_head.stdout.strip() != expected_oid:
+                return False, f"tracked gitlink HEAD가 다르다: {relative}"
+            nested_clean, nested_detail = host_core_cleanliness(worktree_path)
+            if not nested_clean:
+                return False, f"tracked gitlink가 clean하지 않다: {relative}: {nested_detail}"
+        else:
+            return False, f"지원하지 않는 tracked mode다: {mode} {relative}"
+
+    allowed_directories: set[str] = set()
+    for relative_text, (mode, _) in index_entries.items():
+        relative = PurePosixPath(relative_text)
+        for parent in relative.parents:
+            if parent.as_posix() != ".":
+                allowed_directories.add(parent.as_posix())
+        if mode == "160000":
+            allowed_directories.add(relative.as_posix())
+    git_metadata = core_root / ".git"
+    extra_directories: list[str] = []
+    for path in sorted(core_root.rglob("*")):
+        if not path.is_dir():
+            continue
+        if git_metadata.is_dir() and (path == git_metadata or git_metadata in path.parents):
+            continue
+        if any(path == root or root in path.parents for root in submodule_directories):
+            continue
+        relative = path.relative_to(core_root).as_posix()
+        if relative not in allowed_directories:
+            extra_directories.append(relative)
+    if extra_directories:
+        return False, f"Git이 소유하지 않는 directory가 있다: {'; '.join(extra_directories[:5])}"
+    return True, "HEAD·index·tracked blob/type/mode, untracked·ignored, 우회 flag, 추가 directory 일치"
 
 
 def _walk(root: Path, suffix: str) -> Iterator[Path]:
@@ -268,29 +645,96 @@ def check_temporary_canonical_links(root: Path) -> Iterable[Finding]:
                 yield Finding("temporary-canonical-links", rel, f"한시 자료를 참조한다: {target}")
 
 
+def _markdown_h2_sections(text: str) -> dict[str, list[str]]:
+    sections: dict[str, list[str]] = {}
+    heading: str | None = None
+    body: list[str] = []
+    fence: tuple[str, int] | None = None
+
+    def flush() -> None:
+        if heading is not None:
+            sections.setdefault(heading, []).append("".join(body))
+
+    for line in text.splitlines(keepends=True):
+        content = line.rstrip("\r\n")
+        if fence is None:
+            fence_match = re.match(r"^ {0,3}(`{3,}|~{3,})", content)
+            if fence_match:
+                marker = fence_match.group(1)
+                fence = (marker[0], len(marker))
+                if heading is not None:
+                    body.append(line)
+                continue
+        else:
+            closing_match = re.fullmatch(r" {0,3}(`{3,}|~{3,})[ \t]*", content)
+            if (
+                closing_match
+                and closing_match.group(1)[0] == fence[0]
+                and len(closing_match.group(1)) >= fence[1]
+            ):
+                fence = None
+            if heading is not None:
+                body.append(line)
+            continue
+        match = re.match(r"^ {0,3}##(?!#)\s+(.+?)\s*$", content)
+        if match:
+            flush()
+            title = re.sub(r"\s+#+\s*$", "", match.group(1)).strip()
+            heading = f"## {title}"
+            body = []
+            continue
+        if heading is not None:
+            body.append(line)
+    flush()
+    return sections
+
+
+def _action_has_concrete_signal(action: str) -> bool:
+    code_spans = [value.strip() for value in re.findall(r"`([^`]+)`", action)]
+    if any(value.upper() not in {"TODO", "TBD"} for value in code_spans):
+        return True
+    return bool(ACTION_PATH.search(action) or ACTION_SPECIFIC_TERM.search(action))
+
+
 def _state_findings(consumer_root: Path, state: Path) -> Iterable[Finding]:
     text = state.read_text(encoding="utf-8")
     rel = _rel(consumer_root, state)
+    sections = _markdown_h2_sections(text)
     for section in STATE_SECTIONS:
-        if section not in text:
+        if section not in sections:
             yield Finding("consumer-state", rel, f"필수 절이 없다: {section}")
+        elif len(sections[section]) > 1:
+            yield Finding("consumer-state", rel, f"필수 절이 중복됐다: {section}")
+    for heading in sections:
+        if FORBIDDEN_STATE_SECTION.search(heading.removeprefix("## ")):
+            yield Finding("consumer-state", rel, f"완료 상세 절을 포함한다: {heading}")
     if len(text) > STATE_BUDGET_CHARS:
         yield Finding("consumer-state", rel, f"{len(text)}자가 예산 {STATE_BUDGET_CHARS}자를 넘었다")
     if DYNAMIC_NUMBERS.search(text):
         yield Finding("consumer-state", rel, "동적 Git 수치가 문서에 고정되어 있다")
-    if "## 첫 다음 행동" in text:
-        tail = text.split("## 첫 다음 행동", 1)[1]
+    if STATE_FILE_COUNTS.search(text):
+        yield Finding("consumer-state", rel, "파일 개수가 문서에 고정되어 있다")
+    if any(pattern.search(text) for pattern in EPHEMERAL_FAILURE_STATE):
+        yield Finding("consumer-state", rel, "임시 실패 상태가 문서에 고정되어 있다")
+    if "## 첫 다음 행동" in sections:
+        tail = sections["## 첫 다음 행동"][0]
         actions = [line.strip() for line in tail.splitlines() if re.match(r"^\d+\.", line.strip())]
         if not actions:
             yield Finding("consumer-state", rel, "번호가 매겨진 첫 다음 행동이 없다")
         for action in actions:
-            normalized = action.rstrip(".")
-            if any(normalized.endswith(value) for value in VAGUE_ACTIONS):
+            content = re.sub(r"^\d+\.\s*", "", action)
+            if (
+                not ACTION_EXECUTABLE_END.search(content)
+                or GENERIC_ACTION.fullmatch(content)
+                or (VAGUE_ACTION_END.search(content) and not _action_has_concrete_signal(content))
+            ):
                 yield Finding("consumer-state", rel, f"첫 다음 행동이 모호하다: {action}")
-    if "## 직전 게이트" in text and "## 승인 상태" in text:
-        gates = text.split("## 직전 게이트", 1)[1].split("## 승인 상태", 1)[0]
-        judged = [line for line in gates.splitlines() if "`pass`" in line or "`fail`" in line]
-        if len(judged) > 1:
+    if "## 직전 게이트" in sections:
+        gates = sections["## 직전 게이트"][0]
+        judged = list(GATE_JUDGMENT.finditer(gates))
+        if not judged:
+            yield Finding("consumer-state", rel, "직전 게이트 절에 판정이 없다")
+        elif len(judged) > 1:
             yield Finding("consumer-state", rel, "직전 게이트 절에 과거 판정이 누적되어 있다")
 
 
@@ -343,6 +787,16 @@ def consumer_findings(
 
     if contract["contract_version"] != compatibility.get("contract_version"):
         yield Finding("consumer-contract", "-", "Core와 소비 계약의 contract_version이 다르다")
+
+    started("consumer-core-read-only")
+    if contract["consumer_role"] == "host":
+        clean, detail = host_core_cleanliness(core_root)
+        if not clean:
+            yield Finding(
+                "consumer-core-read-only",
+                Path(contract["core_path"]).as_posix(),
+                f"Host Core가 읽기 전용 clean 상태가 아니다: {detail}",
+            )
 
     started("consumer-capabilities")
     available = compatibility.get("optional_capabilities", {})

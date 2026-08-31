@@ -29,13 +29,13 @@
     {
       "id": "rule-governance-mid-task",
       "kind": "mid-task",
-      "utterance": "작업하다 보니 이 절차가 반복되는데 규칙으로 만들어두자",
+      "utterance": "이 프로젝트에서 발견한 절차를 Core 공통 규칙에 흡수하려는데, 일반화 가능한지 먼저 판정해",
       "prior_owners": [],
       "expected_owners": [
         "rules/rule-governance.md"
       ],
       "forbidden_owners": [],
-      "reason": "작업 도중 규칙 생성 경계로 새로 진입하면 소유자를 추가로 읽어야 한다."
+      "reason": "단일 프로젝트 절차를 Core 규칙으로 흡수하기 전 일반화 적합성을 판정하는 것은 규칙 거버넌스의 trigger다."
     },
     {
       "id": "rule-governance-near-miss",
@@ -330,29 +330,30 @@
     {
       "id": "failure-records-initial",
       "kind": "initial",
-      "utterance": "이번에 겪은 실패를 기록으로 남겨줘",
+      "utterance": "이번 실패가 다시 나지 않게 일반화 가능한 예방책을 결함 주입 검사에 흡수해줘",
       "prior_owners": [],
       "expected_owners": [
         "rules/failure-records.md"
       ],
       "forbidden_owners": [],
-      "reason": "실패 기록은 명시된 trigger다."
+      "reason": "test-only 예방책 흡수는 실패 처리 소유자의 trigger이며 활성 규칙 의미 변경은 없다."
     },
     {
       "id": "failure-records-colloquial",
       "kind": "colloquial",
-      "utterance": "같은 실수 또 안 하게 정리해놔",
+      "utterance": "같은 실수 또 안 나게 일반화된 예방책을 기존 활성 규칙에 녹이고 실패 내역은 남기지 마",
       "prior_owners": [],
       "expected_owners": [
-        "rules/failure-records.md"
+        "rules/failure-records.md",
+        "rules/rule-governance.md"
       ],
       "forbidden_owners": [],
-      "reason": "재사용 목적의 실패 보존 요청이다."
+      "reason": "실패 예방책 흡수와 활성 규칙 의미 변경이 함께 있으므로 실패 처리와 일반화 거버넌스가 모두 적용된다."
     },
     {
       "id": "failure-records-mid-task",
       "kind": "mid-task",
-      "utterance": "도구와 방법을 바꿨지만 같은 작업이 세 번째 실패했어. 실행을 중단하고 원인과 재시작 조건을 현재 상태에 남겨",
+      "utterance": "이번 실행 명령에서 결과 시도가 세 번째 실패했어. 네 번째 결과 시도는 막고 현재 차단 원인과 재시작 조건만 상태에 남겨",
       "prior_owners": [
         "rules/work-contract.md"
       ],
@@ -361,7 +362,7 @@
         "rules/failure-records.md"
       ],
       "forbidden_owners": [],
-      "reason": "방법이 달라도 같은 작업의 실패는 누적되며 세 번째 실패에서 실행을 중단하고 현재 상태를 갱신한다."
+      "reason": "현재 실행 명령의 세 번째 결과 실패는 실패 처리 소유자가 중단하고, 현재 차단 상태 갱신은 인수인계 소유자가 담당한다."
     },
     {
       "id": "failure-records-near-miss",
@@ -374,7 +375,7 @@
       "forbidden_owners": [
         "rules/failure-records.md"
       ],
-      "reason": "작업 계약은 이미 읽었고 실제 요구 변경은 기존 작업의 실패로 누적하지 않으므로 실패 소유자로 새로 route하지 않는다."
+      "reason": "작업 계약은 이미 읽었고 실제 요구 변경만 있으므로 실패 처리 소유자로 새로 route하지 않는다."
     },
     {
       "id": "version-control-initial",

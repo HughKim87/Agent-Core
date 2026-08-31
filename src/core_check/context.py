@@ -111,7 +111,7 @@ def build(
         if ref.identifier in selected:
             continue
         if ref.path.startswith("failures/"):
-            reason = "예외 진단 문서는 기본 선택과 일반 route에 포함하지 않는다"
+            reason = "별도 실패 사건 문서는 Core gate가 거부하며 시작 문맥에 포함하지 않는다"
         elif ref.path.startswith("rules/"):
             reason = "현재 행동에 Core route가 일치하지 않는다"
         else:

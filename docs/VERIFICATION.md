@@ -47,7 +47,11 @@ Core 자체 gate 통과만으로 Host 사용 가능성이나 read-only push 거�
 
 ## 4. 소비 통합 gate
 
-소비 계약이나 연결 표면이 변경되어 소비 통합 gate를 선택한 작업에서는 `--consumer-root`를 지정하고 Core 자체 gate에 다음을 추가한다.
+소비 계약이나 연결 표면이 변경되어 소비 통합 gate를 선택한 작업에서는 `--consumer-root`를 지정한다. `maintainer`는 Core 자체 gate와 아래 소비 검사를 함께 실행한다. `host` 소비 gate는 검증된 Core library의 구조·공개 계약을 읽기 전용으로 검사하되 Maintainer가 소유하는 Core 내부 회귀를 소비 완료의 필수 검사로 다시 실행하지 않는다. 별도의 격리된 read-only 진단은 허용되지만 Maintainer 근거를 대신하지 않는다.
+
+Host의 순수 `verify`는 dirty Core를 읽기만 해 원인을 보고할 수 있다. 이 경로는 선택 기능 Runtime을 실행하지 않고 전후 Core tree·revision·index 불변을 증명하며, 발견이 있으면 소비 성공이 아니라 진단 실패 상태를 반환한다. 역할·Consumer 입력·Runtime storage에 무관한 정적 metadata discovery도 같은 전후 불변을 증명하고 쓰기 가능 경로를 열지 않을 때만 clean 사전 조건의 near-miss이며 기능 소비·완료 근거가 아니다. `context`, `gate`와 실제 기능 실행은 clean 기준을 먼저 통과해야 한다.
+
+Host gate가 선택 기능의 `info`와 호환성 선언 일치를 읽더라도 해당 `optional-features` 단계는 `not_applicable`이며 기능 소비·가용성·완료의 `pass`로 승격하지 않는다. 요구 기능의 설치 구조와 버전은 Consumer 계약 검사가 별도로 판정하고, 실제 기능 사용은 verified Consumer 경계의 `invoke`로 검증한다.
 
 - 소비 계약 버전·역할·상대경로
 - 진입 포인터의 대상과 순서
@@ -55,9 +59,11 @@ Core 자체 gate 통과만으로 Host 사용 가능성이나 read-only push 거�
 - 소비 규칙 route
 - `.gitmodules`의 Core path
 - Core·consumer scope가 있는 context와 fingerprint
+- Host 소비 실행 전 HEAD·index·tracked raw worktree bytes/type/mode와 untracked·ignored·추가 directory 청결. `git status`의 content 정규화 결과에 의존하지 않으며, nested gitlink에도 같은 기준을 재귀 적용하고 `filter`·`working-tree-encoding`·`ident` content 변환 attribute는 hashing 전에 거부
 - 보호 경로를 제외한 소비 계약 표면의 무부작용
+- 실제 Git metadata directory만 제외하고 submodule `.git` pointer·빈 directory·entry type·mode·symlink target·cache·ignored 파일과 지속 mtime을 포함한 실행 전후 Core tree 및 HEAD·index·local Git config 무부작용
 
-실제 gitlink 객체, Deploy Key fetch·push 권한, Codex·Claude 행동은 별도 통합·실제 사용 검증이 소유한다.
+실제 gitlink 객체, 원격 자격 증명의 fetch·push 권한, Codex·Claude 행동은 별도 통합·실제 사용 검증이 소유한다.
 
 ## 5. 위험별 최소 수준
 

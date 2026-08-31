@@ -65,11 +65,97 @@ class StateContractTest(unittest.TestCase):
         findings = self._findings(VALID_STATE.replace("- 없음", "- 추적 파일 40", 1))
         self.assertTrue(any("동적 Git 수치" in finding.message for finding in findings))
 
-    def test_vague_first_action_is_detected(self) -> None:
-        findings = self._findings(
-            VALID_STATE.replace("1. `PROJECT_RULES.md`의 선언을 파싱한다.", "1. 확인한다.")
+    def test_file_count_variants_are_detected(self) -> None:
+        for value in (
+            "- 변경 대상 8개 파일",
+            "- 변경 파일 8개",
+            "- 변경된 파일은 8개다",
+            "- 8개의 파일",
+            "- 변경 파일: 8개",
+            "- 여덟 개 경로",
+            "- 변경 대상은 8개의 파일이다",
+            "- 파일도 8개다",
+            "- 파일은 총 8개다",
+            "- 파일은 `8`개다",
+            "- 파일 개수는 8개다",
+            "- 경로 수는 8개다",
+            "- 변경 파일 수: 8개",
+        ):
+            with self.subTest(value=value):
+                findings = self._findings(VALID_STATE.replace("- 없음", value, 1))
+                self.assertTrue(any("파일 개수" in finding.message for finding in findings))
+
+    def test_file_count_does_not_match_profile_compound(self) -> None:
+        for value in (
+            "- 실행 프로파일 8개를 활성화한다",
+            "- 이 파일은 8개 항목을 포함한다",
+            "- 이 경로는 8개 문자로 구성된다",
+            "- 이 파일 수는 8개 항목을 포함한다",
+        ):
+            with self.subTest(value=value):
+                text = VALID_STATE.replace("- 없음", value, 1)
+                self.assertFalse(
+                    any("파일 개수" in finding.message for finding in self._findings(text))
+                )
+
+    def test_ephemeral_failure_state_is_detected(self) -> None:
+        for value in (
+            "실패 횟수",
+            "실패횟수",
+            "실패 카운터",
+            "연속 실패: 3회",
+            "실패 건수: 3",
+            "실패 누적 3회",
+            "실패 세 회",
+            "시도 방법",
+            "시도한 방법",
+            "시도해 본 방법",
+            "방법 순서",
+            "방법의 순서",
+            "중단 플래그",
+            "중단 여부",
+            "중단 상태",
+            "중단 유무",
+            "실패는 3회",
+            "세 번 실패",
+            "재시도 3회",
+            "중단됨: true",
+        ):
+            with self.subTest(value=value):
+                findings = self._findings(VALID_STATE.replace("- 없음", f"- {value}: 없음", 1))
+                self.assertTrue(any("임시 실패 상태" in finding.message for finding in findings))
+
+    def test_general_failure_policy_text_is_not_ephemeral_state(self) -> None:
+        text = VALID_STATE.replace("- 없음", "- 실패를 예방하는 정책을 적용한다", 1)
+        self.assertFalse(
+            any("임시 실패 상태" in finding.message for finding in self._findings(text))
         )
-        self.assertTrue(any("모호" in finding.message for finding in findings))
+
+    def test_vague_first_action_is_detected(self) -> None:
+        for value in (
+            "1. 확인한다.",
+            "1. 계속한다.",
+            "1. 다음 단계",
+            "1. 다음 작업을 진행한다.",
+            "1. 다음/후속 작업을 진행한다.",
+            "1. `TODO`를 확인한다.",
+        ):
+            with self.subTest(value=value):
+                findings = self._findings(
+                    VALID_STATE.replace("1. `PROJECT_RULES.md`의 선언을 파싱한다.", value)
+                )
+                self.assertTrue(any("모호" in finding.message for finding in findings))
+
+    def test_specific_first_action_may_end_with_check_verb(self) -> None:
+        for value in (
+            "1. `core/rules/handoff.md`의 필수 절을 확인한다.",
+            "1. 승인 상태 절에 미승인 범위가 남아 있는지 확인한다.",
+        ):
+            with self.subTest(value=value):
+                text = VALID_STATE.replace(
+                    "1. `PROJECT_RULES.md`의 선언을 파싱한다.", value
+                )
+                self.assertFalse(any("모호" in finding.message for finding in self._findings(text)))
 
     def test_missing_numbered_action_is_detected(self) -> None:
         findings = self._findings(
@@ -82,6 +168,86 @@ class StateContractTest(unittest.TestCase):
             VALID_STATE.replace("- 결과: `pass`", "- 첫 결과: `pass`\n- 둘째 결과: `fail`")
         )
         self.assertTrue(any("누적" in finding.message for finding in findings))
+
+    def test_korean_accumulated_gate_history_is_detected(self) -> None:
+        findings = self._findings(
+            VALID_STATE.replace("- 결과: `pass`", "- 첫 판정: 통과\n- 둘째 판정: 실패")
+        )
+        self.assertTrue(any("누적" in finding.message for finding in findings))
+
+    def test_two_gate_judgments_on_one_line_are_detected(self) -> None:
+        findings = self._findings(
+            VALID_STATE.replace(
+                "- 결과: `pass`", "- 이전 판정: 통과 / 현재 판정: 실패"
+            )
+        )
+        self.assertTrue(any("누적" in finding.message for finding in findings))
+
+    def test_missing_gate_judgment_is_detected(self) -> None:
+        findings = self._findings(VALID_STATE.replace("- 결과: `pass`", "- 결과 대기"))
+        self.assertTrue(any("판정이 없다" in finding.message for finding in findings))
+
+    def test_english_gate_token_uses_word_boundaries(self) -> None:
+        for artifact in ("compass.json", "pass.json", "fail.md", "not_run.json"):
+            with self.subTest(artifact=artifact):
+                text = VALID_STATE.replace(
+                    "- 결과: `pass`", f"- 결과: `pass`\n- 산출물: {artifact}"
+                )
+                self.assertFalse(
+                    any("누적" in finding.message for finding in self._findings(text))
+                )
+
+    def test_korean_gate_judgment_accepts_sentence_punctuation(self) -> None:
+        for judgment in ("통과.", "실패.", "통과)"):
+            with self.subTest(judgment=judgment):
+                text = VALID_STATE.replace("- 결과: `pass`", f"- 결과: {judgment}")
+                findings = self._findings(text)
+                self.assertFalse(
+                    any(
+                        "판정이 없다" in finding.message or "누적" in finding.message
+                        for finding in findings
+                    )
+                )
+
+    def test_heading_mention_does_not_satisfy_required_section(self) -> None:
+        text = VALID_STATE.replace(
+            "## 차단\n\n- 없음",
+            "## 다른 절\n\n- 본문에서 `## 차단` 문자열을 언급한다",
+        )
+        findings = self._findings(text)
+        self.assertTrue(any("필수 절" in finding.message for finding in findings))
+
+    def test_completed_detail_section_is_detected(self) -> None:
+        for heading in ("완료 상세", "완료 작업", "작업 이력", "과거 판정"):
+            with self.subTest(heading=heading):
+                findings = self._findings(VALID_STATE + f"\n## {heading}\n\n- 과거 과정\n")
+                self.assertTrue(any("완료 상세" in finding.message for finding in findings))
+
+    def test_incomplete_section_is_not_completed_history(self) -> None:
+        findings = self._findings(VALID_STATE + "\n## 미완료 작업\n\n- 현재 남은 일\n")
+        self.assertFalse(any("완료 상세" in finding.message for finding in findings))
+
+    def test_fenced_heading_does_not_satisfy_required_section(self) -> None:
+        text = VALID_STATE.replace(
+            "## 차단\n\n- 없음",
+            "## 다른 절\n\n```md\n## 차단\n```",
+        )
+        findings = self._findings(text)
+        self.assertTrue(any("필수 절" in finding.message for finding in findings))
+
+    def test_shorter_fence_does_not_close_longer_fence(self) -> None:
+        text = VALID_STATE.replace(
+            "## 차단\n\n- 없음",
+            "## 다른 절\n\n````md\n```\n## 차단\n````",
+        )
+        findings = self._findings(text)
+        self.assertTrue(any("필수 절" in finding.message for finding in findings))
+
+    def test_indented_and_closing_hash_heading_is_valid(self) -> None:
+        text = VALID_STATE.replace("## 차단", "   ## 차단 ##")
+        self.assertFalse(
+            any("필수 절이 없다: ## 차단" in finding.message for finding in self._findings(text))
+        )
 
     def test_size_budget_is_enforced(self) -> None:
         findings = self._findings(VALID_STATE + ("x" * 3_000))

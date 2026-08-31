@@ -33,7 +33,7 @@
 
 - L1은 Core 규칙의 유일한 Core router다. 소비 정책은 자기 scope의 도메인 route만 소유한다.
 - L5는 L1~L4 파일을 데이터로 읽을 수 있지만 문서 이름을 코드 상수로 고정하지 않는다.
-- L5는 L7을 import하지 않는다. L7은 L6 기반 원시와 L5의 검사 등록 인터페이스만 사용할 수 있으며 다른 L5 구현을 Runtime 의존으로 삼지 않는다.
+- L5는 L7을 import하지 않는다. L7은 L6 기반 원시와 L5의 좁은 `core_check.runtime_boundary` 검사 인터페이스만 사용할 수 있으며 다른 L5 구현을 Runtime 의존으로 삼지 않는다.
 - L6은 어떤 내부 모듈도 import하지 않는다.
 - 모든 내부 import 순환을 금지한다.
 - 소비 선언의 경로는 소비 root 밖으로, Core 선언의 경로는 Core root 밖으로 나갈 수 없다.
@@ -60,7 +60,8 @@ L7이 없어도 Core import, Core 자체 `verify`, Core 자체 `gate`가 성립�
     "src/core_check/derived.py",
     "src/core_check/gate.py",
     "src/core_check/integrity.py",
-    "src/core_check/registry.py"
+    "src/core_check/registry.py",
+    "src/core_check/runtime_boundary.py"
   ],
   "L6": [
     "src/core_check/primitives.py"
@@ -97,6 +98,7 @@ L7이 없어도 Core import, Core 자체 `verify`, Core 자체 `gate`가 성립�
 | A8 | Core 검사와 소비 검사가 서로의 root를 중복 순회하지 않음 |
 | A9 | context 경로가 `core` 또는 `consumer` scope를 명시함 |
 | A10 | L7 Runtime 데이터 경로가 소비 root 밖이나 보호 경로로 나가지 않음 |
+| A11 | L7이 허용된 `core_check.runtime_boundary` 외의 L5 구현을 import하지 않음 |
 
 ## 7. 공개 경계
 

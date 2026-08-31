@@ -6,7 +6,9 @@ import ast
 from datetime import datetime, timezone
 UTC = timezone.utc
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -44,6 +46,29 @@ SECOND_ID = "123e4567-e89b-42d3-a456-426614174001"
 MISSING_ID = "123e4567-e89b-42d3-a456-426614174099"
 STORAGE_ROOT = Path("runtime") / "agent-data"
 PROTECTED_PATHS = ("private-source", "generated-output")
+
+
+def make_directory_link(link: Path, target: Path) -> None:
+    if os.name == "nt":
+        completed = subprocess.run(
+            ["cmd.exe", "/d", "/c", "mklink", "/J", str(link), str(target)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise OSError(completed.stderr or completed.stdout)
+        return
+    link.symlink_to(target, target_is_directory=True)
+
+
+def remove_directory_link(link: Path) -> None:
+    if os.name == "nt":
+        os.rmdir(link)
+    else:
+        link.unlink()
 
 
 def writable_store(root: Path) -> RecordStore:
@@ -213,6 +238,34 @@ class PathBoundaryTests(unittest.TestCase):
                             storage_root=storage_root,
                             protected_paths=protected,
                         )
+
+    def test_storage_symlink_changed_to_protected_path_fails_before_write(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="shared-storage-swap-") as raw_root:
+            root = Path(raw_root)
+            core = root / "core"
+            safe = root / "safe-storage"
+            link = root / "runtime-storage"
+            core.mkdir()
+            safe.mkdir()
+            try:
+                make_directory_link(link, safe)
+            except (NotImplementedError, OSError) as exc:
+                self.skipTest(f"directory link를 만들 수 없다: {exc}")
+            store = RecordStore(
+                root,
+                storage_root="runtime-storage",
+                protected_paths=("core",),
+                write_enabled=True,
+            )
+            remove_directory_link(link)
+            make_directory_link(link, core)
+            try:
+                with self.assertRaises(InputContractError):
+                    store.initialize()
+                self.assertFalse((core / "records").exists())
+                self.assertFalse((core / "events").exists())
+            finally:
+                remove_directory_link(link)
 
 
 class RecordStoreTests(unittest.TestCase):
@@ -448,16 +501,25 @@ class IsolationTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, implementation)
 
-    def test_l7_runtime_uses_only_standard_library_and_its_relative_modules(self) -> None:
+    def test_l7_runtime_uses_only_stdlib_relative_modules_and_boundary_api(self) -> None:
         standard = set(sys.stdlib_module_names)
+        allowed_boundary = "core_check.runtime_boundary"
         for path in sorted((ROOT / "experimental" / "shared_data").glob("*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
                     for alias in node.names:
-                        self.assertIn(alias.name.split(".")[0], standard, path.name)
+                        self.assertTrue(
+                            alias.name.split(".")[0] in standard
+                            or alias.name == allowed_boundary,
+                            f"{path.name}: {alias.name}",
+                        )
                 elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-                    self.assertIn(node.module.split(".")[0], standard, path.name)
+                    self.assertTrue(
+                        node.module.split(".")[0] in standard
+                        or node.module == allowed_boundary,
+                        f"{path.name}: {node.module}",
+                    )
 
     def test_shared_data_is_published_only_through_the_versioned_cli_boundary(self) -> None:
         capability = declared_compatibility(ROOT)["optional_capabilities"]["shared_data"]

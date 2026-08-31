@@ -14,9 +14,14 @@ from pathlib import Path
 import sys
 
 from .context import build as build_context
-from .declarations import declared_compatibility
-from .gate import run as run_gate
-from .integrity import run_all, run_consumer
+from .declarations import consumer_contract, declared_compatibility
+from .gate import (
+    HostCoreBaseline,
+    capture_host_core_baseline,
+    host_core_baseline_status,
+    run as run_gate,
+)
+from .integrity import host_core_cleanliness, run_all, run_consumer
 from .primitives import CheckError, Report
 
 EXIT_OK = 0
@@ -50,13 +55,41 @@ def _merge(core: Report, consumer: Report) -> Report:
     return merged
 
 
+def _host_core_baseline(
+    core_root: Path, consumer_root: Path | None, *, require_clean: bool
+) -> HostCoreBaseline | None:
+    if consumer_root is None:
+        return None
+    contract = consumer_contract(core_root, consumer_root)
+    if contract["consumer_role"] != "host":
+        return None
+    clean, detail = host_core_cleanliness(core_root)
+    if require_clean and not clean:
+        raise CheckError(f"Host Core 읽기 전용 사전 검사 실패: {detail}")
+    return capture_host_core_baseline(core_root, require_clean=require_clean)
+
+
+def _require_host_core_unchanged(
+    core_root: Path, baseline: HostCoreBaseline | None
+) -> None:
+    if baseline is None:
+        return
+    unchanged, detail = host_core_baseline_status(core_root, baseline)
+    if not unchanged:
+        raise CheckError(f"Host 공개 인터페이스 실행 중 {detail}")
+
+
 def cmd_verify(core_root: Path, consumer_root: Path | None = None) -> int:
     """소비자: Core 자체 또는 Core와 소비 계약의 구조 위반을 확인한다."""
-    report = run_all(core_root)
-    scope = "core"
-    if consumer_root is not None:
-        report = _merge(report, run_consumer(core_root, consumer_root))
-        scope = "core+consumer"
+    baseline = _host_core_baseline(core_root, consumer_root, require_clean=False)
+    try:
+        report = run_all(core_root)
+        scope = "core"
+        if consumer_root is not None:
+            report = _merge(report, run_consumer(core_root, consumer_root))
+            scope = "core+consumer"
+    finally:
+        _require_host_core_unchanged(core_root, baseline)
     payload = report.as_dict()
     payload.update({"contract_version": _version(core_root), "scope": scope})
     _emit(payload)
@@ -65,7 +98,11 @@ def cmd_verify(core_root: Path, consumer_root: Path | None = None) -> int:
 
 def cmd_context(core_root: Path, consumer_root: Path, matched: list[str]) -> int:
     """소비자: scope가 있는 시작 문맥을 구성하고 재현성 지문을 반환한다."""
-    package = build_context(core_root, consumer_root, matched)
+    baseline = _host_core_baseline(core_root, consumer_root, require_clean=True)
+    try:
+        package = build_context(core_root, consumer_root, matched)
+    finally:
+        _require_host_core_unchanged(core_root, baseline)
     payload = package.as_dict()
     payload["contract_version"] = _version(core_root)
     _emit(payload)

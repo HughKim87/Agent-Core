@@ -110,14 +110,14 @@ Codex 포인터는 세 대상의 Markdown 링크, Claude 포인터는 세 대상
 $env:PYTHONPATH = (Resolve-Path -LiteralPath '<CORE_PATH>/src').Path
 ```
 
-Core 자체 검사:
+Core 자체 검사(유지보수자와 Core 자체 검증용):
 
 ```powershell
 python -B -m core_check --core-root <CORE_PATH> verify
 python -B -m core_check --core-root <CORE_PATH> gate
 ```
 
-소비 통합 검사:
+소비 통합 검사(`host`가 사용할 수 있는 유일한 검증 진입점):
 
 ```powershell
 python -B -m core_check --core-root <CORE_PATH> --consumer-root . verify
@@ -133,21 +133,39 @@ python -B -m core_check --core-root <CORE_PATH> --consumer-root . gate
 
 `not_run`이 있는 결과는 성공이 아니다.
 
+### Host의 Core 읽기 전용 실행
+
+`host`는 Core를 라이브러리 입력으로만 사용한다. Core 안에서 명령을 실행하거나 Core를 현재 작업 디렉터리, cache, 임시 경로, 로그 경로 또는 출력 경로로 사용하지 않는다. 모든 쓰기 가능 경로는 소비 root 안에 명시한다. 이 저장소의 Python 참조 구현은 bytecode cache를 막기 위해 `-B`를 사용하지만, 상위 불변식은 특정 실행기가 아니라 Core와 쓰기 경계의 완전한 분리다.
+
+Consumer는 wrapper·adapter·명시적 출력 인자·read-only mount/ACL 중 자기 환경에 맞는 통합 경계를 선택한다. 예를 들어 `<HOST_WORK_ROOT>`를 소비 root 안에 두고 Core 공개 CLI에는 읽기 전용 `--core-root`를, 산출물에는 `<HOST_WORK_ROOT>` 아래 경로를 전달할 수 있다. 출력 경로를 분리할 수 없는 도구는 Core에 실행하지 않는다. 공개 계약과 호환되는 최소 Consumer 입력을 따로 만들더라도 이를 Core 복사본이나 대체 배포물로 사용하지 않는다.
+
+Host의 `context`, `gate`와 기능 사용은 시작 전에 Core가 clean이어야 한다. 순수 read-only `verify`는 dirty Core의 원인을 진단할 수 있지만 기능 Runtime을 실행하지 않고 전후 불변을 대조하며, 결과가 `1`이면 소비·완료 성공 근거가 아니다. Host gate는 Maintainer 소유의 Core 내부 회귀를 소비 완료의 필수 검사로 다시 실행하지 않는다. 별도의 격리된 read-only 진단을 실행할 수는 있지만 Maintainer 회귀 근거를 대신하지 않는다.
+
+현재 Git 기반 참조 검사는 HEAD와 index의 직접 일치, index 우회 flag, 실제 worktree bytes와 HEAD blob의 일치, tracked entry type·mode·symlink target, untracked·ignored 항목과 빈 directory를 확인한다. 따라서 Git의 줄바꿈 정규화로 `git status`가 clean이어도 실제 bytes가 다르면 실패한다. `filter`·`working-tree-encoding`·`ident` content 변환 attribute가 필요한 checkout은 hashing 전에 fail-closed한다. nested gitlink는 같은 기준으로 재귀 검사한다. 실행 뒤에는 실제 Git metadata directory만 제외한 tree의 내용·구조·지속 mtime과 HEAD·index·local config 지문을 대조한다. Git 기준이나 사후 불변을 증명할 수 없으면 검증은 실패다.
+
+정책과 gate는 위반을 중단·탐지한다. 실제 쓰기 syscall 자체를 차단해야 하는 Host 실행 환경은 `core_path`를 read-only mount 또는 동등한 filesystem ACL로 제공해야 하며, 그 강제가 없으면 “물리적으로 쓰기 불가”라고 주장할 수 없다.
+
 ## 6A. 선택 기능 `shared_data` v1
 
-선택 데이터 Runtime을 사용할 때만 Core root와 `src`를 함께 Python module 검색 경로에 둔다.
+선택 데이터 Runtime의 공개 entry는 Core root와 `src`를 격리된 Python module 검색 경로의 맨 앞에 두는 아래 bootstrap이다. Consumer의 같은 이름 package가 Core module을 shadow하지 못하도록 `-I` 없이 bare module로 실행하지 않는다.
 
 ```powershell
 $coreRoot = (Resolve-Path -LiteralPath '<CORE_PATH>').Path
-$env:PYTHONPATH = ($coreRoot, (Join-Path $coreRoot 'src') -join ';')
-python -B -m experimental.shared_data info
+$coreJson = ConvertTo-Json $coreRoot -Compress
+$srcJson = ConvertTo-Json (Join-Path $coreRoot 'src') -Compress
+$bootstrap = "import runpy,sys;sys.path[:0]=[$coreJson,$srcJson];runpy.run_module('experimental.shared_data',run_name='__main__',alter_sys=True)"
+python -B -I -c $bootstrap info
 ```
 
-`info`는 기능 버전, 공개 명령, operation과 request/result schema 경로를 반환한다. 실제 호출은 소비 root·Runtime storage root·보호 경계를 명시하고 request v1 JSON 하나를 stdin으로 보낸다.
+`info`는 기능 버전, 공개 명령, operation과 request/result schema 경로만 반환하는 역할 비의존 정적 discovery다. 정상·예외 경로 모두에서 Core tree·Git 의미 상태의 전후 불변을 증명하고 쓰기 경로를 열지 않으므로 dirty Core에서도 실행할 수 있지만, 기능 소비·가용성·완료의 성공 근거는 아니다. Git 기준선을 증명할 수 없으면 실패한다. 실제 호출은 소비 root·Runtime storage root·보호 경계를 명시하고 request v1 JSON 하나를 stdin으로 보낸다.
+
+따라서 Host gate가 `info` 선언 일치를 확인해도 `optional-features`는 `not_applicable`로 기록한다. Consumer 계약 검사는 요구 기능의 설치 구조·최소 버전을 별도로 확인하고, 실제 기능 완료 근거가 필요하면 아래 verified `invoke` 결과를 사용한다.
+
+`invoke`는 실행 중인 Core와 `--consumer-root`의 소비 계약을 먼저 대조한다. 계약 버전은 Core와 정확히 같아야 하고, Consumer가 `required_core_capabilities.shared_data`에 호출할 최소 버전을 선언해야 한다. storage root가 계약의 `core_path`와 겹치거나 Consumer 밖이면 `--write` 여부와 관계없이 Dispatcher 생성 전에 거부한다. 통과한 storage는 Consumer 상대 canonical 경로로만 Dispatcher에 전달하고, 계약의 `core_path`를 내부 보호 경로에 자동 합산해 각 storage 경로 해석 때 다시 검사한다. 계약에 선언된 보호 경로와 호출 보호 경로도 함께 합산되며, Host 역할은 Core clean 기준과 전후 tree·HEAD/index 불변까지 통과해야 한다.
 
 ```powershell
 $request = '{"operation":"source.list","arguments":{}}'
-$request | python -B -m experimental.shared_data `
+$request | python -B -I -c $bootstrap `
   --consumer-root . `
   --storage-root runtime/agent-core `
   --protected-path private-material `
@@ -169,12 +187,12 @@ $request | python -B -m experimental.shared_data `
 4. 소비 통합 gate를 실행한다.
 5. 부모 저장소에서 변경된 gitlink만 검토·commit한다.
 
-Host는 Core commit을 만들거나 Core 원격에 push하지 않는다. Maintainer도 사용자 승인과 전체 게이트 없이 push하지 않는다.
+Host는 Core commit을 만들거나 Core 원격에 push하지 않으며 Core 안의 어떤 로컬 파일도 만들거나 바꾸지 않는다. Maintainer도 사용자 승인과 전체 게이트 없이 push하지 않는다.
 
-## 8. 권한과 키
+## 8. 원격 권한과 자격 증명
 
-- Maintainer clone은 쓰기 가능한 Core Deploy Key를 사용할 수 있다.
-- Host clone은 읽기 전용 Core Deploy Key를 사용한다.
+- Maintainer clone은 승인된 쓰기 권한이 있는 원격 자격 증명을 사용할 수 있다.
+- Host clone은 사용하는 원격 공급자가 지원하는 read-only 자격 증명·접근 제어를 사용한다.
 - 같은 PC에서도 각 clone의 로컬 `core.sshCommand`로 서로 다른 키를 선택할 수 있다.
 - 개인키, 토큰, `core.sshCommand`, 사용자별 키 경로는 저장소에 추적하지 않는다.
 - 정책은 보안 경계가 아니다. 실제 push 허용·거부는 원격 권한으로 검증한다.
@@ -185,6 +203,6 @@ Host는 Core commit을 만들거나 Core 원격에 push하지 않는다. Maintai
 - 계약 버전 불일치: Core의 [호환성 문서](COMPATIBILITY.md)에 따라 소비 파일을 먼저 이전한다.
 - gate 실패: gitlink를 갱신하지 않고 실패한 검사와 경로를 교정한다.
 - Host Core 변경 감지: 변경을 폐기하지 말고 정확한 diff를 보존해 Maintainer 작업으로 이관한다.
-- 키 노출 의심: 저장소 이력에 복제하지 말고 해당 키를 폐기·교체한 뒤 원격 접근을 재검증한다.
+- 자격 증명 노출 의심: 저장소 이력에 복제하지 말고 해당 자격 증명을 폐기·교체한 뒤 원격 접근을 재검증한다.
 
 실제 삭제·복구·키 폐기는 각 소비 저장소 정책과 사용자 승인 경계를 따른다.

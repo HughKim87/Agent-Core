@@ -7,18 +7,25 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from core_check import run_all  # noqa: E402
-from core_check.integrity import run_consumer  # noqa: E402
+import core_check.integrity as integrity_module  # noqa: E402
+from core_check.integrity import (  # noqa: E402
+    host_core_cleanliness,
+    host_core_git_fingerprint,
+    run_consumer,
+)
 from core_check.primitives import UnsafePathError, fingerprint, resolve_inside  # noqa: E402
 
 DOC_HEADERS = """- 목적: 결함 주입용 표본.
@@ -67,7 +74,7 @@ STATE_BODY = """# 상태 표본
 
 ## 첫 다음 행동
 
-1. 아무것도 하지 않는다.
+1. `CURRENT.md`의 현재 단계 절을 파싱한다.
 """
 
 RULE_BODY = """# 표본 규칙
@@ -111,7 +118,7 @@ CONSUMER_POLICY_BODY = """# 소비 정책 표본
 ```json
 {{
   "contract_version": 2,
-  "consumer_role": "host",
+  "consumer_role": "maintainer",
   "core_path": "core",
   "state": "CURRENT.md",
   "entry_pointers": {{
@@ -184,6 +191,7 @@ def declare_optional_shared_data(
 
 def build_clean(root: Path) -> None:
     (root / "rules").mkdir(parents=True)
+    (root / ".gitattributes").write_bytes(b"* text=auto eol=lf\n")
     (root / "docs").mkdir(parents=True)
     (root / "src" / "core_check").mkdir(parents=True)
     (root / "ROUTER.md").write_text(ROUTER_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
@@ -237,6 +245,119 @@ def build_consumer(base: Path) -> tuple[Path, Path]:
         encoding="utf-8",
     )
     return core, consumer
+
+
+def set_consumer_role(consumer: Path, role: str) -> None:
+    policy = consumer / "PROJECT_RULES.md"
+    policy.write_text(
+        policy.read_text(encoding="utf-8").replace(
+            '"consumer_role": "maintainer"', f'"consumer_role": "{role}"'
+        ),
+        encoding="utf-8",
+    )
+
+
+def refresh_raw_worktree_from_index(root: Path) -> None:
+    staged = subprocess.run(
+        ["git", "ls-files", "--stage", "-z"],
+        cwd=root,
+        capture_output=True,
+        check=True,
+    ).stdout
+    for record in (value for value in staged.split(b"\0") if value):
+        header, separator, raw_relative = record.partition(b"\t")
+        fields = header.split()
+        if not separator or len(fields) != 3 or fields[0] not in {b"100644", b"100755"}:
+            continue
+        blob = subprocess.run(
+            ["git", "cat-file", "blob", fields[1].decode("ascii")],
+            cwd=root,
+            capture_output=True,
+            check=True,
+        ).stdout
+        root.joinpath(*raw_relative.decode("utf-8").split("/")).write_bytes(blob)
+    subprocess.run(
+        ["git", "add", "-A"],
+        cwd=root,
+        capture_output=True,
+        check=True,
+    )
+
+
+def initialize_clean_git(root: Path) -> None:
+    commands = (
+        ["git", "init", "--quiet"],
+        ["git", "config", "core.autocrlf", "false"],
+        ["git", "add", "-A"],
+        [
+            "git",
+            "-c",
+            "user.name=Core Test",
+            "-c",
+            "user.email=core-test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "fixture",
+        ],
+    )
+    for command in commands:
+        subprocess.run(command, cwd=root, capture_output=True, check=True)
+    refresh_raw_worktree_from_index(root)
+
+
+def add_nested_gitlink(core: Path, base: Path) -> Path:
+    source = base / "nested-source"
+    source.mkdir()
+    (source / ".gitignore").write_bytes(b"cache/\n")
+    (source / "nested.txt").write_bytes(b"nested\n")
+    initialize_clean_git(source)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "core.autocrlf=false",
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "--quiet",
+            str(source),
+            "nested",
+        ],
+        cwd=core,
+        capture_output=True,
+        check=True,
+    )
+    nested = core / "nested"
+    subprocess.run(
+        ["git", "config", "core.autocrlf", "false"],
+        cwd=nested,
+        capture_output=True,
+        check=True,
+    )
+    refresh_raw_worktree_from_index(nested)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Core Test",
+            "-c",
+            "user.email=core-test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-am",
+            "nested fixture",
+        ],
+        cwd=core,
+        capture_output=True,
+        check=True,
+    )
+    return nested
 
 
 def findings_for(root: Path, check: str) -> list[str]:
@@ -618,12 +739,15 @@ class ContextTest(unittest.TestCase):
         with self.assertRaises(self.context.ContextBudgetError):
             self.context.build(self.core, self.consumer, budget=10)
 
-    def test_failure_knowledge_is_not_in_default_selection(self) -> None:
+    def test_forbidden_failure_document_is_not_in_default_selection(self) -> None:
         failures = self.core / "failures"
         failures.mkdir()
         (failures / "case.md").write_text(RULE_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
         package = self.context.build(self.core, self.consumer)
-        self.assertIn("core:failures/case.md", package.excluded)
+        self.assertEqual(
+            package.excluded["core:failures/case.md"],
+            "별도 실패 사건 문서는 Core gate가 거부하며 시작 문맥에 포함하지 않는다",
+        )
 
     def test_startup_context_is_within_budget(self) -> None:
         package = self.context.build(self.core, self.consumer)
@@ -655,6 +779,209 @@ class ConsumerContractTest(unittest.TestCase):
         report = run_consumer(self.core, self.consumer)
         self.assertTrue(report.ok, [finding.as_dict() for finding in report.findings])
 
+    def test_host_without_git_fails_closed(self) -> None:
+        set_consumer_role(self.consumer, "host")
+        with patch("core_check.integrity.subprocess.run", side_effect=OSError("git unavailable")):
+            report = run_consumer(self.core, self.consumer)
+        finding = [f for f in report.findings if f.check == "consumer-core-read-only"][0]
+        self.assertIn("Git 상태를 실행할 수 없다", finding.message)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_assume_unchanged_flag_fails_closed(self) -> None:
+        set_consumer_role(self.consumer, "host")
+        initialize_clean_git(self.core)
+        subprocess.run(
+            ["git", "update-index", "--assume-unchanged", "data.json"],
+            cwd=self.core,
+            capture_output=True,
+            check=True,
+        )
+        (self.core / "data.json").write_text('{"hidden": true}\n', encoding="utf-8")
+        findings = run_consumer(self.core, self.consumer).findings
+        finding = [f for f in findings if f.check == "consumer-core-read-only"][0]
+        self.assertIn("index 우회 flag", finding.message)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_stat_cache_cannot_hide_same_size_blob_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "f.txt"
+            target.write_bytes(b"aaaa")
+            stamp = 946_684_800_000_000_000
+            os.utime(target, ns=(stamp, stamp))
+            commands = (
+                ["git", "init", "--quiet"],
+                ["git", "config", "core.autocrlf", "false"],
+                ["git", "config", "core.trustctime", "false"],
+                ["git", "config", "core.checkStat", "minimal"],
+                ["git", "add", "-A"],
+                [
+                    "git",
+                    "-c",
+                    "user.name=Core Test",
+                    "-c",
+                    "user.email=core-test@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    "fixture",
+                ],
+            )
+            for command in commands:
+                subprocess.run(command, cwd=root, capture_output=True, check=True)
+            target.write_bytes(b"bbbb")
+            os.utime(target, ns=(stamp, stamp))
+            clean, detail = host_core_cleanliness(root)
+            self.assertFalse(clean)
+            self.assertIn("tracked blob 내용이 HEAD와 다르다: f.txt", detail)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_rejects_clean_status_checkout_with_different_raw_eol_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            checkout = base / "checkout"
+            source.mkdir()
+            (source / "f.txt").write_bytes(b"a\nb\n")
+            initialize_clean_git(source)
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "core.autocrlf=true",
+                    "clone",
+                    "--quiet",
+                    str(source),
+                    str(checkout),
+                ],
+                cwd=base,
+                capture_output=True,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "core.autocrlf", "true"],
+                cwd=checkout,
+                capture_output=True,
+                check=True,
+            )
+            self.assertEqual((checkout / "f.txt").read_bytes(), b"a\r\nb\r\n")
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=checkout,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=True,
+            )
+            self.assertEqual(status.stdout, "")
+            clean, detail = host_core_cleanliness(checkout)
+            self.assertFalse(clean)
+            self.assertIn("tracked blob 내용이 HEAD와 다르다: f.txt", detail)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_batches_content_attribute_lookup_for_regular_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.txt").write_bytes(b"a\n")
+            (root / "b.txt").write_bytes(b"b\n")
+            initialize_clean_git(root)
+            with patch.object(
+                integrity_module,
+                "_run_host_git",
+                wraps=integrity_module._run_host_git,
+            ) as run_git:
+                clean, detail = host_core_cleanliness(root)
+            self.assertTrue(clean, detail)
+            attribute_calls = [
+                call
+                for call in run_git.call_args_list
+                if len(call.args) > 1 and call.args[1] == "check-attr"
+            ]
+            self.assertEqual(len(attribute_calls), 1)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_rejects_external_clean_filter_before_hashing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "core"
+            root.mkdir()
+            (root / ".gitattributes").write_bytes(b"f.txt filter=evil\n")
+            (root / "f.txt").write_bytes(b"safe\n")
+            marker = base / "filter-ran.txt"
+            filter_script = base / "filter.py"
+            filter_script.write_text(
+                "from pathlib import Path\n"
+                "import sys\n"
+                "data = sys.stdin.buffer.read()\n"
+                "Path(sys.argv[1]).write_text('ran', encoding='utf-8')\n"
+                "sys.stdout.buffer.write(data)\n",
+                encoding="utf-8",
+            )
+            initialize_clean_git(root)
+            filter_command = f'"{sys.executable}" "{filter_script}" "{marker}"'
+            subprocess.run(
+                ["git", "config", "filter.evil.clean", filter_command],
+                cwd=root,
+                capture_output=True,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "filter.evil.required", "true"],
+                cwd=root,
+                capture_output=True,
+                check=True,
+            )
+            clean, detail = host_core_cleanliness(root)
+            self.assertFalse(clean)
+            self.assertIn("content 변환 가능성", detail)
+            self.assertFalse(marker.exists(), "unsafe clean filter가 hash 전에 실행됐다")
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_rejects_ident_content_transformation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".gitattributes").write_text("f.txt ident\n", encoding="utf-8")
+            (root / "f.txt").write_text("$Id$\n", encoding="utf-8")
+            initialize_clean_git(root)
+            clean, detail = host_core_cleanliness(root)
+            self.assertFalse(clean)
+            self.assertIn("ident=set", detail)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_extra_empty_directory_fails_closed(self) -> None:
+        set_consumer_role(self.consumer, "host")
+        initialize_clean_git(self.core)
+        (self.core / "empty-cache").mkdir()
+        findings = run_consumer(self.core, self.consumer).findings
+        finding = [f for f in findings if f.check == "consumer-core-read-only"][0]
+        self.assertIn("Git이 소유하지 않는 directory", finding.message)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_git_environment_cannot_redirect_cleanliness_check(self) -> None:
+        set_consumer_role(self.consumer, "host")
+        initialize_clean_git(self.core)
+        mirror = Path(self.tmp) / "clean-mirror"
+        build_clean(mirror)
+        initialize_clean_git(mirror)
+        (self.core / "data.json").write_text('{"dirty": true}\n', encoding="utf-8")
+        with patch.dict(
+            os.environ,
+            {"GIT_DIR": str(mirror / ".git"), "GIT_WORK_TREE": str(mirror)},
+        ):
+            findings = run_consumer(self.core, self.consumer).findings
+        finding = [f for f in findings if f.check == "consumer-core-read-only"][0]
+        self.assertIn("data.json", finding.message)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_core_must_be_its_own_git_toplevel(self) -> None:
+        set_consumer_role(self.consumer, "host")
+        initialize_clean_git(self.consumer)
+        findings = run_consumer(self.core, self.consumer).findings
+        finding = [f for f in findings if f.check == "consumer-core-read-only"][0]
+        self.assertIn("Git top-level이 core_root와 다르다", finding.message)
+
     def test_contract_version_mismatch_is_detected(self) -> None:
         policy = self.consumer / "PROJECT_RULES.md"
         policy.write_text(
@@ -667,7 +994,7 @@ class ConsumerContractTest(unittest.TestCase):
         policy = self.consumer / "PROJECT_RULES.md"
         policy.write_text(
             policy.read_text(encoding="utf-8").replace(
-                '"consumer_role": "host"', '"consumer_role": "invalid"'
+                '"consumer_role": "maintainer"', '"consumer_role": "invalid"'
             ),
             encoding="utf-8",
         )
@@ -676,6 +1003,7 @@ class ConsumerContractTest(unittest.TestCase):
         self.assertEqual(
             set(report.skipped),
             {
+                "consumer-core-read-only",
                 "consumer-capabilities",
                 "consumer-entry",
                 "consumer-state",
@@ -751,22 +1079,11 @@ class ConsumerContractTest(unittest.TestCase):
 
 
 class FailureAbsorptionTest(unittest.TestCase):
-    """실패 예방책은 규칙·테스트가 소유하고 예외 문서는 최소 정보만 갖는다."""
+    """실패 예방책은 규칙·테스트만 소유하고 사건 문서는 남기지 않는다."""
 
-    def test_each_existing_failure_case_is_absorbed_or_has_one_nonobvious_residue(self) -> None:
+    def test_failure_event_documents_are_not_kept(self) -> None:
         cases = sorted((ROOT / "failures").glob("*.md"))
-        cases = [path for path in cases if path.name != "README.md"]
-        for path in cases:
-            text = path.read_text(encoding="utf-8")
-            if "- 상태: 흡수 완료, 종료 대기." in text:
-                owners = [line for line in text.splitlines() if line.startswith("- 예방 소유자:")]
-                self.assertEqual(len(owners), 1, path.name)
-                self.assertNotIn("## 예방", text, path.name)
-            elif "- 상태: 최소 유지." in text:
-                residues = [line for line in text.splitlines() if line.startswith("- 비자명 잔여:")]
-                self.assertEqual(len(residues), 1, path.name)
-            else:
-                self.fail(f"{path.name}의 흡수·최소 유지 판정이 없다")
+        self.assertEqual(cases, [], [path.name for path in cases])
 
 
 @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 commit snapshot fixture를 건너뛴다")
@@ -904,6 +1221,42 @@ class PublicInterfaceTest(unittest.TestCase):
         self.assertEqual(code, self.cli.EXIT_OK)
         self.assertEqual(payload["scope"], "core+consumer")
 
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_verify_diagnoses_dirty_core_but_context_rejects_use(self) -> None:
+        set_consumer_role(self.consumer, "host")
+        initialize_clean_git(self.core)
+        (self.core / "data.json").write_text('{"changed": true}\n', encoding="utf-8")
+        code, payload = self._run(
+            "--core-root", str(self.core), "--consumer-root", str(self.consumer), "verify"
+        )
+        self.assertEqual(code, self.cli.EXIT_FINDINGS)
+        self.assertTrue(
+            any(finding["check"] == "consumer-core-read-only" for finding in payload["findings"])
+        )
+
+        code, payload = self._run(
+            "--core-root", str(self.core), "--consumer-root", str(self.consumer), "context"
+        )
+        self.assertEqual(code, self.cli.EXIT_UNUSABLE)
+        self.assertIn("Host Core 읽기 전용 사전 검사 실패", payload["error"])
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_verify_checks_core_after_unexpected_error(self) -> None:
+        set_consumer_role(self.consumer, "host")
+        initialize_clean_git(self.core)
+
+        def mutate_then_fail(root: Path):
+            (root / "unexpected-cache").mkdir()
+            raise RuntimeError("simulated failure")
+
+        with patch.object(self.cli, "run_all", side_effect=mutate_then_fail):
+            code, payload = self._run(
+                "--core-root", str(self.core), "--consumer-root", str(self.consumer), "verify"
+            )
+        self.assertEqual(code, self.cli.EXIT_UNUSABLE)
+        self.assertEqual(payload["kind"], "CheckError")
+        self.assertIn("Core tree 또는 HEAD/index 상태가 실행 중 변경", payload["error"])
+
     def test_every_public_command_has_a_consumer_note(self) -> None:
         import inspect
 
@@ -993,6 +1346,41 @@ class IntegrationGateTest(unittest.TestCase):
         self.gate.run(self.root)
         self.assertEqual(before, self.gate.tree_digest(self.root))
 
+    def test_tree_digest_includes_bytecode_cache(self) -> None:
+        before = self.gate.tree_digest(self.root)
+        cache = self.root / "__pycache__"
+        cache.mkdir()
+        (cache / "created.pyc").write_bytes(b"cache")
+        self.assertNotEqual(before, self.gate.tree_digest(self.root))
+
+    def test_tree_digest_includes_empty_directory(self) -> None:
+        before = self.gate.tree_digest(self.root)
+        (self.root / "empty-cache").mkdir()
+        self.assertNotEqual(before, self.gate.tree_digest(self.root))
+
+    def test_tree_digest_includes_submodule_git_pointer(self) -> None:
+        pointer = self.root / ".git"
+        pointer.write_text("gitdir: first\n", encoding="utf-8")
+        before = self.gate.tree_digest(self.root)
+        pointer.write_text("gitdir: second\n", encoding="utf-8")
+        self.assertNotEqual(before, self.gate.tree_digest(self.root))
+
+    def test_tree_digest_excludes_actual_git_metadata_directory(self) -> None:
+        metadata = self.root / ".git"
+        metadata.mkdir()
+        internal = metadata / "index"
+        internal.write_bytes(b"first")
+        before = self.gate.tree_digest(self.root)
+        internal.write_bytes(b"second")
+        self.assertEqual(before, self.gate.tree_digest(self.root))
+
+    def test_tree_digest_includes_persistent_mtime_change(self) -> None:
+        target = self.root / "data.json"
+        before = self.gate.tree_digest(self.root)
+        current = target.stat()
+        os.utime(target, ns=(current.st_atime_ns, current.st_mtime_ns + 1_000_000_000))
+        self.assertNotEqual(before, self.gate.tree_digest(self.root))
+
     def test_optional_absence_is_not_applicable_not_fail(self) -> None:
         result = self.gate.run(self.root)
         optional = [s for s in result.steps if s.name == "optional-features"][0]
@@ -1014,6 +1402,41 @@ class IntegrationGateTest(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.failed_step, "preflight-contract")
         self.assertIn("부분 설치", result.steps[0].detail)
+
+    def test_host_optional_info_is_discovery_not_completion_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            declare_optional_shared_data(core, installed=True)
+            capability = self.gate.declared_compatibility(core)["optional_capabilities"][
+                "shared_data"
+            ]
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "ok": True,
+                        "capability": "shared_data",
+                        "capability_version": capability["version"],
+                        "commands": capability["commands"],
+                        "request_schema": capability["request_schema"],
+                        "result_schema": capability["result_schema"],
+                    }
+                ),
+                stderr="",
+            )
+            with patch.object(self.gate.subprocess, "run", return_value=completed) as invoked:
+                result = self.gate._optional(
+                    core, execution_root=consumer, run_internal_tests=False
+                )
+            self.assertEqual(result.status, "not_applicable")
+            self.assertFalse(result.required)
+            self.assertIn("기능 소비·가용성·완료 검증이 아니다", result.detail)
+            self.assertEqual(invoked.call_count, 1)
+            self.assertEqual(invoked.call_args.kwargs["cwd"], consumer)
+            command = invoked.call_args.args[0]
+            self.assertIn("-I", command)
+            self.assertIn("runpy.run_module", command[command.index("-c") + 1])
 
     def test_not_applicable_does_not_fail_but_not_run_does(self) -> None:
         result = self.gate.run(self.root)
@@ -1084,6 +1507,194 @@ class IntegrationGateTest(unittest.TestCase):
             self.assertEqual(before_core, self.gate.tree_digest(core))
             self.assertEqual(before_consumer, self.gate.consumer_tree_digest(core, consumer))
 
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_gate_passes_with_clean_core_git_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            set_consumer_role(consumer, "host")
+            initialize_clean_git(core)
+            result = self.gate.run(core, consumer)
+            self.assertTrue(result.ok, result.as_dict())
+            preflight = [s for s in result.steps if s.name == "host-core-read-only-preflight"][0]
+            self.assertEqual(preflight.status, "pass")
+            regression = [s for s in result.steps if s.name == "regression-tests"][0]
+            self.assertEqual(regression.status, "not_applicable")
+            self.assertFalse(regression.required)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_gate_detects_head_only_change_after_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            set_consumer_role(consumer, "host")
+            initialize_clean_git(core)
+
+            def commit_without_tree_change(*args, **kwargs):
+                subprocess.run(
+                    [
+                        "git",
+                        "-c",
+                        "user.name=Core Test",
+                        "-c",
+                        "user.email=core-test@example.invalid",
+                        "-c",
+                        "commit.gpgsign=false",
+                        "commit",
+                        "--quiet",
+                        "--allow-empty",
+                        "-m",
+                        "unexpected",
+                    ],
+                    cwd=core,
+                    capture_output=True,
+                    check=True,
+                )
+                return self.gate.StepResult(
+                    "optional-features", "not_applicable", "fixture", required=False
+                )
+
+            with patch.object(self.gate, "_optional", side_effect=commit_without_tree_change):
+                result = self.gate.run(core, consumer)
+            side_effect = [s for s in result.steps if s.name == "core-no-side-effects"][0]
+            self.assertEqual(side_effect.status, "fail")
+            self.assertIn("HEAD/index", side_effect.detail)
+            self.assertFalse(result.ok)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_nested_gitlink_rejects_ignored_cache_recursively(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            core, consumer = build_consumer(base)
+            set_consumer_role(consumer, "host")
+            initialize_clean_git(core)
+            nested = add_nested_gitlink(core, base)
+            clean, detail = host_core_cleanliness(core)
+            self.assertTrue(clean, detail)
+            cache = nested / "cache"
+            cache.mkdir()
+            (cache / "created.pyc").write_bytes(b"cache")
+            clean, detail = host_core_cleanliness(core)
+            self.assertFalse(clean)
+            self.assertIn("tracked gitlink가 clean하지 않다", detail)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_nested_gitlink_rejects_extra_empty_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            core, consumer = build_consumer(base)
+            set_consumer_role(consumer, "host")
+            initialize_clean_git(core)
+            nested = add_nested_gitlink(core, base)
+            clean, detail = host_core_cleanliness(core)
+            self.assertTrue(clean, detail)
+            (nested / "unexpected-empty-cache").mkdir()
+            clean, detail = host_core_cleanliness(core)
+            self.assertFalse(clean)
+            self.assertIn("tracked gitlink가 clean하지 않다", detail)
+            self.assertIn("Git이 소유하지 않는 directory", detail)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_nested_gitlink_head_change_updates_fingerprint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            core, consumer = build_consumer(base)
+            set_consumer_role(consumer, "host")
+            initialize_clean_git(core)
+            nested = add_nested_gitlink(core, base)
+            before = host_core_git_fingerprint(core)
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=Core Test",
+                    "-c",
+                    "user.email=core-test@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--quiet",
+                    "--allow-empty",
+                    "-m",
+                    "nested unexpected",
+                ],
+                cwd=nested,
+                capture_output=True,
+                check=True,
+            )
+            self.assertNotEqual(before, host_core_git_fingerprint(core))
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_consumer_baseline_precedes_optional_execution_and_role_is_stable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            set_consumer_role(consumer, "host")
+            initialize_clean_git(core)
+
+            def mutate_consumer_role(*args, **kwargs):
+                policy = consumer / "PROJECT_RULES.md"
+                policy.write_text(
+                    policy.read_text(encoding="utf-8").replace(
+                        '"consumer_role": "host"', '"consumer_role": "maintainer"'
+                    ),
+                    encoding="utf-8",
+                )
+                return self.gate.StepResult(
+                    "optional-features", "not_applicable", "fixture", required=False
+                )
+
+            with patch.object(self.gate, "_optional", side_effect=mutate_consumer_role):
+                result = self.gate.run(core, consumer)
+            regression = [s for s in result.steps if s.name == "regression-tests"][0]
+            consumer_side_effect = [
+                s for s in result.steps if s.name == "consumer-no-side-effects"
+            ][0]
+            self.assertEqual(regression.status, "not_applicable")
+            self.assertFalse(regression.required)
+            self.assertEqual(consumer_side_effect.status, "fail")
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_gate_blocks_tracked_core_change_before_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            set_consumer_role(consumer, "host")
+            initialize_clean_git(core)
+            (core / "data.json").write_text('{"changed": true}\n', encoding="utf-8")
+            result = self.gate.run(core, consumer)
+            self.assertEqual(result.failed_step, "host-core-read-only-preflight")
+            statuses = {step.name: step.status for step in result.steps}
+            self.assertEqual(statuses["regression-tests"], "not_run")
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
+    def test_host_gate_blocks_ignored_cache_before_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            set_consumer_role(consumer, "host")
+            (core / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+            initialize_clean_git(core)
+            cache = core / "__pycache__"
+            cache.mkdir()
+            (cache / "created.pyc").write_bytes(b"cache")
+            result = self.gate.run(core, consumer)
+            self.assertEqual(result.failed_step, "host-core-read-only-preflight")
+            preflight = [s for s in result.steps if s.name == "host-core-read-only-preflight"][0]
+            self.assertIn("!! __pycache__/", preflight.detail)
+
+    def test_invalid_consumer_contract_blocks_core_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            policy = consumer / "PROJECT_RULES.md"
+            policy.write_text(
+                policy.read_text(encoding="utf-8").replace(
+                    '"consumer_role": "maintainer"', '"consumer_role": "invalid"'
+                ),
+                encoding="utf-8",
+            )
+            with patch.object(self.gate, "_tests", side_effect=AssertionError("must not run")):
+                result = self.gate.run(core, consumer)
+            self.assertEqual(result.failed_step, "host-core-read-only-preflight")
+            statuses = {step.name: step.status for step in result.steps}
+            self.assertEqual(statuses["regression-tests"], "not_run")
+            self.assertEqual(statuses["core-no-side-effects"], "pass")
+
 
 class CompatibilityTest(unittest.TestCase):
     """선언과 실제 동작의 일치."""
@@ -1134,8 +1745,9 @@ class CompatibilityTest(unittest.TestCase):
         minimum = tuple(int(p) for p in self.declared["python_min"].split("."))
         self.assertGreaterEqual(sys.version_info[: len(minimum)], minimum)
 
-    def test_no_required_dependencies_declared_and_none_used(self) -> None:
+    def test_dependencies_are_declared_by_role(self) -> None:
         self.assertEqual(self.declared["required_dependencies"], [])
+        self.assertEqual(self.declared["optional_dependencies"], ["git"])
 
     def test_gate_reads_minimum_from_declaration_not_constant(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1151,3 +1763,21 @@ class CompatibilityTest(unittest.TestCase):
             result = self.gate.run(root)
             self.assertFalse(result.ok)
             self.assertEqual(result.failed_step, "preflight-runtime")
+
+    def test_gate_fails_when_declared_runtime_tool_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build_clean(root)
+            compatibility = root / "docs" / "COMPATIBILITY.md"
+            compatibility.write_text(
+                compatibility.read_text(encoding="utf-8").replace(
+                    '"required_dependencies": []',
+                    '"required_dependencies": ["missing-core-tool"]',
+                ),
+                encoding="utf-8",
+            )
+            with patch.object(self.gate.shutil, "which", return_value=None):
+                result = self.gate.run(root)
+            self.assertFalse(result.ok)
+            self.assertEqual(result.failed_step, "preflight-runtime")
+            self.assertIn("missing-core-tool", result.steps[0].detail)

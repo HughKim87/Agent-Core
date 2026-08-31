@@ -63,6 +63,17 @@ class RoutingCompletenessTest(unittest.TestCase):
             for header in REQUIRED_HEADERS:
                 self.assertIn(header, text, f"{rule} 에 {header} 항목이 없다")
 
+    def test_rule_governance_keeps_generalization_gate(self) -> None:
+        text = read(ROOT / "rules" / "rule-governance.md")
+        for fragment in (
+            "## 2. Core 일반화 적합성 게이트",
+            "서로 독립된 둘 이상의 실제 Consumer",
+            "단일 Consumer 사건은 후보를 제기할 근거일 뿐",
+            "적용되지 않는 near-miss",
+            "현재 작업 문맥을 받지 않은 독립 Agent",
+        ):
+            self.assertIn(fragment, text)
+
 
 class FixtureStructureTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -134,64 +145,205 @@ class FixtureStructureTest(unittest.TestCase):
 
 
 class FailureStopScenarioTest(unittest.TestCase):
-    """현재 세션의 같은 작업 실패는 세 번째 실패에서 중단된다."""
+    """정책 문구와 합성 이벤트 모델을 검사하며 Host Runtime을 검증하지 않는다."""
 
     def setUp(self) -> None:
         self.data = json.loads(read(FAILURE_FIXTURE))
 
     def test_fixture_contract_and_rule_fragments(self) -> None:
-        self.assertEqual(self.data["fixture_version"], 1)
+        self.assertEqual(self.data["fixture_version"], 3)
+        self.assertEqual(self.data["evidence_level"], "synthetic-policy-model")
+        self.assertIn("실제 Host Runtime 동작을 검증하지 않는다", self.data["purpose"])
         self.assertEqual(self.data["failure_limit"], 3)
+        self.assertEqual(
+            self.data["policy_roles"],
+            {
+                "canonical": "rules/failure-records.md",
+                "route": "PROJECT_RULES.md",
+                "delegate": "rules/work-contract.md",
+                "reference": "rules/handoff.md",
+            },
+        )
         ids = [case["id"] for case in self.data["cases"]]
         self.assertEqual(len(ids), len(set(ids)))
+        command_ids = [
+            command["id"]
+            for case in self.data["cases"]
+            for command in case["commands"]
+        ]
+        self.assertEqual(len(command_ids), len(set(command_ids)))
+        for case in self.data["cases"]:
+            for command in case["commands"]:
+                self.assertIsInstance(command["opens_window"], bool)
         for relative, fragments in self.data["rule_fragments"].items():
             text = read(ROOT / relative)
             for fragment in fragments:
                 self.assertIn(fragment, text, f"{relative}에 정책 문구가 없다: {fragment}")
 
+    def test_failure_policy_has_one_normative_owner(self) -> None:
+        canonical = read(ROOT / "rules" / "failure-records.md")
+        for fragment in (
+            "`임시 실패 상태`는 현재 명령 창의 카운터",
+            "세 번째 실패가 확정되면",
+            "새 명령 창은 0부터 시작하며",
+        ):
+            self.assertIn(fragment, canonical)
+
+        noncanonical = [
+            self.data["policy_roles"][role]
+            for role in ("route", "delegate", "reference")
+        ]
+        for relative in noncanonical:
+            text = read(ROOT / relative)
+            self.assertNotIn("세 번째 실패가 확정되면", text, relative)
+            self.assertNotIn("새 명령 창은 0부터 시작하며", text, relative)
+            self.assertNotIn("실패 횟수·시도 방법·방법 순서·중단 플래그", text, relative)
+
+        handoff = read(ROOT / "rules" / "handoff.md")
+        self.assertIn(
+            "상시 정책 route가 선택한 실패 처리 소유자가 정의한 임시 실패 상태",
+            handoff,
+        )
+        self.assertNotIn("(failure-records.md)", handoff)
+
+    def test_failure_policy_paraphrase_is_rejected_outside_owner(self) -> None:
+        stop_rule = re.compile(
+            r"(?:세|3)\s*(?:차례|번|회|번째).*?실패.*?"
+            r"(?:이후|추가|다음).*?(?:실행|시도).*?(?:금지|차단|중단)"
+        )
+        reset_rule = re.compile(
+            r"(?:최종 보고|취소).*?(?:누적값|카운터|실패 횟수).*?"
+            r"(?:버리|폐기|초기화).*?(?:다음|새).*?"
+            r"(?:실행 요청|실행 명령).*?(?:영|0)"
+        )
+
+        def has_normative_duplicate(text: str) -> bool:
+            paragraphs = (
+                re.sub(r"\s+", " ", paragraph)
+                for paragraph in re.split(r"\n\s*\n", text)
+            )
+            return any(
+                stop_rule.search(paragraph) or reset_rule.search(paragraph)
+                for paragraph in paragraphs
+            )
+
+        paraphrase = (
+            "같은 사용자 실행 요청에서 결과 후보가 세 차례 실패하면 이후 후보 "
+            "실행을 금지한다. 최종 보고나 취소로 요청이 닫힌 뒤에는 누적값을 "
+            "버리고, 다음 실행 요청은 영에서 다시 계산한다."
+        )
+        for role in ("route", "delegate", "reference"):
+            relative = self.data["policy_roles"][role]
+            original = read(ROOT / relative)
+            self.assertFalse(has_normative_duplicate(original), relative)
+            self.assertTrue(
+                has_normative_duplicate(f"{original}\n\n{paraphrase}\n"),
+                f"{relative}의 바꿔쓴 규범 중복을 탐지하지 못했다",
+            )
+
     def test_scenarios(self) -> None:
         limit = self.data["failure_limit"]
         for case in self.data["cases"]:
-            counts: dict[str, int] = {}
-            stopped: set[str] = set()
-            actual = []
-            for event in case["events"]:
-                kind = event["type"]
-                task = event.get("task")
-                if kind == "new-session":
-                    counts.clear()
-                    stopped.clear()
-                    actual.append({"count": 0, "stopped": False, "action": "reset-session"})
-                    continue
-                count = counts.get(task, 0)
-                if kind in {"failure", "unmet-requirement-correction"}:
-                    count += 1
-                    counts[task] = count
-                    if count >= limit:
-                        stopped.add(task)
-                        action = "stop"
+            for command in case["commands"]:
+                count = 0
+                stopped = False
+                active_candidate = False
+                awaiting_state_check = False
+                command_open = command["opens_window"]
+                actual = []
+                for event in command["events"]:
+                    kind = event["type"]
+                    if kind in {
+                        "failure",
+                        "multi-gate-failure",
+                        "candidate-abandoned-after-tool-error",
+                    }:
+                        if not command_open:
+                            action = "no-command"
+                        elif stopped:
+                            action = "blocked"
+                        elif not active_candidate:
+                            action = "invalid-no-active-candidate"
+                        else:
+                            active_candidate = False
+                            count += 1
+                            if count >= limit:
+                                stopped = True
+                                action = "stop"
+                            else:
+                                action = "continue"
+                    elif kind in {"result-attempt", "result-modification"}:
+                        if not command_open:
+                            action = "no-command"
+                        elif stopped or active_candidate or awaiting_state_check:
+                            action = "blocked"
+                        else:
+                            active_candidate = True
+                            action = "allowed"
+                    elif kind == "start-result-candidates":
+                        remaining = max(limit - count, 0)
+                        if (
+                            command_open
+                            and not stopped
+                            and not active_candidate
+                            and not awaiting_state_check
+                            and event["candidates"] == 1
+                            and remaining >= 1
+                        ):
+                            active_candidate = True
+                            action = "allowed"
+                        elif not command_open:
+                            action = "no-command"
+                        else:
+                            action = "blocked"
+                    elif kind == "uncertain-external-effect":
+                        if not command_open:
+                            action = "no-command"
+                        elif stopped or not active_candidate:
+                            action = "invalid-no-active-candidate"
+                        else:
+                            active_candidate = False
+                            awaiting_state_check = True
+                            action = "await-state-check"
+                    elif kind == "state-check":
+                        if awaiting_state_check:
+                            awaiting_state_check = False
+                            action = "state-checked"
+                        else:
+                            action = "no-pending-state"
+                    elif kind == "user-cancel":
+                        active_candidate = False
+                        awaiting_state_check = False
+                        command_open = False
+                        count = 0
+                        stopped = False
+                        action = "closed"
+                    elif kind == "safe-recovery":
+                        action = "allowed-recovery" if command_open else "no-command"
+                    elif kind == "minimal-read":
+                        action = "allowed-read" if command_open else "no-command"
+                    elif kind == "final-report":
+                        active_candidate = False
+                        awaiting_state_check = False
+                        command_open = False
+                        count = 0
+                        stopped = False
+                        action = "allowed-report"
+                    elif kind in {
+                        "diagnostic-miss",
+                        "expected-red-test",
+                        "recovered-tool-error",
+                        "safe-stop",
+                        "status-only",
+                        "parallel-diagnostic",
+                    }:
+                        action = kind
                     else:
-                        action = "continue"
-                elif kind == "attempt":
-                    action = "blocked" if task in stopped else "allowed"
-                elif kind == "requirement-change":
-                    counts.pop(task, None)
-                    stopped.discard(task)
-                    count = 0
-                    action = "new-contract"
-                elif kind == "success":
-                    counts.pop(task, None)
-                    stopped.discard(task)
-                    count = 0
-                    action = "complete"
-                elif kind == "handoff":
-                    action = "handoff"
-                elif kind == "safe-stop":
-                    action = "safe-stop"
-                else:
-                    self.fail(f"{case['id']}에 알 수 없는 event type이 있다: {kind}")
-                actual.append({"count": count, "stopped": task in stopped, "action": action})
-            self.assertEqual(actual, case["expected"], case["id"])
+                        self.fail(
+                            f"{case['id']}/{command['id']}에 알 수 없는 event type이 있다: {kind}"
+                        )
+                    actual.append({"count": count, "stopped": stopped, "action": action})
+                self.assertEqual(actual, command["expected"], f"{case['id']}/{command['id']}")
 
 
 if __name__ == "__main__":

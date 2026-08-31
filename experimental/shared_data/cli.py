@@ -41,6 +41,22 @@ class SharedDataCliError(ValueError):
     kind = "shared_data_cli_error"
 
 
+def _runtime_boundary_api() -> Any:
+    """실행 중인 Core가 소유한 좁은 L5 경계 인터페이스만 불러온다."""
+    try:
+        import core_check.runtime_boundary as boundary_api
+    except ImportError as exc:
+        raise SharedDataCliError("Core 소비 경계 검증기를 불러올 수 없다") from exc
+    core_root = Path(__file__).resolve().parents[2]
+    expected = (core_root / "src" / "core_check" / "runtime_boundary.py").resolve()
+    actual = Path(getattr(boundary_api, "__file__", "")).resolve()
+    if actual != expected:
+        raise SharedDataCliError(
+            f"실행 Core 밖의 소비 경계 검증기가 shadow됐다: {actual}"
+        )
+    return boundary_api
+
+
 def _emit(payload: Mapping[str, Any]) -> None:
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if callable(reconfigure):
@@ -112,6 +128,49 @@ def _timestamp(value: Any) -> datetime | None:
     except ValueError as exc:
         raise SharedDataCliError("timestamp는 초 정밀도 UTC RFC3339여야 한다") from exc
     return parsed
+
+
+def _prepare_runtime_boundary(
+    consumer_root: Path,
+    storage_root: str,
+    protected_paths: list[str],
+) -> Any:
+    """공개 Runtime이 verified Consumer 경계 밖, 특히 Core에 쓰지 못하게 한다."""
+    core_root = Path(__file__).resolve().parents[2]
+    boundary_api = _runtime_boundary_api()
+    try:
+        return boundary_api.prepare_consumer_runtime_boundary(
+            core_root,
+            consumer_root,
+            capability_id=CAPABILITY_ID,
+            write_paths=(storage_root,),
+            protected_paths=protected_paths,
+        )
+    except boundary_api.RuntimeBoundaryError as exc:
+        raise SharedDataCliError(str(exc)) from exc
+
+
+def _require_runtime_boundary_unchanged(boundary: Any) -> None:
+    boundary_api = _runtime_boundary_api()
+    try:
+        boundary_api.require_consumer_runtime_boundary_unchanged(boundary)
+    except boundary_api.RuntimeBoundaryError as exc:
+        raise SharedDataCliError(str(exc)) from exc
+
+
+def _static_discovery() -> dict[str, Any]:
+    """dirty 여부와 무관한 정적 metadata를 Core 전후 불변 증명과 함께 읽는다."""
+    core_root = Path(__file__).resolve().parents[2]
+    boundary_api = _runtime_boundary_api()
+    try:
+        baseline = boundary_api.capture_static_discovery_baseline(core_root)
+        try:
+            result = _info()
+        finally:
+            boundary_api.require_static_discovery_unchanged(core_root, baseline)
+    except boundary_api.RuntimeBoundaryError as exc:
+        raise SharedDataCliError(str(exc)) from exc
+    return result
 
 
 class Dispatcher:
@@ -349,21 +408,30 @@ def _info() -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.command == "info":
-        _emit(_info())
-        return 0
     operation: str | None = None
     try:
+        if args.command == "info":
+            _emit(_static_discovery())
+            return 0
         if not args.consumer_root or not args.storage_root:
             raise SharedDataCliError("invoke에는 --consumer-root와 --storage-root가 필요하다")
         operation, arguments = _read_request()
-        dispatcher = Dispatcher(
-            consumer_root=Path(args.consumer_root),
-            storage_root=args.storage_root,
-            protected_paths=args.protected_path,
-            write_enabled=args.write,
+        consumer_root = Path(args.consumer_root).resolve()
+        boundary = _prepare_runtime_boundary(
+            consumer_root,
+            args.storage_root,
+            args.protected_path,
         )
-        result = dispatcher.dispatch(operation, arguments)
+        try:
+            dispatcher = Dispatcher(
+                consumer_root=consumer_root,
+                storage_root=boundary.write_paths[0],
+                protected_paths=list(boundary.protected_paths),
+                write_enabled=args.write,
+            )
+            result = dispatcher.dispatch(operation, arguments)
+        finally:
+            _require_runtime_boundary_unchanged(boundary)
         _emit(
             {
                 "ok": True,

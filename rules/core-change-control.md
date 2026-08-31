@@ -18,15 +18,16 @@ Core 경로는 특정 디렉터리 이름으로 추측하지 않는다. 선언�
 
 | 역할 | Core 읽기·공개 검사 | Core 수정 | Core push |
 |---|---:|---:|---:|
-| `host` | 허용 | 금지. Maintainer 작업으로 이관 | 원격 read-only 권한으로 거부돼야 함 |
+| `host` | 읽기 전용으로만 허용 | 금지. cache·임시 파일·검증 산출물을 포함해 Maintainer 작업으로 이관 | 원격 read-only 권한으로 거부돼야 함 |
 | `maintainer` | 허용 | 정확한 현재 승인 뒤 허용 | 별도 사용자 승인과 쓰기 권한 필요 |
 
-프롬프트는 권한 경계가 아니다. Host push 거부는 실제 Deploy Key 권한으로 검증한다.
+프롬프트는 권한 경계가 아니다. Host push 거부는 사용하는 원격의 실제 read-only 자격 증명·접근 제어로 검증한다.
 
 ## 3. Core 변경의 정의
 
 - 파일 생성·수정·삭제·이동·개명
 - 파생 artifact 재생성
+- cache·bytecode·로그·lock·임시 파일·검증 결과처럼 Git이 추적하지 않거나 ignore하는 파일의 생성
 - 의존성·설정·도구 체인 변경으로 생기는 간접 변경
 - submodule 안에서 새 commit을 만드는 행동
 
@@ -45,6 +46,8 @@ Core 변경은 다음이 모두 충족될 때만 시작한다.
 
 ## 5. 조건과 행동
 
+- `host`가 Core를 소비하거나 완료 근거를 만들기 전에는 검증된 Core 기준 상태를 확인한다. 기준을 증명할 수 없으면 Core 기능과 소비 통합 실행을 시작하지 않는다. 오염 원인만 찾는 순수 read-only 진단과 역할·Consumer 입력·Runtime storage에 무관한 정적 metadata discovery는 예외지만, 쓰기 가능한 경로를 열지 않고 전후 불변을 증명하며 기능 소비·완료의 성공 근거로 사용하지 않는다.
+- Host 작업의 모든 쓰기 가능 경로와 가변 산출물은 Consumer 소유 경계 안에 있고 `core_path`와 겹치지 않아야 한다. Consumer는 wrapper·adapter·명시적 출력 경로·filesystem 격리 중 적절한 구현을 선택한다. 입력과 쓰기 경계를 분리할 수 없는 도구는 Core에 실행하지 않으며, Consumer가 호환 입력을 따로 구현하더라도 Core 복사본·대체 배포물·Runtime 의존으로 만들 수 없다.
 - `host`에서 변경 필요성을 발견하면 Core를 고치지 않고 정확한 근거와 diff 대상을 Maintainer로 이관한다.
 - 승인된 Maintainer 변경은 최소 범위만 수행한다.
 - 승인 범위를 벗어나는 파일이 필요하면 구현을 멈추고 새 승인을 받는다.
@@ -53,6 +56,7 @@ Core 변경은 다음이 모두 충족될 때만 시작한다.
 ## 6. 변경 후 검증
 
 - 실제 Git 변경 경로를 승인 목록과 대조한다.
+- Host 검증은 소비 실행 전 기준 상태와 실행 후 Core의 지속 상태·revision·index 불변을 fail-closed로 증명한다. 승인된 검증 구현과 역할별 의존성은 [검증 수준과 완료 판정](../docs/VERIFICATION.md)과 [버전과 호환성](../docs/COMPATIBILITY.md)이 소유하며, 특정 구현 수단을 이 역할 불변식 자체로 확대하지 않는다.
 - 변경한 문서·동작·계약과 실패 비용을 기준으로 [검증 수준과 완료 판정](../docs/VERIFICATION.md)의 가장 작은 충분한 증거를 선택한다.
 - Core 실행 동작·공개 계약·구조에 영향을 주면 관련 Core 자체 gate를 실행한다.
 - 소비 계약이나 연결 표면에 영향을 주면 관련 소비 통합 gate를 실행한다.
@@ -67,5 +71,7 @@ Core 변경은 다음이 모두 충족될 때만 시작한다.
 - Maintainer 무승인 수정 정지
 - 승인 범위 밖 파일 탐지
 - 승인된 최소 수정과 gate 통과
-- Host read-only key의 fetch 성공·push 거부
+- Host read-only 원격 자격 증명의 fetch 성공·push 거부
 - gate 전후 Core tree 무부작용
+- Host의 dirty Core 순수 진단과 소비·완료 실행 차단 구분
+- Consumer 소유 쓰기 경계와 Core 밖 산출물 생성
