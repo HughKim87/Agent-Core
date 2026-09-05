@@ -1,363 +1,62 @@
 {
-  "fixture_version": 3,
+  "fixture_version": 4,
   "evidence_level": "synthetic-policy-model",
-  "purpose": "명령 창의 합성 이벤트와 기대 상태를 검사하며 정책 정본이나 실제 Host Runtime 동작을 검증하지 않는다.",
-  "failure_limit": 3,
-  "policy_roles": {
-    "canonical": "rules/failure-records.md",
-    "route": "PROJECT_RULES.md",
-    "delegate": "rules/work-contract.md",
-    "reference": "rules/handoff.md"
-  },
+  "policy_owner": "rules/failure-records.md",
+  "purpose": "일반 중단 조건의 합성 모델. 실제 Agent 행동이나 외부 권한을 검증하지 않는다.",
   "cases": [
     {
-      "id": "ordinary-result-candidates-are-serial",
-      "commands": [
-        {
-          "id": "ordinary-serial-command",
-          "opens_window": true,
-          "events": [
-            {"type": "result-attempt"},
-            {"type": "result-attempt"},
-            {"type": "result-modification"},
-            {"type": "failure"},
-            {"type": "result-modification"},
-            {"type": "result-attempt"},
-            {"type": "result-modification"},
-            {"type": "failure"},
-            {"type": "final-report"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 0, "stopped": false, "action": "blocked"},
-            {"count": 0, "stopped": false, "action": "blocked"},
-            {"count": 1, "stopped": false, "action": "continue"},
-            {"count": 1, "stopped": false, "action": "allowed"},
-            {"count": 1, "stopped": false, "action": "blocked"},
-            {"count": 1, "stopped": false, "action": "blocked"},
-            {"count": 2, "stopped": false, "action": "continue"},
-            {"count": 0, "stopped": false, "action": "allowed-report"}
-          ]
-        }
-      ]
+      "id": "explicit-budget-exhausted",
+      "budget_available": false,
+      "progress": true,
+      "external_resolved": true,
+      "cancelled": false,
+      "conflict_free": true,
+      "expected": "stop"
     },
     {
-      "id": "third-failure-blocks-fourth-result-attempt",
-      "commands": [
-        {
-          "id": "initial-command",
-          "opens_window": true,
-          "events": [
-            {"type": "result-attempt", "actor": "main", "method": "method-a"},
-            {"type": "failure", "actor": "main", "method": "method-a"},
-            {"type": "result-attempt", "actor": "subagent", "method": "method-b"},
-            {"type": "failure", "actor": "subagent", "method": "method-b"},
-            {"type": "result-attempt", "actor": "main", "method": "method-c"},
-            {"type": "multi-gate-failure", "actor": "main", "method": "method-c", "failed_gates": 3},
-            {"type": "result-attempt", "method": "method-d"},
-            {"type": "failure", "method": "method-d"},
-            {"type": "safe-recovery"},
-            {"type": "minimal-read"},
-            {"type": "result-modification", "method": "method-e"},
-            {"type": "final-report"},
-            {"type": "result-attempt", "method": "method-f"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 1, "stopped": false, "action": "continue"},
-            {"count": 1, "stopped": false, "action": "allowed"},
-            {"count": 2, "stopped": false, "action": "continue"},
-            {"count": 2, "stopped": false, "action": "allowed"},
-            {"count": 3, "stopped": true, "action": "stop"},
-            {"count": 3, "stopped": true, "action": "blocked"},
-            {"count": 3, "stopped": true, "action": "blocked"},
-            {"count": 3, "stopped": true, "action": "allowed-recovery"},
-            {"count": 3, "stopped": true, "action": "allowed-read"},
-            {"count": 3, "stopped": true, "action": "blocked"},
-            {"count": 0, "stopped": false, "action": "allowed-report"},
-            {"count": 0, "stopped": false, "action": "no-command"}
-          ]
-        }
-      ]
+      "id": "same-cause-no-progress",
+      "budget_available": true,
+      "progress": false,
+      "external_resolved": true,
+      "cancelled": false,
+      "conflict_free": true,
+      "expected": "stop"
     },
     {
-      "id": "same-result-new-command-starts-at-zero",
-      "commands": [
-        {
-          "id": "first-command",
-          "opens_window": true,
-          "events": [
-            {"type": "result-attempt"},
-            {"type": "failure"},
-            {"type": "result-attempt"},
-            {"type": "failure"},
-            {"type": "result-attempt"},
-            {"type": "failure"},
-            {"type": "final-report"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 1, "stopped": false, "action": "continue"},
-            {"count": 1, "stopped": false, "action": "allowed"},
-            {"count": 2, "stopped": false, "action": "continue"},
-            {"count": 2, "stopped": false, "action": "allowed"},
-            {"count": 3, "stopped": true, "action": "stop"},
-            {"count": 0, "stopped": false, "action": "allowed-report"}
-          ]
-        },
-        {
-          "id": "retry-command",
-          "opens_window": true,
-          "events": [
-            {"type": "result-attempt"},
-            {"type": "failure"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 1, "stopped": false, "action": "continue"}
-          ]
-        }
-      ]
+      "id": "uncertain-external-effect",
+      "budget_available": true,
+      "progress": true,
+      "external_resolved": false,
+      "cancelled": false,
+      "conflict_free": true,
+      "expected": "stop"
     },
     {
-      "id": "correction-with-retry-does-not-inherit",
-      "commands": [
-        {
-          "id": "original-command",
-          "opens_window": true,
-          "events": [
-            {"type": "result-attempt"},
-            {"type": "failure"},
-            {"type": "result-attempt"},
-            {"type": "failure"},
-            {"type": "final-report"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 1, "stopped": false, "action": "continue"},
-            {"count": 1, "stopped": false, "action": "allowed"},
-            {"count": 2, "stopped": false, "action": "continue"},
-            {"count": 0, "stopped": false, "action": "allowed-report"}
-          ]
-        },
-        {
-          "id": "correction-and-retry-command",
-          "opens_window": true,
-          "events": [
-            {"type": "result-attempt"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "allowed"}
-          ]
-        }
-      ]
+      "id": "user-cancel",
+      "budget_available": true,
+      "progress": true,
+      "external_resolved": true,
+      "cancelled": true,
+      "conflict_free": true,
+      "expected": "stop"
     },
     {
-      "id": "non-counting-events-do-not-consume-limit",
-      "commands": [
-        {
-          "id": "diagnostic-command",
-          "opens_window": true,
-          "events": [
-            {"type": "diagnostic-miss"},
-            {"type": "expected-red-test"},
-            {"type": "recovered-tool-error"},
-            {"type": "safe-stop"},
-            {"type": "result-attempt"},
-            {"type": "parallel-diagnostic"},
-            {"type": "failure"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "diagnostic-miss"},
-            {"count": 0, "stopped": false, "action": "expected-red-test"},
-            {"count": 0, "stopped": false, "action": "recovered-tool-error"},
-            {"count": 0, "stopped": false, "action": "safe-stop"},
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 0, "stopped": false, "action": "parallel-diagnostic"},
-            {"count": 1, "stopped": false, "action": "continue"}
-          ]
-        }
-      ]
+      "id": "concurrent-conflict",
+      "budget_available": true,
+      "progress": true,
+      "external_resolved": true,
+      "cancelled": false,
+      "conflict_free": false,
+      "expected": "stop"
     },
     {
-      "id": "abandoned-tool-candidate-counts-once",
-      "commands": [
-        {
-          "id": "tool-failure-command",
-          "opens_window": true,
-          "events": [
-            {"type": "result-attempt"},
-            {"type": "candidate-abandoned-after-tool-error", "tool_errors": 4}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 1, "stopped": false, "action": "continue"}
-          ]
-        }
-      ]
-    },
-    {
-      "id": "status-message-does-not-reset-active-command",
-      "commands": [
-        {
-          "id": "active-command",
-          "opens_window": true,
-          "events": [
-            {"type": "result-attempt"},
-            {"type": "failure"},
-            {"type": "status-only"},
-            {"type": "result-attempt"},
-            {"type": "failure"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 1, "stopped": false, "action": "continue"},
-            {"count": 1, "stopped": false, "action": "status-only"},
-            {"count": 1, "stopped": false, "action": "allowed"},
-            {"count": 2, "stopped": false, "action": "continue"}
-          ]
-        },
-        {
-          "id": "standalone-status-message",
-          "opens_window": false,
-          "events": [
-            {"type": "status-only"},
-            {"type": "result-attempt"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "status-only"},
-            {"count": 0, "stopped": false, "action": "no-command"}
-          ]
-        }
-      ]
-    },
-    {
-      "id": "result-candidates-cannot-overrun-remaining-slots",
-      "commands": [
-        {
-          "id": "parallel-command",
-          "opens_window": true,
-          "events": [
-            {"type": "result-attempt"},
-            {"type": "failure"},
-            {"type": "result-attempt"},
-            {"type": "failure"},
-            {"type": "start-result-candidates", "candidates": 2},
-            {"type": "start-result-candidates", "candidates": 1},
-            {"type": "start-result-candidates", "candidates": 1},
-            {"type": "failure"},
-            {"type": "start-result-candidates", "candidates": 1},
-            {"type": "failure"},
-            {"type": "final-report"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 1, "stopped": false, "action": "continue"},
-            {"count": 1, "stopped": false, "action": "allowed"},
-            {"count": 2, "stopped": false, "action": "continue"},
-            {"count": 2, "stopped": false, "action": "blocked"},
-            {"count": 2, "stopped": false, "action": "allowed"},
-            {"count": 2, "stopped": false, "action": "blocked"},
-            {"count": 3, "stopped": true, "action": "stop"},
-            {"count": 3, "stopped": true, "action": "blocked"},
-            {"count": 3, "stopped": true, "action": "blocked"},
-            {"count": 0, "stopped": false, "action": "allowed-report"}
-          ]
-        },
-        {
-          "id": "orphan-outcome-command",
-          "opens_window": true,
-          "events": [
-            {"type": "failure"},
-            {"type": "result-attempt"},
-            {"type": "failure"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "invalid-no-active-candidate"},
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 1, "stopped": false, "action": "continue"}
-          ]
-        }
-      ]
-    },
-    {
-      "id": "uncertain-external-effect-requires-state-check",
-      "commands": [
-        {
-          "id": "external-effect-command",
-          "opens_window": true,
-          "events": [
-            {"type": "result-attempt"},
-            {"type": "uncertain-external-effect"},
-            {"type": "result-attempt"},
-            {"type": "parallel-diagnostic"},
-            {"type": "state-check"},
-            {"type": "result-attempt"},
-            {"type": "failure"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 0, "stopped": false, "action": "await-state-check"},
-            {"count": 0, "stopped": false, "action": "blocked"},
-            {"count": 0, "stopped": false, "action": "parallel-diagnostic"},
-            {"count": 0, "stopped": false, "action": "state-checked"},
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 1, "stopped": false, "action": "continue"}
-          ]
-        }
-      ]
-    },
-    {
-      "id": "user-cancel-closes-command-window",
-      "commands": [
-        {
-          "id": "cancelled-command",
-          "opens_window": true,
-          "events": [
-            {"type": "result-attempt"},
-            {"type": "user-cancel"},
-            {"type": "result-attempt"},
-            {"type": "failure"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 0, "stopped": false, "action": "closed"},
-            {"count": 0, "stopped": false, "action": "no-command"},
-            {"count": 0, "stopped": false, "action": "no-command"}
-          ]
-        }
-      ]
-    },
-    {
-      "id": "new-execution-command-preempts-stopped-window",
-      "commands": [
-        {
-          "id": "preempted-command-window",
-          "opens_window": true,
-          "events": [
-            {"type": "result-attempt"},
-            {"type": "failure"},
-            {"type": "result-attempt"},
-            {"type": "failure"},
-            {"type": "result-attempt"},
-            {"type": "failure"},
-            {"type": "new-user-execution-command"},
-            {"type": "result-attempt"},
-            {"type": "failure"}
-          ],
-          "expected": [
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 1, "stopped": false, "action": "continue"},
-            {"count": 1, "stopped": false, "action": "allowed"},
-            {"count": 2, "stopped": false, "action": "continue"},
-            {"count": 2, "stopped": false, "action": "allowed"},
-            {"count": 3, "stopped": true, "action": "stop"},
-            {"count": 0, "stopped": false, "action": "new-window"},
-            {"count": 0, "stopped": false, "action": "allowed"},
-            {"count": 1, "stopped": false, "action": "continue"}
-          ]
-        }
-      ]
+      "id": "resolved-cause-with-budget",
+      "budget_available": true,
+      "progress": true,
+      "external_resolved": true,
+      "cancelled": false,
+      "conflict_free": true,
+      "expected": "eligible"
     }
   ]
 }
