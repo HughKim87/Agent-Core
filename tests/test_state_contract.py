@@ -288,6 +288,78 @@ class StateContractTest(unittest.TestCase):
                 )
                 self.assertEqual(self._findings(text), [])
 
+
+    def test_indented_examples_do_not_replace_real_declarations(self) -> None:
+        for indent in ("    ", "\t", "  \t"):
+            for declaration, expected in (
+                ("- 결과: `pass`", "판정이 없다"),
+                ("1. `PROJECT_RULES.md`의 선언을 파싱한다.", "번호"),
+            ):
+                with self.subTest(indent=indent, declaration=declaration):
+                    text = VALID_STATE.replace(declaration, indent + declaration)
+                    self.assertTrue(any(
+                        expected in finding.message for finding in self._findings(text)
+                    ))
+
+    def test_commented_examples_do_not_replace_real_declarations(self) -> None:
+        for wrapper in ("<!--\n{}\n-->", "<!-- {} -->", "<!--\n{}"):
+            for declaration, expected in (
+                ("- 결과: `pass`", "판정이 없다"),
+                ("1. `PROJECT_RULES.md`의 선언을 파싱한다.", "번호"),
+            ):
+                with self.subTest(wrapper=wrapper, declaration=declaration):
+                    text = VALID_STATE.replace(declaration, wrapper.format(declaration))
+                    self.assertTrue(any(
+                        expected in finding.message for finding in self._findings(text)
+                    ))
+
+    def test_commented_headings_do_not_satisfy_required_sections(self) -> None:
+        text = VALID_STATE.replace("## 차단", "<!--\n## 차단\n-->")
+        self.assertTrue(any(
+            "필수 절이 없다: ## 차단" in finding.message
+            for finding in self._findings(text)
+        ))
+
+    def test_examples_beside_real_declarations_are_ignored(self) -> None:
+        for example in (
+            "    - 예시: `fail`\n    ## 직전 게이트",
+            "\t- 예시: `fail`\n\t## 직전 게이트",
+            "<!--\n- 예시: `fail`\n## 직전 게이트\n\u0060\u0060\u0060\n-->",
+            "<!-- 예시: `fail` --> <!-- 예시: `fail` -->",
+        ):
+            with self.subTest(example=example):
+                text = VALID_STATE.replace(
+                    "- 결과: `pass`", "- 결과: `pass`\n" + example
+                )
+                self.assertEqual(self._findings(text), [])
+
+    def test_comments_and_code_do_not_hide_later_real_declarations(self) -> None:
+        for example in (
+            "\u0060\u0060\u0060md\n<!--\n\u0060\u0060\u0060",
+            "    <!--",
+            "<!--\n    -->",
+        ):
+            with self.subTest(example=example):
+                self.assertEqual(self._findings(
+                    VALID_STATE.replace("- 결과: `pass`", example + "\n- 결과: `pass`")
+                ), [])
+
+    def test_inline_comments_are_ignored_without_losing_real_judgment(self) -> None:
+        text = VALID_STATE.replace(
+            "- 결과: `pass`", "- 결과: <!-- 예시: `fail` --> `pass` <!-- 설명 -->"
+        )
+        self.assertEqual(self._findings(text), [])
+
+    def test_up_to_three_spaces_preserve_real_declarations(self) -> None:
+        for indent in ("", " ", "  ", "   "):
+            with self.subTest(indent=indent):
+                text = VALID_STATE.replace("- 결과: `pass`", indent + "- 결과: `pass`")
+                text = text.replace(
+                    "1. `PROJECT_RULES.md`의 선언을 파싱한다.",
+                    indent + "1. `PROJECT_RULES.md`의 선언을 파싱한다.",
+                )
+                self.assertEqual(self._findings(text), [])
+
     def test_size_budget_is_enforced(self) -> None:
         findings = self._findings(VALID_STATE + ("x" * 3_000))
         self.assertTrue(any("예산" in finding.message for finding in findings))

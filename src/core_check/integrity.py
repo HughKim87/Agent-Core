@@ -834,6 +834,7 @@ def _markdown_h2_sections(text: str) -> dict[str, list[str]]:
     heading: str | None = None
     body: list[str] = []
     fence: tuple[str, int] | None = None
+    in_comment = False
 
     def flush() -> None:
         if heading is not None:
@@ -841,13 +842,7 @@ def _markdown_h2_sections(text: str) -> dict[str, list[str]]:
 
     for line in text.splitlines(keepends=True):
         content = line.rstrip("\r\n")
-        if fence is None:
-            fence_match = re.match(r"^ {0,3}(`{3,}|~{3,})", content)
-            if fence_match:
-                marker = fence_match.group(1)
-                fence = (marker[0], len(marker))
-                continue
-        else:
+        if fence is not None:
             closing_match = re.fullmatch(r" {0,3}(`{3,}|~{3,})[ \t]*", content)
             if (
                 closing_match
@@ -855,6 +850,33 @@ def _markdown_h2_sections(text: str) -> dict[str, list[str]]:
                 and len(closing_match.group(1)) >= fence[1]
             ):
                 fence = None
+            continue
+        # Indented examples cannot declare state or open HTML comments.
+        if not in_comment and content.expandtabs(4).startswith("    "):
+            continue
+        visible: list[str] = []
+        cursor = 0
+        while cursor < len(content):
+            if in_comment:
+                end = content.find("-->", cursor)
+                if end == -1:
+                    break
+                visible.append(" " * (end + 3 - cursor))
+                cursor = end + 3
+                in_comment = False
+            else:
+                start = content.find("<!--", cursor)
+                if start == -1:
+                    visible.append(content[cursor:])
+                    break
+                visible.append(content[cursor:start])
+                cursor = start
+                in_comment = True
+        content = "".join(visible)
+        fence_match = re.match(r"^ {0,3}(`{3,}|~{3,})", content)
+        if fence_match:
+            marker = fence_match.group(1)
+            fence = (marker[0], len(marker))
             continue
         match = re.match(r"^ {0,3}##(?!#)\s+(.+?)\s*$", content)
         if match:
@@ -864,7 +886,7 @@ def _markdown_h2_sections(text: str) -> dict[str, list[str]]:
             body = []
             continue
         if heading is not None:
-            body.append(line)
+            body.append(content + "\n")
     flush()
     return sections
 
