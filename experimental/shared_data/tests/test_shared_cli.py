@@ -304,6 +304,23 @@ class PublicSharedDataCliTests(unittest.TestCase):
             finally:
                 remove_directory_link(link)
 
+    def test_runtime_boundary_rejects_storage_under_protected_path(self) -> None:
+        from core_check.runtime_boundary import (
+            RuntimeBoundaryError,
+            prepare_consumer_runtime_boundary,
+        )
+
+        with tempfile.TemporaryDirectory(prefix="shared-cli-protected-") as raw_root:
+            root = Path(raw_root)
+            configure_consumer(root)
+            with self.assertRaisesRegex(RuntimeBoundaryError, "보호 경로"):
+                prepare_consumer_runtime_boundary(
+                    root / "core",
+                    root,
+                    capability_id="shared_data",
+                    write_paths=(f"{PROTECTED_PATH}/runtime",),
+                )
+
     def test_contract_version_mismatch_is_rejected_before_dispatch(self) -> None:
         with tempfile.TemporaryDirectory(prefix="shared-cli-contract-") as raw_root:
             root = Path(raw_root)

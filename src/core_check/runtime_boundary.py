@@ -115,11 +115,22 @@ def prepare_consumer_runtime_boundary(
     effective_protected = tuple(sorted({
         str(value) for value in [*declared_protected, *protected_paths, core_relative]
     }))
+    canonical_protected: list[tuple[str, Path]] = []
     for candidate in effective_protected:
         try:
-            resolve_inside(consumer_root, candidate)
+            canonical_protected.append(
+                (candidate, resolve_inside(consumer_root, candidate))
+            )
         except (CheckError, OSError) as exc:
             raise _runtime_error(f"보호 경로가 Consumer 밖이다: {candidate}: {exc}", exc)
+    for relative in canonical_write_paths:
+        write_path = resolve_inside(consumer_root, relative)
+        for protected_relative, protected_path in canonical_protected:
+            if _paths_overlap(write_path, protected_path):
+                raise RuntimeBoundaryError(
+                    "Runtime 쓰기 경로는 보호 경로와 겹칠 수 없다: "
+                    f"{relative} <-> {protected_relative}"
+                )
 
     baseline: HostCoreBaseline | None = None
     if contract.get("consumer_role") == "host":
