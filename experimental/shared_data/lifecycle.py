@@ -10,7 +10,6 @@ from uuid import UUID, uuid4
 
 from .knowledge import KnowledgeService, SourceIntegrityError
 from .store import (
-    ConflictError,
     ExpectationMismatchError,
     InputContractError,
     RecordNotFoundError,
@@ -533,25 +532,26 @@ class LifecycleService:
     ) -> dict[str, Any]:
         base = self._base_record(target_id)
         events, _ = self._events()
+        state_id = lifecycle_state_record_id(base["id"], events)
+        try:
+            current = self.store.get_record(state_id)
+        except RecordNotFoundError:
+            current = None
+        # Registration supplies the stable ID; replay only after capturing CAS.
+        events, _ = self._events()
+        if lifecycle_state_record_id(base["id"], events) != state_id:
+            raise LifecycleError("lifecycle 등록 정본이 바뀌었다")
         payload = replay_lifecycle_events(base["id"], events)
         if payload["target_type"] != base["record_type"]:
             raise LifecycleError("lifecycle target_type이 base record와 다르다")
         if expected_last_event_id is not None and payload["last_event_id"] != expected_last_event_id:
             raise LifecycleError("lifecycle replay가 기대 event에서 끝나지 않았다")
-        state_id = lifecycle_state_record_id(base["id"], events)
         event = next(item for item in reversed(events) if item["id"] == payload["last_event_id"])
         timestamp = datetime.strptime(event["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
-        try:
-            current = self.store.get_record(state_id)
-        except RecordNotFoundError:
-            current = None
         if current is None:
-            try:
-                return self.store.create_record(
-                    "lifecycle_state", payload, record_id=state_id, timestamp=timestamp
-                )
-            except ConflictError:
-                current = self.store.get_record(state_id)
+            return self.store.create_record(
+                "lifecycle_state", payload, record_id=state_id, timestamp=timestamp
+            )
         if current["record_type"] != "lifecycle_state":
             raise LifecycleError("state_record_id가 lifecycle_state를 가리키지 않는다")
         return self.store.update_record(

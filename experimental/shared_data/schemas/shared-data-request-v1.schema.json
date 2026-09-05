@@ -16,7 +16,7 @@
         "lifecycle.current", "lifecycle.history", "lifecycle.rebuild",
         "lifecycle.register_existing", "lifecycle.audit",
         "context.build", "context.validate",
-        "work.create", "work.get", "work.list", "work.transition", "work.rebuild",
+        "work.create", "work.get", "work.list", "work.transition", "work.rebuild", "work.refresh_design",
         "execution.fingerprint", "request.compare"
       ]
     },

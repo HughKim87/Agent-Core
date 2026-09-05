@@ -854,6 +854,11 @@ def _markdown_h2_sections(text: str) -> dict[str, list[str]]:
         # Indented examples cannot declare state or open HTML comments.
         if not in_comment and content.expandtabs(4).startswith("    "):
             continue
+        opening_fence = re.match(r"^ {0,3}(`{3,}|~{3,})", content)
+        if not in_comment and opening_fence:
+            marker = opening_fence.group(1)
+            fence = (marker[0], len(marker))
+            continue
         visible: list[str] = []
         cursor = 0
         while cursor < len(content):
@@ -865,11 +870,21 @@ def _markdown_h2_sections(text: str) -> dict[str, list[str]]:
                 cursor = end + 3
                 in_comment = False
             else:
-                start = content.find("<!--", cursor)
-                if start == -1:
+                token = re.search(r"`+|<!--", content[cursor:])
+                if token is None:
                     visible.append(content[cursor:])
                     break
+                start = cursor + token.start()
                 visible.append(content[cursor:start])
+                if token.group().startswith("`"):
+                    marker = token.group()
+                    span_end = re.search(r"(?<!`)" + re.escape(marker) + r"(?!`)", content[start + len(marker):])
+                    end = start + len(marker)
+                    if span_end is not None:
+                        end += span_end.end()
+                    visible.append(content[start:end])
+                    cursor = end
+                    continue
                 cursor = start
                 in_comment = True
         content = "".join(visible)

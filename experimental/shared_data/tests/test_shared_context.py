@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 UTC = timezone.utc
 import json
+import copy
+import hashlib
 from pathlib import Path
 import sys
 import tempfile
@@ -104,6 +106,40 @@ class Runtime:
 
 
 class EvidenceContextTests(unittest.TestCase):
+    def test_rehashed_invalid_package_structure_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="context-structure-") as raw:
+            normal = Runtime(Path(raw)).context.build(purpose="validation")
+            changes = (
+                ("package_version", True), ("purpose", None), ("purpose", ""),
+                ("selected", "not an array"), ("selected", [None]),
+                ("excluded", ["not an object"]), ("settings", None),
+                ("settings", {}), ("settings", {**normal["settings"], "extra": 1}),
+                ("metrics", {}), ("metrics", {**normal["metrics"], "extra": 1}),
+                ("metrics", {"selected_items": -1, "selected_characters": 0, "excluded_items": 0}),
+                ("settings", {**normal["settings"], "max_characters": True}),
+                ("settings", {**normal["settings"], "max_characters": 0}),
+                ("settings", {**normal["settings"], "search": []}),
+                ("metrics", {**normal["metrics"], "selected_items": True}),
+                ("settings", {**normal["settings"], "candidate_documents": ["a", "a"]}),
+                ("settings", {**normal["settings"], "candidate_documents": [None]}),
+                ("settings", {**normal["settings"], "filters": {"x": None}}),
+            )
+            for field, value in changes:
+                package = copy.deepcopy(normal)
+                package[field] = value
+                body = {k: v for k, v in package.items() if k != "fingerprint"}
+                encoded = json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+                package["fingerprint"] = "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+                with self.subTest(field=field, value=value), self.assertRaises(EvidenceContextError):
+                    validate_context_package(package)
+            validate_context_package(normal)
+            # Object item contents are intentionally open in the published schema.
+            allowed = {**normal, "selected": [{"extension": {"nested": [1, True, None]}}]}
+            body = {k: v for k, v in allowed.items() if k != "fingerprint"}
+            allowed["fingerprint"] = "sha256:" + hashlib.sha256(json.dumps(body, ensure_ascii=False,
+                sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
+            validate_context_package(allowed)
+
     def test_schema_fields_and_runtime_fields_agree(self) -> None:
         schema = json.loads(
             (ROOT / "experimental/shared_data/schemas/context-package-v1.schema.json").read_text(

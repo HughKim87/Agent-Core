@@ -32,7 +32,7 @@ OPERATIONS = (
     "lifecycle.current", "lifecycle.history", "lifecycle.rebuild",
     "lifecycle.register_existing", "lifecycle.audit",
     "context.build", "context.validate",
-    "work.create", "work.get", "work.list", "work.transition", "work.rebuild",
+    "work.create", "work.get", "work.list", "work.transition", "work.rebuild", "work.refresh_design",
     "execution.fingerprint", "request.compare",
 )
 
@@ -358,6 +358,13 @@ class Dispatcher:
         work_id = values.pop("work_id")
         values["timestamp"] = _timestamp(values.get("timestamp"))
         return self.work.transition(work_id, **values)
+
+    def _work_refresh_design(self, raw: Mapping[str, Any]) -> Any:
+        values = _arguments(raw, required={"work_id", "expected_state_hash", "actor",
+            "reviewed_fingerprint", "decisions_unchanged", "evidence_refs"}, optional={"timestamp"})
+        work_id = values.pop("work_id")
+        values["timestamp"] = _timestamp(values.get("timestamp"))
+        return self.work.refresh_design(work_id, **values)
 
     def _work_rebuild(self, raw: Mapping[str, Any]) -> Any:
         values = _arguments(raw, required={"work_id"}, optional={"expected_last_event_id"})

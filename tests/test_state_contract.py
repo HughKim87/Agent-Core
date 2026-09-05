@@ -57,6 +57,16 @@ class StateContractTest(unittest.TestCase):
     def test_valid_consumer_state_passes(self) -> None:
         self.assertEqual(self._findings(VALID_STATE), [])
 
+    def test_comment_markers_inside_code_spans_preserve_following_sections(self) -> None:
+        for literal in ("`<!--`", "``literal ` <!--``", "`<!-- -->` <!-- actual comment -->"):
+            with self.subTest(literal=literal):
+                text = VALID_STATE.replace("## 차단", f"- literal: {literal}\n\n## 차단", 1)
+                self.assertEqual(self._findings(text), [])
+
+    def test_real_comment_after_code_span_still_hides_fake_sections(self) -> None:
+        text = VALID_STATE.replace("## 차단", "- literal: `<!--` <!--\n## 차단", 1)
+        self.assertTrue(any("## 차단" in f.message for f in self._findings(text)))
+
     def test_missing_required_section_is_detected(self) -> None:
         findings = self._findings(VALID_STATE.replace("## 차단", "## 다른 절"))
         self.assertTrue(any("필수 절" in finding.message for finding in findings))

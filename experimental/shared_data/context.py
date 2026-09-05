@@ -413,9 +413,36 @@ def validate_context_package(package: Mapping[str, Any]) -> None:
 
     if not isinstance(package, Mapping) or set(package) != PACKAGE_FIELDS:
         raise EvidenceContextError(f"context package field가 정확하지 않다: {sorted(PACKAGE_FIELDS)}")
-    if package["package_version"] != PACKAGE_VERSION:
+    if type(package["package_version"]) is not int or package["package_version"] != PACKAGE_VERSION:
         raise EvidenceContextError(f"package_version은 {PACKAGE_VERSION}이어야 한다")
-    expected = _fingerprint({key: value for key, value in package.items() if key != "fingerprint"})
+    if not isinstance(package["purpose"], str) or not package["purpose"]:
+        raise EvidenceContextError("purpose는 비어 있지 않은 문자열이어야 한다")
+    settings = package["settings"]
+    if not isinstance(settings, dict) or set(settings) != {"max_characters", "search", "filters", "candidate_documents"}:
+        raise EvidenceContextError("settings field가 정확하지 않다")
+    if type(settings["max_characters"]) is not int or settings["max_characters"] < 1:
+        raise EvidenceContextError("max_characters는 양의 정수여야 한다")
+    if settings["search"] is not None and not isinstance(settings["search"], str):
+        raise EvidenceContextError("search는 문자열 또는 null이어야 한다")
+    filters = settings["filters"]
+    if not isinstance(filters, dict) or any(not isinstance(k, str) or not isinstance(v, str) for k, v in filters.items()):
+        raise EvidenceContextError("filters는 문자열 key/value object여야 한다")
+    candidates = settings["candidate_documents"]
+    if not isinstance(candidates, list) or any(not isinstance(v, str) for v in candidates) or len(candidates) != len(set(candidates)):
+        raise EvidenceContextError("candidate_documents는 중복 없는 문자열 배열이어야 한다")
+    for field in ("selected", "excluded"):
+        if not isinstance(package[field], list) or any(not isinstance(v, dict) for v in package[field]):
+            raise EvidenceContextError(f"{field}는 object 배열이어야 한다")
+    metrics = package["metrics"]
+    if not isinstance(metrics, dict) or set(metrics) != {"selected_items", "selected_characters", "excluded_items"}:
+        raise EvidenceContextError("metrics field가 정확하지 않다")
+    if any(type(v) is not int or v < 0 for v in metrics.values()):
+        raise EvidenceContextError("metrics 값은 음수가 아닌 정수여야 한다")
+    if not isinstance(package["fingerprint"], str) or re.fullmatch(r"sha256:[0-9a-f]{64}", package["fingerprint"]) is None:
+        raise EvidenceContextError("fingerprint 형식이 정확하지 않다")
+    try:
+        expected = _fingerprint({key: value for key, value in package.items() if key != "fingerprint"})
+    except (TypeError, ValueError) as exc:
+        raise EvidenceContextError("context package가 유효한 JSON이 아니다") from exc
     if package["fingerprint"] != expected:
         raise EvidenceContextError("context package fingerprint가 내용과 다르다")
-

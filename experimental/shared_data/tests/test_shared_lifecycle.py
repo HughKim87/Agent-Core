@@ -23,6 +23,7 @@ from experimental.shared_data import (  # noqa: E402
     LIFECYCLE_STATES,
     STATE_FIELDS,
     TARGET_TYPES,
+    ConflictError,
     ExpectationMismatchError,
     InvalidLifecycleTransition,
     KnowledgeService,
@@ -103,6 +104,30 @@ class LifecycleSchemaTests(unittest.TestCase):
 
 
 class LifecycleTransitionTests(unittest.TestCase):
+    def test_stale_rebuild_cannot_overwrite_newer_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            runtime = Runtime(Path(raw))
+            source = runtime.source()
+            current = runtime.lifecycle.register(source["id"], initial_state="candidate",
+                actor="agent:test", approval_kind="agent_in_scope", reason="register")
+            rival = LifecycleService(runtime.knowledge)
+            original = runtime.lifecycle._events
+            latest = []
+            calls = 0
+            def interleave():
+                nonlocal calls
+                captured = original()
+                calls += 1
+                # The second read follows capture of the projection CAS baseline.
+                if calls == 2:
+                    latest.append(rival.transition(source["id"], expected_state_hash=current["content_hash"],
+                        action="request_review", actor="agent:rival", approval_kind="agent_in_scope", reason="review"))
+                return captured
+            with patch.object(runtime.lifecycle, "_events", side_effect=interleave):
+                with self.assertRaises(ExpectationMismatchError):
+                    runtime.lifecycle.rebuild_snapshot(source["id"])
+            self.assertEqual(runtime.lifecycle.get_state(source["id"])["payload"], latest[0]["payload"])
+
     def test_current_registration_requires_user_approval_and_owns_stable_snapshot_id(self) -> None:
         with tempfile.TemporaryDirectory(prefix="shared-lifecycle-register-") as raw_root:
             runtime = Runtime(Path(raw_root))
@@ -336,6 +361,28 @@ class LifecycleTransitionTests(unittest.TestCase):
 
 
 class LifecycleRecoveryTests(unittest.TestCase):
+    def test_concurrent_projection_creation_cannot_overwrite_winner(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            runtime = Runtime(Path(raw))
+            source = runtime.source()
+            with patch.object(runtime.store, "create_record", side_effect=OSError("projection failure")):
+                with self.assertRaises(LifecycleProjectionPending):
+                    runtime.lifecycle.register(source["id"], initial_state="candidate", actor="agent:test",
+                        approval_kind="agent_in_scope", reason="register")
+            rival = LifecycleService(runtime.knowledge)
+            original = runtime.store.create_record
+            winner = []
+            def interleave(*args, **kwargs):
+                with patch.object(runtime.store, "create_record", original):
+                    initial = rival.rebuild_snapshot(source["id"])
+                    winner.append(rival.transition(source["id"], expected_state_hash=initial["content_hash"],
+                        actor="agent:rival", action="request_review", approval_kind="agent_in_scope", reason="review"))
+                return original(*args, **kwargs)
+            with patch.object(runtime.store, "create_record", side_effect=interleave):
+                with self.assertRaises(ConflictError):
+                    runtime.lifecycle.rebuild_snapshot(source["id"])
+            self.assertEqual(runtime.lifecycle.get_state(source["id"]), winner[0])
+
     def test_committed_event_blocks_new_transition_until_projection_rebuild(self) -> None:
         with tempfile.TemporaryDirectory(prefix="shared-lifecycle-recovery-") as raw_root:
             runtime = Runtime(Path(raw_root))

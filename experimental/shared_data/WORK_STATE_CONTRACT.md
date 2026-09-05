@@ -17,13 +17,19 @@
 
 ## 2. 불변 요청과 실행 포인터
 
-첫 `requested` event만 다음을 소유하며 후속 event에서 바꿀 수 없다.
+첫 `requested` event가 다음 요청을 소유하며 후속 event에서 의미를 바꿀 수 없다.
 
 - `desired_outcome`, `authorized_actions`, `excluded_scope`
 - `input_refs`, `protection_boundaries`, `required_decisions`, `verification_levels`
 - 선택적 `execution`: `quick`, `standard`, `controlled`
 
-`quick`과 `standard`는 영구 단계 설계 포인터를 저장하지 않는다. `controlled`는 `phase_id`, 소비 root 상대 `design_ref`, 승인 당시 `design_fingerprint`가 모두 필요하다. 생성·전이 직전에 현재 파일 bytes를 다시 hash하며 보호 경계·Runtime storage·root 밖 파일은 읽지 않는다. hash가 달라지면 event를 append하기 전에 재승인 필요 오류로 실패한다.
+`quick`과 `standard`는 영구 단계 설계 포인터를 저장하지 않는다. `controlled`는 `phase_id`, 소비 root 상대 `design_ref`, 검토한 내용의 `design_fingerprint`가 모두 필요하다. 생성·전이 직전에 현재 파일 bytes를 다시 hash하며 보호 경계·Runtime storage·root 밖 파일은 읽지 않는다. hash 차이는 내용 revision 변경이므로 event append 전에 `design_invalidated` 오류로 변경 검토를 요구한다. 오류 이름은 호환성을 위해 유지하며 그 자체가 재승인 판정은 아니다.
+
+`request.compare`는 요청 field 또는 실행 등급·단계·설계 경로가 바뀌면 `invalidated`와 `reapproval_required`를 반환한다. 같은 단계·경로의 fingerprint만 바뀌면 두 값은 false이고 `design_review_required`는 true다. 이는 내용 검토 필요 판정이며 의미가 같다는 자동 승인이나 증명이 아니다.
+
+승인된 목표·범위·권한·성공 조건이 유지되는 서식·설명·검증 근거 갱신은 `work.refresh_design`으로 같은 작업에서 이어 간다. 호출자는 `work_id`, `expected_state_hash`, `actor`, 현재 파일과 일치하는 `reviewed_fingerprint`, 명시적 `decisions_unchanged: true`, 비어 있지 않은 `evidence_refs`와 선택적 `timestamp`를 제공한다. Runtime은 호출자의 의미 검토를 추론하지 않는다. 결정이 달라졌다면 이 operation을 사용할 수 없으며 작업 계약과 필요한 승인을 다시 확정한다.
+
+`refresh_design`은 미완료 controlled 작업에만 허용한다. 추가 전용 검토 event는 갱신된 request 포인터와 근거를 기록하되 최초 요청 event, 다른 요청 field, 상태·진행·blocker·다음 행동을 보존한다. replay도 fingerprint 외 변경을 거부한다. 일반 `work.transition`에서는 예약 action `requested`와 `refresh_design`을 사용할 수 없다.
 
 ## 3. 전이와 승인 사실
 
@@ -45,7 +51,7 @@
 
 1. 전이 전에 현재 snapshot과 전체 event replay가 같은지 확인한다.
 2. 허용 전이·execution fingerprint·expected stream hash를 확인하고 event를 원자 append한다.
-3. 해당 work event를 처음부터 replay해 snapshot을 쓴다.
+3. snapshot의 expected hash를 먼저 확보한 뒤 해당 work event를 처음부터 replay해 쓴다. 동시 생성·갱신 충돌은 거부하며 더 최신 projection의 hash로 오래된 replay를 덮어쓰지 않는다.
 4. event 뒤 projection 쓰기가 실패하면 event를 보존하고 `WorkProjectionPending`을 반환한다.
 5. pending 동안 새 전이를 거부하며 `rebuild_snapshot` 성공 뒤 재개한다.
 

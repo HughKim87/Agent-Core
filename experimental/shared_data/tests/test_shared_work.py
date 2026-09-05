@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import copy
 UTC = timezone.utc
 import json
 from pathlib import Path
@@ -26,6 +27,7 @@ from experimental.shared_data import (  # noqa: E402
     DesignContractError,
     DesignInvalidatedError,
     DesignRequiredError,
+    ConflictError,
     ExpectationMismatchError,
     InvalidWorkTransition,
     WorkProjectionPending,
@@ -101,6 +103,101 @@ class WorkSchemaTests(unittest.TestCase):
 
 
 class ExecutionContractTests(unittest.TestCase):
+    def test_refresh_preserves_progress_and_recovers_after_projection_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            design = root / "phase.md"
+            design.write_text("approved\n", encoding="utf-8")
+            runtime = Runtime(root)
+            created = runtime.create(value=request(execution=dict(tier="controlled", phase_id="P1",
+                design_ref="phase.md", design_fingerprint=compute_design_fingerprint("phase.md", consumer_root=root))))
+            started = runtime.work.transition(WORK_ID, expected_state_hash=created["content_hash"],
+                actor="agent:test", action="start", outcome="success", to_status="in_progress", next_action="verify",
+                completed_items=["design review"], related_record_ids=["record://one"], evidence_refs=["test://old"])
+            blocked = runtime.work.transition(WORK_ID, expected_state_hash=started["content_hash"],
+                actor="agent:test", action="block", outcome="blocked", to_status="blocked", blockers=["input"], next_action="resolve input")
+            design.write_text("approved\n\n", encoding="utf-8")
+            args = dict(expected_state_hash=blocked["content_hash"], actor="agent:test", decisions_unchanged=True,
+                reviewed_fingerprint=compute_design_fingerprint("phase.md", consumer_root=root), evidence_refs=["review://same"])
+            before = runtime.store.list_events("work_events")
+            for action in ("requested", "refresh_design"):
+                with self.assertRaises(InvalidWorkTransition):
+                    runtime.work.transition(WORK_ID, expected_state_hash=blocked["content_hash"], actor="agent:test",
+                        action=action, outcome="rejected", to_status=None)
+            self.assertEqual(runtime.store.list_events("work_events"), before)
+            with patch.object(runtime.work, "rebuild_snapshot", side_effect=OSError("projection failure")):
+                with self.assertRaises(WorkProjectionPending):
+                    runtime.work.refresh_design(WORK_ID, **args)
+            with self.assertRaises(WorkProjectionPending):
+                runtime.work.get_state(WORK_ID)
+            recovered = runtime.work.rebuild_snapshot(WORK_ID)
+            for field in ("status", "completed_items", "blockers", "next_action", "related_record_ids"):
+                self.assertEqual(recovered["payload"][field], blocked["payload"][field])
+            self.assertEqual(recovered["payload"]["evidence_refs"], ["test://old", "review://same"])
+            # A competing refresh after validation must win without a second append.
+            design.write_text("approved\n\n\n", encoding="utf-8")
+            args.update(expected_state_hash=recovered["content_hash"],
+                reviewed_fingerprint=compute_design_fingerprint("phase.md", consumer_root=root))
+            rival = WorkStateService(runtime.store)
+            original = runtime.work._state_and_stream
+            winner = []
+            def interleave(work_id):
+                captured = original(work_id)
+                winner.append(rival.refresh_design(work_id, **args))
+                return captured
+            with patch.object(runtime.work, "_state_and_stream", side_effect=interleave):
+                with self.assertRaises(ExpectationMismatchError):
+                    runtime.work.refresh_design(WORK_ID, **args)
+            self.assertEqual(runtime.work.get_state(WORK_ID), winner[0])
+
+    def test_reviewed_revision_refresh_preserves_request_and_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            design = root / "phase.md"
+            design.write_text("approved decisions\n", encoding="utf-8")
+            execution = dict(tier="controlled", phase_id="P1", design_ref="phase.md",
+                             design_fingerprint=compute_design_fingerprint("phase.md", consumer_root=root))
+            runtime = Runtime(root)
+            created = runtime.create(value=request(execution=execution))
+            design.write_text("approved decisions\n\n", encoding="utf-8")
+            reviewed = compute_design_fingerprint("phase.md", consumer_root=root)
+            updated_request = request(execution={**execution, "design_fingerprint": reviewed})
+            comparison = compare_request_contract(created["payload"]["request"], updated_request)
+            self.assertFalse(comparison["reapproval_required"])
+            self.assertTrue(comparison["design_review_required"])
+            for field, value in (("desired_outcome", "new goal"), ("protection_boundaries", [])):
+                changed = {**updated_request, field: value}
+                self.assertTrue(compare_request_contract(created["payload"]["request"], changed)["reapproval_required"])
+            for field, value in (("phase_id", "P2"), ("design_ref", "another.md")):
+                changed = {**updated_request, "execution": {**updated_request["execution"], field: value}}
+                self.assertTrue(compare_request_contract(created["payload"]["request"], changed)["reapproval_required"])
+            arguments = dict(expected_state_hash=created["content_hash"], actor="agent:test",
+                             reviewed_fingerprint=reviewed, decisions_unchanged=True, evidence_refs=["review://same-decisions"])
+            before = runtime.store.list_events("work_events")
+            for overrides in ({"decisions_unchanged": False}, {"decisions_unchanged": 1},
+                              {"evidence_refs": []}, {"reviewed_fingerprint": execution["design_fingerprint"]},
+                              {"timestamp": datetime(2020, 1, 1, tzinfo=UTC)},
+                              {"expected_state_hash": "sha256:" + "0" * 64}):
+                with self.subTest(overrides=overrides), self.assertRaises((WorkStateError, DesignContractError, ExpectationMismatchError)):
+                    runtime.work.refresh_design(WORK_ID, **{**arguments, **overrides})
+                self.assertEqual(runtime.store.list_events("work_events"), before)
+            readonly = Runtime(root, write_enabled=False)
+            with self.assertRaises(WriteNotEnabledError):
+                readonly.work.refresh_design(WORK_ID, **arguments)
+            refreshed = runtime.work.refresh_design(WORK_ID, **arguments)
+            self.assertEqual(refreshed["payload"]["status"], "requested")
+            self.assertEqual(refreshed["payload"]["request"], updated_request)
+            events, _ = runtime.store.list_events("work_events")
+            self.assertEqual(events[0]["payload"]["request"]["execution"], execution)
+            forged = copy.deepcopy(events)
+            forged[-1]["payload"]["request"]["desired_outcome"] = "new goal"
+            with self.assertRaises(WorkStateError):
+                replay_work_events(forged, WORK_ID)
+            started = runtime.work.transition(WORK_ID, expected_state_hash=refreshed["content_hash"],
+                actor="agent:test", action="start", outcome="success", to_status="in_progress", next_action="verify")
+            self.assertEqual(runtime.work.rebuild_snapshot(WORK_ID)["payload"], started["payload"])
+            self.assertEqual(started["payload"]["evidence_refs"], ["review://same-decisions"])
+
     def test_quick_standard_and_controlled_shapes(self) -> None:
         self.assertEqual(
             normalize_execution({"tier": "quick"}),
@@ -162,6 +259,43 @@ class ExecutionContractTests(unittest.TestCase):
 
 
 class WorkStateTests(unittest.TestCase):
+    def test_concurrent_projection_creation_cannot_overwrite_winner(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            runtime = Runtime(Path(raw))
+            with patch.object(runtime.store, "create_record", side_effect=OSError("projection failure")):
+                with self.assertRaises(WorkProjectionPending):
+                    runtime.create()
+            rival = WorkStateService(runtime.store)
+            original = runtime.store.create_record
+            winner = []
+            def interleave(*args, **kwargs):
+                with patch.object(runtime.store, "create_record", original):
+                    initial = rival.rebuild_snapshot(WORK_ID)
+                    winner.append(rival.transition(WORK_ID, expected_state_hash=initial["content_hash"],
+                        actor="agent:rival", action="start", outcome="success", to_status="in_progress", next_action="verify"))
+                return original(*args, **kwargs)
+            with patch.object(runtime.store, "create_record", side_effect=interleave):
+                with self.assertRaises(ConflictError):
+                    runtime.work.rebuild_snapshot(WORK_ID)
+            self.assertEqual(runtime.work.get_state(WORK_ID), winner[0])
+
+    def test_stale_rebuild_cannot_overwrite_newer_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            runtime = Runtime(Path(raw))
+            created = runtime.create()
+            rival = WorkStateService(runtime.store)
+            original = runtime.work._events
+            latest = []
+            def interleave():
+                captured = original()
+                latest.append(rival.transition(WORK_ID, expected_state_hash=created["content_hash"],
+                    actor="agent:rival", action="start", outcome="success", to_status="in_progress", next_action="verify"))
+                return captured
+            with patch.object(runtime.work, "_events", side_effect=interleave):
+                with self.assertRaises(ExpectationMismatchError):
+                    runtime.work.rebuild_snapshot(WORK_ID)
+            self.assertEqual(runtime.work.get_state(WORK_ID)["payload"], latest[0]["payload"])
+
     def test_default_read_only_store_cannot_initialize_or_create(self) -> None:
         with tempfile.TemporaryDirectory(prefix="shared-work-readonly-") as raw_root:
             runtime = Runtime(Path(raw_root), write_enabled=False)

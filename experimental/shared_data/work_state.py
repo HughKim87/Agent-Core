@@ -8,7 +8,7 @@ UTC = timezone.utc
 from typing import Any
 from uuid import UUID, uuid4
 
-from .execution import normalize_execution, validate_execution_contract
+from .execution import compare_request_contract, normalize_execution, validate_execution_contract
 from .record import RecordValidationError
 from .store import (
     ExpectationMismatchError,
@@ -243,6 +243,23 @@ def replay_work_events(events: Sequence[Mapping[str, Any]], work_id: str) -> dic
             raise WorkStateError("work event 시각 순서가 역행한다")
         previous_time = event["created_at"]
         item = validate_work_event_payload(event["payload"])
+        if item["action"] == "refresh_design":
+            comparison = compare_request_contract(state["request"], item["request"] or {})
+            if (
+                state["status"] == "completed"
+                or item["from_status"] != state["status"] or item["to_status"] != state["status"]
+                or item["outcome"] != "success" or comparison["invalidated"]
+                or not comparison["design_review_required"] or not item["evidence_refs"]
+                or item["completed_items"] or item["blockers"] or item["related_record_ids"]
+                or item["next_action"] is not None
+            ):
+                raise WorkStateError("refresh_design은 미완료 작업의 설계 revision과 검토 근거만 갱신한다")
+            state["request"] = item["request"]
+            for ref in item["evidence_refs"]:
+                if ref not in state["evidence_refs"]:
+                    state["evidence_refs"].append(ref)
+            state["last_event_id"] = event["id"]
+            continue
         if item["request"] is not None:
             raise WorkStateError("request는 첫 event 뒤에 바꿀 수 없다")
         if item["from_status"] != state["status"]:
@@ -374,6 +391,8 @@ class WorkStateService:
         evidence_refs: Sequence[str] = (),
         timestamp: datetime | None = None,
     ) -> dict[str, Any]:
+        if action in {"requested", "refresh_design"}:
+            raise InvalidWorkTransition("예약 action은 해당 전용 operation으로만 기록할 수 있다")
         # Bind append CAS to the same stream used to validate this state.
         current, stream_hash = self._state_and_stream(work_id)
         if current["content_hash"] != expected_state_hash:
@@ -425,19 +444,61 @@ class WorkStateService:
         except Exception as exc:
             raise WorkProjectionPending("transition event는 저장됐지만 snapshot 재구축이 남았다") from exc
 
+    def refresh_design(
+        self, work_id: str, *, expected_state_hash: str, actor: str,
+        reviewed_fingerprint: str, decisions_unchanged: bool,
+        evidence_refs: Sequence[str], timestamp: datetime | None = None,
+    ) -> dict[str, Any]:
+        """승인된 결정이 같다는 호출자의 검토를 기록하고 설계 revision만 갱신한다."""
+        if decisions_unchanged is not True or not _string_sequence(evidence_refs, "evidence_refs"):
+            raise WorkStateError("동일 결정 검토와 비어 있지 않은 evidence_refs가 필요하다")
+        current, stream_hash = self._state_and_stream(work_id)
+        if current["content_hash"] != expected_state_hash:
+            raise ExpectationMismatchError("현재 work state hash가 expected 값과 다르다")
+        state = current["payload"]
+        request = dict(state["request"])
+        execution = request.get("execution")
+        if state["status"] == "completed" or execution is None or execution["tier"] != "controlled":
+            raise WorkStateError("미완료 controlled 작업만 설계 revision을 갱신할 수 있다")
+        if reviewed_fingerprint == execution["design_fingerprint"]:
+            raise WorkStateError("이미 검토한 설계 revision이다")
+        request["execution"] = validate_execution_contract(
+            self.store, {**execution, "design_fingerprint": reviewed_fingerprint}
+        )
+        event_time = timestamp or datetime.now(UTC)
+        if event_time.tzinfo is None or event_time.utcoffset() is None:
+            raise WorkStateError("timestamp는 timezone-aware여야 한다")
+        current_time = datetime.strptime(current["updated_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+        if event_time.astimezone(UTC).replace(microsecond=0) < current_time:
+            raise InvalidWorkTransition("work event 시각은 현재 snapshot보다 이를 수 없다")
+        appended = self.store.append_event(
+            "work_events",
+            _event_payload(work_id=work_id, actor=actor, action="refresh_design", outcome="success",
+                           from_status=state["status"], to_status=state["status"], request=request,
+                           evidence_refs=evidence_refs),
+            expected_stream_hash=stream_hash, timestamp=event_time,
+        )
+        try:
+            return self.rebuild_snapshot(work_id, expected_last_event_id=appended["event"]["id"])
+        except Exception as exc:
+            raise WorkProjectionPending("설계 검토 event는 저장됐지만 snapshot 재구축이 남았다") from exc
+
     def rebuild_snapshot(
         self, work_id: str, *, expected_last_event_id: str | None = None
     ) -> dict[str, Any]:
         identifier = _work_id(work_id)
+        # Capture the projection CAS baseline before reading its source events.
+        try:
+            current = self.store.get_record(identifier)
+        except RecordNotFoundError:
+            current = None
         events, _ = self._events()
         payload = replay_work_events(events, identifier)
         if expected_last_event_id is not None and payload["last_event_id"] != expected_last_event_id:
             raise WorkProjectionPending("snapshot 재구축 전에 더 최신 work event가 추가됐다")
         last = next(event for event in reversed(events) if event["payload"].get("work_id") == identifier)
         timestamp = datetime.strptime(last["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
-        try:
-            current = self.store.get_record(identifier)
-        except RecordNotFoundError:
+        if current is None:
             return self.store.create_record(
                 "work_state", payload, record_id=identifier, timestamp=timestamp
             )

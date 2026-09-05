@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -135,6 +136,52 @@ def configure_consumer(
 
 
 class PublicSharedDataCliTests(unittest.TestCase):
+    def test_reviewed_design_revision_through_public_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.invoke(root, "initialize", {}, write=True)
+            design = root / "phase.md"
+            design.write_text("approved decisions\n", encoding="utf-8")
+            fingerprint = self.invoke(root, "execution.fingerprint", {"design_ref": "phase.md"})["fingerprint"]
+            request = {**request_payload(), "execution": dict(tier="controlled", phase_id="P1",
+                design_ref="phase.md", design_fingerprint=fingerprint)}
+            created = self.invoke(root, "work.create", dict(request=request, actor="user:test",
+                next_action="verify", work_id=WORK_ID), write=True)
+            design.write_text("approved decisions\n\n", encoding="utf-8")
+            transition = dict(work_id=WORK_ID, expected_state_hash=created["content_hash"], actor="agent:test",
+                action="start", outcome="success", to_status="in_progress", next_action="verify")
+            stale = self.run_cli(root, request={"operation": "work.transition", "arguments": transition}, write=True)
+            self.assertEqual(stale.returncode, 1)
+            self.assertEqual(json.loads(stale.stdout)["kind"], "design_invalidated")
+            reviewed = self.invoke(root, "execution.fingerprint", {"design_ref": "phase.md"})["fingerprint"]
+            current_request = {**request, "execution": {**request["execution"], "design_fingerprint": reviewed}}
+            comparison = self.invoke(root, "request.compare", {"previous": request, "current": current_request})
+            self.assertFalse(comparison["reapproval_required"])
+            self.assertTrue(comparison["design_review_required"])
+            refreshed = self.invoke(root, "work.refresh_design", dict(work_id=WORK_ID,
+                expected_state_hash=created["content_hash"], actor="agent:test", reviewed_fingerprint=reviewed,
+                decisions_unchanged=True, evidence_refs=["review://same-decisions"]), write=True)
+            transition["expected_state_hash"] = refreshed["content_hash"]
+            started = self.invoke(root, "work.transition", transition, write=True)
+            self.assertEqual(started["payload"]["status"], "in_progress")
+            rebuilt = self.invoke(root, "work.rebuild", {"work_id": WORK_ID}, write=True)
+            self.assertEqual(rebuilt["payload"], started["payload"])
+
+    def test_context_validation_rejects_rehashed_wrong_structure_through_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.invoke(root, "initialize", {}, write=True)
+            package = self.invoke(root, "context.build", {"purpose": "schema validation"})
+            self.assertTrue(self.invoke(root, "context.validate", {"package": package})["valid"])
+            package["selected"] = "not an array"
+            body = {key: value for key, value in package.items() if key != "fingerprint"}
+            package["fingerprint"] = "sha256:" + hashlib.sha256(json.dumps(body, sort_keys=True,
+                ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
+            rejected = self.run_cli(root, request={"operation": "context.validate", "arguments": {"package": package}})
+            self.assertEqual(rejected.returncode, 1)
+            self.assertEqual(json.loads(rejected.stdout)["kind"], "evidence_context_error")
+            self.assertNotIn("Traceback", rejected.stderr)
+
     def run_cli(
         self,
         root: Path | None,

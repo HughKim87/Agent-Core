@@ -124,7 +124,7 @@ def validate_execution_contract(
     store: RecordStore,
     execution: Mapping[str, Any] | None,
 ) -> dict[str, Any] | None:
-    """controlled 단계에서 현재 설계 bytes가 승인된 fingerprint와 같은지 확인한다."""
+    """controlled 단계에서 현재 설계 bytes가 검토한 revision과 같은지 확인한다."""
 
     if execution is None:
         return None
@@ -140,7 +140,11 @@ def validate_execution_contract(
         storage_root=store.storage_root,
     )
     if actual != normalized["design_fingerprint"]:
-        raise DesignInvalidatedError("단계 설계 fingerprint가 바뀌어 재승인이 필요하다")
+        raise DesignInvalidatedError(
+            "단계 설계 revision이 바뀌어 변경 검토가 필요하다. 승인된 결정이 같으면 "
+            "work.refresh_design으로 검토 근거와 새 fingerprint를 기록하고, "
+            "목표·권한·성공 조건이 바뀌면 작업 계약을 다시 확정한다"
+        )
     return normalized
 
 
@@ -159,13 +163,20 @@ def compare_request_contract(
     changed = [field for field in fields if previous.get(field) != current.get(field)]
     previous_execution = request_execution(previous)
     current_execution = request_execution(current)
+    revision_only = (
+        previous_execution is not None and current_execution is not None
+        and previous_execution["tier"] == current_execution["tier"] == "controlled"
+        and all(previous_execution[key] == current_execution[key] for key in ("phase_id", "design_ref"))
+        and previous_execution["design_fingerprint"] != current_execution["design_fingerprint"]
+    )
+    invalidated = bool(changed) or (previous_execution != current_execution and not revision_only)
     if previous_execution != current_execution:
         changed.append("execution")
     return {
-        "invalidated": bool(changed),
-        "reapproval_required": bool(changed),
+        "invalidated": invalidated,
+        "reapproval_required": invalidated,
+        "design_review_required": revision_only,
         "changed_fields": changed,
         "previous_execution": previous_execution,
         "current_execution": current_execution,
     }
-
