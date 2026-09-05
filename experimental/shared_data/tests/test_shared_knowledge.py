@@ -26,6 +26,7 @@ from experimental.shared_data import (  # noqa: E402
     SOURCE_VERIFICATION_STATUSES,
     InputContractError,
     KnowledgeRecordError,
+    RecordNotFoundError,
     KnowledgeService,
     SourceIntegrityError,
     create_knowledge_store,
@@ -198,7 +199,10 @@ class KnowledgeAndDecisionTests(unittest.TestCase):
             )
             for statement, status, verifier, sources in cases:
                 with self.subTest(statement=statement):
-                    with self.assertRaises(Exception):
+                    before = {p.relative_to(raw_root).as_posix(): p.read_bytes()
+                              for p in Path(raw_root).rglob("*") if p.is_file()}
+                    error = RecordNotFoundError if statement == "unknown source" else KnowledgeRecordError
+                    with self.assertRaises(error):
                         knowledge.create_knowledge(
                             statement=statement,
                             classification="fact",
@@ -207,6 +211,9 @@ class KnowledgeAndDecisionTests(unittest.TestCase):
                             verification_status=status,
                             verified_by=verifier,
                         )
+                    after = {p.relative_to(raw_root).as_posix(): p.read_bytes()
+                             for p in Path(raw_root).rglob("*") if p.is_file()}
+                    self.assertEqual(after, before)
 
     def test_decision_create_and_approval_boundaries(self) -> None:
         with tempfile.TemporaryDirectory(prefix="shared-decision-") as raw_root:

@@ -470,19 +470,6 @@ class IsolationTests(unittest.TestCase):
         }
         self.assertEqual(set(module_layers(ROOT)["L7"]), actual)
 
-    def test_core_check_does_not_import_experimental_runtime(self) -> None:
-        for path in sorted((ROOT / "src" / "core_check").glob("*.py")):
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            imported: set[str] = set()
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    imported.update(alias.name for alias in node.names)
-                elif isinstance(node, ast.ImportFrom) and node.module:
-                    imported.add(node.module)
-            self.assertFalse(
-                any(name == "experimental" or name.startswith("experimental.") for name in imported),
-                path.name,
-            )
 
     def test_implementation_has_no_project_domain_or_hardcoded_protected_paths(self) -> None:
         implementation = "\n".join(

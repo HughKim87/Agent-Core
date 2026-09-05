@@ -46,6 +46,7 @@ class StepResult:
     status: str
     detail: str = ""
     required: bool = True
+    evidence: dict[str, object] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -53,6 +54,7 @@ class StepResult:
             "status": self.status,
             "required": self.required,
             "detail": self.detail,
+            "evidence": self.evidence,
         }
 
 
@@ -568,6 +570,61 @@ def _startup_context(core_root: Path, consumer_root: Path) -> StepResult:
     )
 
 
+_UNITTEST_RUNNER = r"""
+import contextlib, json, sys, unittest
+with contextlib.redirect_stdout(sys.stderr):
+    suite = unittest.TestLoader().discover(sys.argv[1], pattern="test_*.py")
+    result = unittest.TextTestRunner(stream=sys.stderr, verbosity=1).run(suite)
+skipped = [{"test": str(test), "reason": reason} for test, reason in result.skipped]
+executed = result.testsRun - len(skipped)
+status = "fail" if not result.wasSuccessful() else ("pass" if executed else "not_run")
+print(json.dumps({"status": status, "tests_run": result.testsRun, "executed": executed,
+                  "skipped": len(skipped), "skip_reasons": skipped,
+                  "failures": len(result.failures), "errors": len(result.errors),
+                  "expected_failures": len(result.expectedFailures),
+                  "unexpected_successes": len(result.unexpectedSuccesses)}))
+sys.exit(0 if status == "pass" else 1)
+"""
+
+
+def _test_suite(tests_dir: Path, *, execution_root: Path, environment: dict[str, str]) -> StepResult:
+    evidence: dict[str, object] = {"target": str(tests_dir), "tests_run": None, "executed": None}
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-B", "-c", _UNITTEST_RUNNER, str(tests_dir)],
+            cwd=execution_root, env=environment, capture_output=True,
+            text=True, encoding="utf-8", check=False,
+        )
+    except OSError as exc:
+        return StepResult("regression-tests", "not_run", str(exc), evidence=evidence)
+    evidence.update({"returncode": completed.returncode, "stdout": completed.stdout,
+                     "stderr": completed.stderr})
+    try:
+        payload = json.loads(completed.stdout)
+        counts = ("tests_run", "executed", "skipped", "failures", "errors",
+                  "expected_failures", "unexpected_successes")
+        if not isinstance(payload, dict) or any(
+            type(payload.get(key)) is not int or payload[key] < 0 for key in counts
+        ):
+            raise ValueError("invalid test counts")
+        if (not isinstance(payload.get("skip_reasons"), list)
+                or len(payload["skip_reasons"]) != payload["skipped"]
+                or payload["tests_run"] != payload["executed"] + payload["skipped"]):
+            raise ValueError("inconsistent test counts")
+        status = ("fail" if payload["failures"] or payload["errors"] or payload["unexpected_successes"]
+                  else "pass" if payload["executed"] else "not_run")
+        if payload.get("status") != status:
+            raise ValueError("inconsistent test status")
+    except (ValueError, TypeError):
+        return StepResult("regression-tests", "not_run", "수행 결과가 없거나 해석할 수 없다", evidence=evidence)
+    evidence.update(payload)
+    if completed.returncode != (0 if status == "pass" else 1):
+        status = "fail"
+    detail = (f"{tests_dir}: run={payload['tests_run']}, executed={payload['executed']}, "
+              f"skipped={payload['skipped']}, failures={payload['failures']}, errors={payload['errors']}")
+    return StepResult("regression-tests", status, detail, evidence=evidence)
+
+
 def _tests(core_root: Path) -> StepResult:
     tests_dir = core_root / "tests"
     if not tests_dir.is_dir():
@@ -578,19 +635,7 @@ def _tests(core_root: Path) -> StepResult:
     env["PYTHONPATH"] = os.pathsep.join(
         [str(core_root / "src"), env.get("PYTHONPATH", "")]
     ).rstrip(os.pathsep)
-    completed = subprocess.run(
-        [sys.executable, "-B", "-m", "unittest", "discover", "-s", "tests", "-q"],
-        cwd=core_root,
-        env=env,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
-    if completed.returncode == 0:
-        tail = (completed.stderr or "").strip().splitlines()
-        return StepResult("regression-tests", "pass", tail[-2] if len(tail) > 1 else "OK")
-    return StepResult("regression-tests", "fail", (completed.stderr or "")[-500:])
+    return _test_suite(tests_dir, execution_root=core_root, environment=env)
 
 
 def _optional(
@@ -615,6 +660,7 @@ def _optional(
     ).rstrip(os.pathsep)
     installed = 0
     absent = 0
+    suites: dict[str, object] = {}
     for capability_id, declaration in sorted(capabilities.items()):
         try:
             state = optional_capability_installation_state(core_root, capability_id, declaration)
@@ -655,19 +701,11 @@ def _optional(
             return StepResult("optional-features", "fail", f"{capability_id}: {detail[-500:]}")
         tests_dir = core_root / declaration["entry_module"].replace(".", "/") / "tests"
         if tests_dir.is_dir() and run_internal_tests:
-            tested = subprocess.run(
-                [sys.executable, "-B", "-m", "unittest", "discover", "-s", str(tests_dir), "-q"],
-                cwd=execution_root,
-                env=environment,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                check=False,
-            )
-            if tested.returncode != 0:
-                return StepResult(
-                    "optional-features", "fail", f"{capability_id} tests: {(tested.stderr or '')[-500:]}"
-                )
+            tested = _test_suite(tests_dir, execution_root=execution_root, environment=environment)
+            suites[capability_id] = tested.as_dict()
+            if tested.status != "pass":
+                return StepResult("optional-features", tested.status,
+                                  f"{capability_id} tests: {tested.detail}", evidence={"suites": suites})
     if installed == 0:
         return StepResult(
             "optional-features",
@@ -686,7 +724,8 @@ def _optional(
             required=False,
         )
     return StepResult(
-        "optional-features", "pass", f"공개 선택 기능 {installed}종 검증, 완전 부재 {absent}종"
+        "optional-features", "pass", f"공개 선택 기능 {installed}종 검증, 완전 부재 {absent}종",
+        evidence={"suites": suites}
     )
 
 

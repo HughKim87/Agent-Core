@@ -34,6 +34,8 @@ from experimental.shared_data import (  # noqa: E402
     WorkStateError,
     WorkStateService,
     WriteNotEnabledError,
+    StoreNotInitializedError,
+    RecordNotFoundError,
     compare_request_contract,
     compute_design_fingerprint,
     create_shared_data_store,
@@ -301,8 +303,17 @@ class WorkStateTests(unittest.TestCase):
             runtime = Runtime(Path(raw_root), write_enabled=False)
             with self.assertRaises(WriteNotEnabledError):
                 runtime.store.initialize()
-            with self.assertRaises(Exception):
+            with self.assertRaises(StoreNotInitializedError):
                 runtime.create()
+            self.assertEqual(list(Path(raw_root).iterdir()), [])
+            initialized = Runtime(Path(raw_root))
+            before = {p.relative_to(raw_root).as_posix(): p.read_bytes()
+                      for p in Path(raw_root).rglob("*") if p.is_file()}
+            with self.assertRaises(WriteNotEnabledError):
+                runtime.create()
+            self.assertEqual(initialized.store.list_events("work_events")[0], [])
+            self.assertEqual({p.relative_to(raw_root).as_posix(): p.read_bytes()
+                              for p in Path(raw_root).rglob("*") if p.is_file()}, before)
 
     def test_create_checkpoint_fail_resume_complete_and_rebuild(self) -> None:
         with tempfile.TemporaryDirectory(prefix="shared-work-flow-") as raw_root:
@@ -421,7 +432,8 @@ class WorkStateTests(unittest.TestCase):
                     runtime.create()
             events, _ = runtime.store.list_events("work_events")
             self.assertEqual(len(events), 1)
-            with self.assertRaises(Exception):
+            before_events = runtime.store.list_events("work_events")
+            with self.assertRaises(RecordNotFoundError):
                 runtime.work.transition(
                     WORK_ID,
                     expected_state_hash="sha256:" + "0" * 64,
@@ -431,6 +443,7 @@ class WorkStateTests(unittest.TestCase):
                     to_status="in_progress",
                     next_action="검증",
                 )
+            self.assertEqual(runtime.store.list_events("work_events"), before_events)
             recovered = runtime.work.rebuild_snapshot(WORK_ID)
             self.assertEqual(recovered["payload"]["status"], "requested")
 

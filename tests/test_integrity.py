@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 from pathlib import Path
@@ -614,6 +615,86 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class KernelImportBoundaryTest(unittest.TestCase):
+    """Required Kernel invariants remain here when L7 is absent."""
+
+    def test_core_check_does_not_import_experimental_runtime(self) -> None:
+        for path in sorted((ROOT / "src" / "core_check").glob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            imported: set[str] = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported.update(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imported.add(node.module)
+            self.assertFalse(
+                any(name == "experimental" or name.startswith("experimental.") for name in imported),
+                path.name,
+            )
+
+    def _fixture(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        build_clean(root)
+        return root
+
+    def _with_l7(self, root):
+        package = root / "experimental/shared_data"
+        package.mkdir(parents=True)
+        for rel in ("experimental/__init__.py", "experimental/shared_data/__init__.py",
+                    "experimental/shared_data/runtime.py", "src/core_check/runtime_boundary.py"):
+            (root / rel).write_text("VALUE = 1\n", encoding="utf-8")
+        write_layers(root, {
+            "L5": ["src/core_check/integrity.py", "src/core_check/runtime_boundary.py"],
+            "L6": ["src/core_check/primitives.py"],
+            "L7": ["experimental/__init__.py", "experimental/shared_data/__init__.py",
+                   "experimental/shared_data/runtime.py"],
+        })
+
+    def test_absolute_relative_and_aliased_l6_dependencies(self):
+        root = self._fixture()
+        for code in ("from .integrity import VALUE", "from core_check.integrity import VALUE",
+                     "import core_check.integrity as other", "from core_check import integrity"):
+            with self.subTest(code=code):
+                (root / "src/core_check/primitives.py").write_text(code + "\n", encoding="utf-8")
+                self.assertTrue(any("L6" in message for message in findings_for(root, "layer-boundaries")))
+
+    def test_actual_l7_imports_are_rejected_even_when_optional_package_is_absent(self):
+        root = self._fixture()
+        for installed in (False, True):
+            if installed:
+                self._with_l7(root)
+            for code in ("from experimental.shared_data.runtime import VALUE",
+                         "import experimental.shared_data.runtime as other",
+                         "from experimental.shared_data import runtime"):
+                with self.subTest(installed=installed, code=code):
+                    (root / "src/core_check/integrity.py").write_text(code + "\n", encoding="utf-8")
+                    self.assertTrue(any("L5가 L7" in m for m in findings_for(root, "layer-boundaries")))
+
+    def test_l7_boundary_api_near_miss_and_disallowed_l5(self):
+        root = self._fixture()
+        self._with_l7(root)
+        runtime = root / "experimental/shared_data/runtime.py"
+        for code in ("from core_check.runtime_boundary import VALUE", "from core_check import runtime_boundary",
+                     "from core_check.primitives import VALUE", "import json"):
+            with self.subTest(code=code):
+                runtime.write_text(code + "\n", encoding="utf-8")
+                self.assertEqual(findings_for(root, "layer-boundaries"), [])
+        for code in ("from core_check.integrity import VALUE", "import core_check.integrity",
+                     "from core_check import integrity"):
+            with self.subTest(code=code):
+                runtime.write_text(code + "\n", encoding="utf-8")
+                self.assertTrue(any("L7이 허용되지 않은 L5" in m for m in findings_for(root, "layer-boundaries")))
+
+    def test_cycles_include_l7_and_mixed_import_spellings(self):
+        root = self._fixture()
+        self._with_l7(root)
+        (root / "experimental/shared_data/__init__.py").write_text("from .runtime import VALUE\n", encoding="utf-8")
+        (root / "experimental/shared_data/runtime.py").write_text("import experimental.shared_data\n", encoding="utf-8")
+        self.assertTrue(any("순환" in m for m in findings_for(root, "layer-boundaries")))
+
+
 class DerivedArtifactTest(unittest.TestCase):
     """파생 artifact 관리의 결정론과 drift 탐지."""
 
@@ -689,6 +770,30 @@ class DerivedArtifactTest(unittest.TestCase):
     def test_rejects_target_outside_root(self) -> None:
         with self.assertRaises(UnsafePathError):
             resolve_inside(self.root, "../escape.txt")
+
+    def test_malformed_declarations_are_contract_findings_and_preserve_artifacts(self):
+        self._write_artifact()
+        baseline = [(self.root / name).read_bytes() for name in ("source.md", "out.txt")]
+        valid = {"source": "source.md", "target": "out.txt", "generator": "upper"}
+        malformed = [[], None, 1, {"artifacts": None}, {"artifacts": [None]}, {"artifacts": [[]]},
+                     {"artifacts": [{}]}]
+        for field in valid:
+            for value in (None, [], 1, ""):
+                malformed.append({"artifacts": [{**valid, field: value}]})
+        malformed.append({"artifacts": [{**valid, "target": "../outside.txt"}]})
+        malformed.append({"artifacts": [{**valid, "source": "../outside.txt"}]})
+        for data in malformed:
+            with self.subTest(data=data):
+                (self.root / "derived-artifacts.json").write_text(json.dumps(data), encoding="utf-8")
+                with self.assertRaises(CheckError):
+                    self.derived.load_declaration(self.root)
+                self.assertTrue(findings_for(self.root, "derived-artifacts"))
+                self.assertEqual([(self.root / name).read_bytes() for name in ("source.md", "out.txt")], baseline)
+
+    def test_derived_non_utf8_input_is_reported(self):
+        (self.root / "derived-artifacts.json").write_bytes(b"\xff")
+        self.assertTrue(findings_for(self.root, "derived-artifacts"))
+
 
 
 class ContextTest(unittest.TestCase):
@@ -2218,6 +2323,35 @@ class IntegrationGateTest(unittest.TestCase):
             statuses = {step.name: step.status for step in result.steps}
             self.assertEqual(statuses["regression-tests"], "not_run")
             self.assertEqual(statuses["core-no-side-effects"], "pass")
+
+    def test_test_runner_reports_executed_skipped_and_failures(self):
+        tests = self.root / "tests"
+        tests.mkdir()
+        for source, status, executed, skipped, errors in (
+            ("", "not_run", 0, 0, 0),
+            ("import unittest\n@unittest.skip('fixture reason')\nclass T(unittest.TestCase):\n def test_it(self): pass\n", "not_run", 0, 1, 0),
+            ("import unittest\nclass T(unittest.TestCase):\n def test_it(self): pass\n @unittest.skip('fixture reason')\n def test_skip(self): pass\n", "pass", 1, 1, 0),
+            ("raise RuntimeError('fixture import')\n", "fail", 1, 0, 1),
+        ):
+            with self.subTest(status=status, source=source):
+                (tests / "test_case.py").write_text(source, encoding="utf-8")
+                step = self.gate._tests(self.root)
+                self.assertEqual(step.status, status, step.as_dict())
+                self.assertEqual(step.evidence["executed"], executed)
+                self.assertEqual(step.evidence["skipped"], skipped)
+                self.assertEqual(step.evidence["errors"], errors)
+                if skipped:
+                    self.assertEqual(step.evidence["skip_reasons"][0]["reason"], "fixture reason")
+                self.assertTrue(step.detail)
+
+    def test_test_runner_unavailable_or_early_exit_is_not_pass(self):
+        tests = self.root / "tests"
+        tests.mkdir()
+        with patch.object(self.gate.subprocess, "run", side_effect=OSError("unavailable")):
+            self.assertEqual(self.gate._tests(self.root).status, "not_run")
+        (tests / "test_exit.py").write_text("import os\nos._exit(0)\n", encoding="utf-8")
+        self.assertEqual(self.gate._tests(self.root).status, "not_run")
+
 
 
 class CompatibilityTest(unittest.TestCase):

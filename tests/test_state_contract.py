@@ -139,6 +139,29 @@ class StateContractTest(unittest.TestCase):
                     any("임시 실패 상태" in finding.message for finding in self._findings(text))
                 )
 
+    def test_selected_remote_failure_state_cases(self) -> None:
+        cases = (
+            ("- 확인된 실패 횟수: 2", True),
+            ("- 현재 확인된 실패 횟수: 2", True),
+            ("- runtime: {failure_count=2}", True),
+            ('- runtime: {"currentFailureCount": 2}', True),
+            ("- deployment_failure_count: 2", False),
+            ("- runtime: {deployment_failure_count=2}", False),
+            ("```yaml\nfailure_count: 2\n```", False),
+            ("````markdown\n```yaml\nfailure_count: 2\n```\n````", False),
+            ("~~~yaml\nfailure_count: 2\n~~~", False),
+            ("    failure_count: 2", False),
+            ("<!--\nfailure_count: 2\n-->", False),
+            ("```yaml\nfailure_count: 2\n```\n- failure_count: 2", True),
+        )
+        for fragment, expected in cases:
+            with self.subTest(fragment=fragment):
+                text = VALID_STATE.replace("- 없음", fragment, 1)
+                self.assertEqual(
+                    any("임시 실패 상태" in f.message for f in self._findings(text)),
+                    expected,
+                )
+
     def test_vague_first_action_is_detected(self) -> None:
         for value in (
             "1. 확인한다.",

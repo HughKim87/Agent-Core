@@ -56,13 +56,15 @@ STATE_FILE_COUNTS = re.compile(
     re.MULTILINE,
 )
 EPHEMERAL_FAILURE_KOREAN_KEY = re.compile(
+    r"(?:(?:현재|확인된|연속|임시|이번|사용자|실행|명령|세션|작업|결과|시도|활성))*"
     r"(?:실패(?:횟수|건수|카운터|누적)|연속실패|재시도횟수|"
     r"시도(?:(?:한|했던)|해본)?방법|(?:방법(?:의)?|시도)순서|"
     r"중단(?:플래그|여부|상태|유무)|중단됨|"
     r"실패(?:사건)?이력|시도이력|실패시도기록)"
 )
 EPHEMERAL_FAILURE_ENGLISH_KEY = re.compile(
-    r"(?:[a-z0-9]+_)*(?:"
+    r"(?:(?:current|confirmed|consecutive|temporary|temp|this|user|execution|"
+    r"command|session|task|result|attempt|active|last|failure|retry)_)*(?:"
     r"failure_(?:count|counter|total)|retry_(?:count|counter|total)|"
     r"consecutive_failures|(?:failed|failure|retry)_attempts?(?:_(?:count|counter|total))?|"
     r"attempted_(?:methods?|approaches?)|(?:method|approach|attempt)_order|"
@@ -673,7 +675,7 @@ def check_json_parse(root: Path) -> Iterable[Finding]:
     for path in _walk(root, ".json"):
         try:
             json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, UnicodeError, OSError) as exc:
             yield Finding("json-parse", _rel(root, path), f"JSON 파싱 실패: {exc}")
 
 
@@ -756,7 +758,36 @@ def check_layer_boundaries(root: Path) -> Iterable[Finding]:
             if not (root / declared).is_file() and declared not in absent_l7_paths:
                 yield Finding("layer-boundaries", declared, f"{layer} 배정 대상 파일이 없다")
 
-    for path in sorted(package.glob("*.py")):
+    # One graph for both packages; normalize import spelling before applying layers.
+    runtime_paths = set(package.rglob("*.py"))
+    experimental = root / "experimental"
+    if experimental.is_dir():
+        runtime_paths.update(
+            path for path in experimental.rglob("*.py")
+            if "tests" not in path.relative_to(experimental).parts
+        )
+
+    def module_name(relative: str) -> str:
+        parts = Path(relative).with_suffix("").parts
+        if parts[0] == "src":
+            parts = parts[1:]
+        if parts[-1] == "__init__":
+            parts = parts[:-1]
+        return ".".join(parts)
+
+    modules = {module_name(relative): relative for relative in assignments}
+    modules.update({module_name(_rel(root, path)): _rel(root, path) for path in runtime_paths})
+
+    def internal_target(name: str) -> str | None:
+        if name in modules:
+            return modules[name]
+        if name == "core_check" or name.startswith("core_check."):
+            return "src/" + name.replace(".", "/") + ".py"
+        if name == "experimental" or name.startswith("experimental."):
+            return name.replace(".", "/") + ".py"
+        return None
+
+    for path in sorted(runtime_paths):
         rel = _rel(root, path)
         owners = assignments.get(rel, [])
         if len(owners) != 1:
@@ -765,22 +796,42 @@ def check_layer_boundaries(root: Path) -> Iterable[Finding]:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:
             continue
-        deps: set[str] = set()
+        name = module_name(rel)
+        parent = name.split(".") if path.name == "__init__.py" else name.split(".")[:-1]
+        names: set[str] = set()
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.level == 1:
-                if node.module:
-                    deps.add(f"src/core_check/{node.module.split('.', 1)[0]}.py")
+            if isinstance(node, ast.Import):
+                names.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:
+                    if node.level > len(parent):
+                        continue  # Invalid relative import is not an internal edge.
+                    base = parent[:len(parent) - node.level + 1]
+                    if node.module:
+                        base += node.module.split(".")
+                    imported = ".".join(base)
                 else:
-                    for alias in node.names:
-                        deps.add(f"src/core_check/{alias.name.split('.', 1)[0]}.py")
+                    imported = node.module or ""
+                for alias in node.names:
+                    child = imported + "." + alias.name
+                    # `from package import module` and imported symbols differ.
+                    names.add(child if child in modules else imported)
+        deps = {target for name in names if (target := internal_target(name)) is not None}
         graph[rel] = deps
         layer = owners[0] if len(owners) == 1 else None
         if layer == "L6" and deps:
-            yield Finding("layer-boundaries", rel, f"L6이 내부 모듈을 import한다: {sorted(deps)}")
+            yield Finding("layer-boundaries", rel, f"L6가 내부 모듈을 import한다: {sorted(deps)}")
         if layer == "L5":
-            bad = [dep for dep in deps if "L7" in assignments.get(dep, [])]
+            bad = sorted(dep for dep in deps
+                         if "L7" in assignments.get(dep, []) or dep.startswith("experimental/"))
             if bad:
                 yield Finding("layer-boundaries", rel, f"L5가 L7을 import한다: {bad}")
+        if layer == "L7":
+            bad = sorted(dep for dep in deps
+                         if "L5" in assignments.get(dep, [])
+                         and dep != "src/core_check/runtime_boundary.py")
+            if bad:
+                yield Finding("layer-boundaries", rel, f"L7이 허용되지 않은 L5를 import한다: {bad}")
 
     seen: set[str] = set()
     stack: list[str] = []
@@ -932,17 +983,32 @@ def _state_field_key(line: str) -> str | None:
 
 
 def _has_ephemeral_failure_state(text: str) -> bool:
-    for line in text.splitlines():
-        key = _state_field_key(line)
-        if key is None:
-            continue
-        korean_key = re.sub(r"\s+", "", key)
-        if EPHEMERAL_FAILURE_KOREAN_KEY.fullmatch(korean_key):
-            return True
-        english_key = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key)
-        english_key = re.sub(r"[^a-zA-Z0-9]+", "_", english_key).strip("_").lower()
-        if EPHEMERAL_FAILURE_ENGLISH_KEY.fullmatch(english_key):
-            return True
+    # Reuse the state parser's fence/comment/code-span boundaries, including
+    # fields before the first real section. Do not interpret examples as state.
+    sections = _markdown_h2_sections("## State fields\n" + text)
+    for body in (body for bodies in sections.values() for body in bodies):
+        for line in body.splitlines():
+            stripped = re.sub(r"^[-*+]\s+", "", line.strip())
+            if stripped.startswith(("#", ">")):
+                continue
+            keys = [_state_field_key(line)]
+            keys.extend(
+                match.group(1).strip(" `\"'")
+                for match in re.finditer(
+                    r"(?:\{|,)\s*[`\"']?([^,:={}]+?)[`\"']?\s*[:=]\s*[^\s,}]",
+                    stripped,
+                )
+            )
+            for key in keys:
+                if key is None:
+                    continue
+                korean_key = re.sub(r"\s+", "", key)
+                if EPHEMERAL_FAILURE_KOREAN_KEY.fullmatch(korean_key):
+                    return True
+                english_key = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key)
+                english_key = re.sub(r"[^a-zA-Z0-9]+", "_", english_key).strip("_").lower()
+                if EPHEMERAL_FAILURE_ENGLISH_KEY.fullmatch(english_key):
+                    return True
     return False
 
 

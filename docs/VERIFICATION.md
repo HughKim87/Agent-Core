@@ -43,6 +43,10 @@
 | `not_run` | 선택된 검사를 실행하지 않음 | 필수 게이트면 전체 실패. 선택되지 않은 검사는 게이트로 기록하지 않음 |
 | `not_applicable` | 이유가 있는 비해당 | 비실패 |
 
+회귀 suite의 `evidence`는 대상, 원본 stdout/stderr·returncode와 `tests_run`, `executed`, `skipped`, `skip_reasons`, `failures`, `errors`, `expected_failures`, `unexpected_successes`, `status`를 보존한다. 선택 Runtime의 suite도 같은 판정을 사용한다. `executed`는 발견·실행 집계에서 skipped를 제외한 수다. 전부 skip이거나 빈 suite, 실행 불가·조기 종료로 결과를 확보하지 못한 경우는 `not_run`이며 pass가 아니다. 일부 skip이 있는 pass는 실제 수행된 검사에 한하며 skip 경계의 실증을 뜻하지 않는다. 수행 수치를 확보하지 못한 경우 알려지지 않은 수치를 0회 실행 증거로 꾸미지 않는다.
+
+Maintainer wrapper는 원본 subprocess 출력과 표시용 tail을 별도로 보존한다. 전후 비교는 HEAD/index와 tracked·nonignored worktree bytes/type, 재귀 gitlink를 포함한 fingerprint를 사용하며 ignored 데이터나 실제 ACL의 불변까지 증명하지 않는다.
+
 ## 3. Core 자체 gate
 
 Core 자체 gate가 선택된 작업에서는 소비 저장소 없이 다음을 검증한다.

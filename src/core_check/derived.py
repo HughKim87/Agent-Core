@@ -35,11 +35,26 @@ def load_declaration(root: Path) -> list[dict[str, str]]:
         return []
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, UnicodeError, OSError) as exc:
         raise CheckError(f"{DECLARATION} 파싱 실패: {exc}") from exc
+    if not isinstance(data, dict):
+        raise CheckError(f"{DECLARATION} root는 object여야 한다")
     entries = data.get("artifacts", [])
     if not isinstance(entries, list):
         raise CheckError(f"{DECLARATION} 의 artifacts 가 목록이 아니다")
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise CheckError(f"{DECLARATION} artifacts[{index}]는 object여야 한다")
+        for key in ("source", "target", "generator"):
+            if not isinstance(entry.get(key), str) or not entry[key].strip():
+                raise CheckError(f"{DECLARATION} artifacts[{index}].{key}는 비어 있지 않은 문자열이어야 한다")
+        for key in ("source", "target"):
+            try:
+                if "\0" in entry[key] or Path(entry[key]).is_absolute():
+                    raise ValueError("relative path required")
+                resolve_inside(root, entry[key])
+            except (ValueError, OSError) as exc:
+                raise CheckError(f"{DECLARATION} artifacts[{index}].{key} 경로가 유효하지 않다") from exc
     return entries
 
 
@@ -50,7 +65,11 @@ def regenerate(root: Path, entry: dict[str, str]) -> str:
     name = entry["generator"]
     if name not in GENERATORS:
         raise CheckError(f"등록되지 않은 생성기: {name}")
-    return GENERATORS[name](source.read_text(encoding="utf-8"))
+    try:
+        source_text = source.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise CheckError(f"정본을 읽을 수 없다: {entry['source']}") from exc
+    return GENERATORS[name](source_text)
 
 
 @register("derived-artifacts")
@@ -85,7 +104,11 @@ def check_derived_artifacts(root: Path) -> Iterable[Finding]:
             yield Finding("derived-artifacts", target_name, "artifact가 없다. 정본에서 재생성해야 한다")
             continue
 
-        actual = target.read_text(encoding="utf-8")
+        try:
+            actual = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            yield Finding("derived-artifacts", target_name, "artifact를 UTF-8 텍스트로 읽을 수 없다")
+            continue
         if fingerprint(actual) != fingerprint(expected):
             yield Finding(
                 "derived-artifacts",
