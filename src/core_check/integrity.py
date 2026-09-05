@@ -55,18 +55,19 @@ STATE_FILE_COUNTS = re.compile(
     rf"{STATE_FILE_COUNT_NOUN}\s*:?\s*(?:총\s*)?{STATE_COUNT_END})",
     re.MULTILINE,
 )
-EPHEMERAL_FAILURE_STATE = (
-    re.compile(r"실패\s*(?:횟수|건수|카운터|누적)"),
-    re.compile(
-        r"(?:연속\s*)?실패(?:는|은|가|이)?\s*[:：]?\s*"
-        r"(?:\d+|한|두|세|네)\s*(?:회|번)"
-    ),
-    re.compile(r"(?:\d+|한|두|세|네)\s*(?:회|번)\s*실패"),
-    re.compile(r"재시도\s*[:：]?\s*(?:\d+|한|두|세|네)\s*(?:회|번)"),
-    re.compile(r"시도(?:(?:한|했던)|해\s*본)?\s*방법"),
-    re.compile(r"방법(?:의)?\s*순서"),
-    re.compile(r"중단\s*(?:플래그|여부|상태|유무)"),
-    re.compile(r"중단됨\s*[:：]\s*(?:true|false|yes|no|예|아니오)", re.IGNORECASE),
+EPHEMERAL_FAILURE_KOREAN_KEY = re.compile(
+    r"(?:실패(?:횟수|건수|카운터|누적)|연속실패|재시도횟수|"
+    r"시도(?:(?:한|했던)|해본)?방법|(?:방법(?:의)?|시도)순서|"
+    r"중단(?:플래그|여부|상태|유무)|중단됨|"
+    r"실패(?:사건)?이력|시도이력|실패시도기록)"
+)
+EPHEMERAL_FAILURE_ENGLISH_KEY = re.compile(
+    r"(?:[a-z0-9]+_)*(?:"
+    r"failure_(?:count|counter|total)|retry_(?:count|counter|total)|"
+    r"consecutive_failures|(?:failed|failure|retry)_attempts?(?:_(?:count|counter|total))?|"
+    r"attempted_(?:methods?|approaches?)|(?:method|approach|attempt)_order|"
+    r"(?:stop|halt)_(?:flag|state|status)|(?:is_)?(?:stopped|halted)|"
+    r"failure_(?:event_)?history|attempt_history|failure_attempt_log)"
 )
 ACTION_EXECUTABLE_END = re.compile(
     r"(?:한다|시킨다|기다린다|유지한다|남긴다|중단한다)\.?$"
@@ -220,6 +221,189 @@ def _parse_head_entries(raw: str) -> dict[str, tuple[str, str]]:
             raise ValueError("Git HEAD 항목 형식을 판정할 수 없다")
         entries[relative] = (fields[0], fields[2])
     return entries
+
+
+def host_consumer_gitlink_fingerprint(
+    core_root: Path,
+    consumer_root: Path,
+    core_relative: str,
+) -> str:
+    """Host 부모 gitlink 계약과 실행 Core HEAD를 검증하고 지문화한다."""
+    core_root = core_root.resolve()
+    consumer_root = consumer_root.resolve()
+    core_relative = Path(core_relative).as_posix().rstrip("/")
+    gitmodules = consumer_root / ".gitmodules"
+    if not gitmodules.is_file():
+        raise CheckError("Core submodule 선언 파일이 없다")
+    try:
+        gitmodules_bytes = gitmodules.read_bytes()
+        gitmodules_text = gitmodules_bytes.decode("utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise CheckError(f"Core submodule 선언 파일을 읽을 수 없다: {exc}") from exc
+    paths = re.findall(
+        r"(?m)^\s*path\s*=\s*(.+?)\s*$",
+        gitmodules_text,
+    )
+    if core_relative not in {Path(value).as_posix() for value in paths}:
+        raise CheckError("core_path와 일치하는 submodule path가 없다")
+
+    try:
+        toplevel = _run_host_git(consumer_root, "rev-parse", "--show-toplevel")
+        staged = _run_host_git(
+            consumer_root,
+            "ls-files",
+            "--stage",
+            "-z",
+            "--",
+            core_relative,
+        )
+        head = _run_host_git(
+            consumer_root,
+            "ls-tree",
+            "-z",
+            "HEAD",
+            "--",
+            core_relative,
+        )
+        core_head = _run_host_git(core_root, "rev-parse", "--verify", "HEAD^{commit}")
+    except OSError as exc:
+        raise CheckError(f"Host 부모 gitlink 상태를 실행할 수 없다: {exc}") from exc
+    for label, completed in (
+        ("parent root", toplevel),
+        ("parent index", staged),
+        ("parent HEAD", head),
+        ("Core HEAD", core_head),
+    ):
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip() or f"{label} 확인 실패"
+            raise CheckError(detail[-500:])
+    try:
+        same_root = Path(toplevel.stdout.strip()).resolve().samefile(consumer_root)
+    except OSError as exc:
+        raise CheckError(f"Host 부모 Git root를 대조할 수 없다: {exc}") from exc
+    if not same_root:
+        raise CheckError(
+            "Host 부모 Git top-level이 consumer_root와 다르다: "
+            f"{toplevel.stdout.strip()}"
+        )
+    try:
+        index_entries = _parse_index_entries(staged.stdout)
+        head_entries = _parse_head_entries(head.stdout)
+    except ValueError as exc:
+        raise CheckError(str(exc)) from exc
+    expected_index = index_entries.get(core_relative)
+    expected_head = head_entries.get(core_relative)
+    if expected_index is None or expected_index[0] != "160000":
+        raise CheckError(f"부모 index의 core_path가 gitlink가 아니다: {core_relative}")
+    if expected_head is None or expected_head[0] != "160000":
+        raise CheckError(f"부모 HEAD의 core_path가 gitlink가 아니다: {core_relative}")
+    if expected_index != expected_head:
+        raise CheckError(f"부모 HEAD와 index의 Core gitlink가 다르다: {core_relative}")
+    if core_head.stdout.strip() != expected_head[1]:
+        raise CheckError(
+            "부모 gitlink와 실행 Core HEAD가 다르다: "
+            f"{core_relative}"
+        )
+
+    digest = hashlib.sha256()
+    for value in (
+        core_relative.encode("utf-8"),
+        gitmodules_bytes,
+        str(consumer_root).encode("utf-8"),
+        expected_index[0].encode("ascii"),
+        expected_index[1].encode("ascii"),
+        expected_head[0].encode("ascii"),
+        expected_head[1].encode("ascii"),
+        core_head.stdout.strip().encode("ascii"),
+    ):
+        digest.update(len(value).to_bytes(8, "big"))
+        digest.update(value)
+    return digest.hexdigest()
+
+
+def host_consumer_gitlink_observation_fingerprint(
+    core_root: Path,
+    consumer_root: Path,
+    core_relative: str,
+) -> str:
+    """유효성 판정 없이 부모 gitlink 관련 원시 상태를 진단 기준선으로 지문화한다."""
+    core_root = core_root.resolve()
+    consumer_root = consumer_root.resolve()
+    core_relative = Path(core_relative).as_posix().rstrip("/")
+    gitmodules = consumer_root / ".gitmodules"
+    try:
+        gitmodules_bytes = gitmodules.read_bytes() if gitmodules.is_file() else b""
+        commands = (
+            (
+                "parent-root",
+                _run_host_git(consumer_root, "rev-parse", "--show-toplevel"),
+            ),
+            (
+                "parent-index",
+                _run_host_git(
+                    consumer_root,
+                    "ls-files",
+                    "--stage",
+                    "-z",
+                    "--",
+                    core_relative,
+                ),
+            ),
+            (
+                "parent-head",
+                _run_host_git(
+                    consumer_root,
+                    "ls-tree",
+                    "-z",
+                    "HEAD",
+                    "--",
+                    core_relative,
+                ),
+            ),
+            (
+                "core-head",
+                _run_host_git(
+                    core_root,
+                    "rev-parse",
+                    "--verify",
+                    "HEAD^{commit}",
+                ),
+            ),
+        )
+    except OSError as exc:
+        raise CheckError(f"Host 부모 gitlink 관찰 상태를 읽을 수 없다: {exc}") from exc
+
+    digest = hashlib.sha256()
+
+    def frame(value: str | bytes) -> None:
+        payload = value.encode("utf-8") if isinstance(value, str) else value
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+
+    frame(str(core_root))
+    frame(str(consumer_root))
+    frame(core_relative)
+    frame("gitmodules-present" if gitmodules.is_file() else "gitmodules-missing")
+    frame(gitmodules_bytes)
+    for label, completed in commands:
+        frame(label)
+        frame(str(completed.returncode))
+        frame(completed.stdout)
+        frame(completed.stderr)
+    return digest.hexdigest()
+
+
+def host_consumer_gitlink_status(
+    core_root: Path,
+    consumer_root: Path,
+    core_relative: str,
+) -> tuple[bool, str]:
+    """Host 부모 HEAD·index gitlink와 실행 Core HEAD가 같은지 판정한다."""
+    try:
+        host_consumer_gitlink_fingerprint(core_root, consumer_root, core_relative)
+    except (CheckError, OSError) as exc:
+        return False, str(exc)
+    return True, "부모 HEAD·index gitlink와 실행 Core HEAD가 일치한다"
 
 
 def _blob_oid(content: bytes, algorithm: str) -> str:
@@ -662,8 +846,6 @@ def _markdown_h2_sections(text: str) -> dict[str, list[str]]:
             if fence_match:
                 marker = fence_match.group(1)
                 fence = (marker[0], len(marker))
-                if heading is not None:
-                    body.append(line)
                 continue
         else:
             closing_match = re.fullmatch(r" {0,3}(`{3,}|~{3,})[ \t]*", content)
@@ -673,8 +855,6 @@ def _markdown_h2_sections(text: str) -> dict[str, list[str]]:
                 and len(closing_match.group(1)) >= fence[1]
             ):
                 fence = None
-            if heading is not None:
-                body.append(line)
             continue
         match = re.match(r"^ {0,3}##(?!#)\s+(.+?)\s*$", content)
         if match:
@@ -696,6 +876,39 @@ def _action_has_concrete_signal(action: str) -> bool:
     return bool(ACTION_PATH.search(action) or ACTION_SPECIFIC_TERM.search(action))
 
 
+def _state_field_key(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped:
+        return None
+    if stripped.startswith("|"):
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if len(cells) < 2 or not cells[0] or not cells[1]:
+            return None
+        key = cells[0]
+    else:
+        stripped = re.sub(r"^[-*+]\s+", "", stripped)
+        match = re.match(r"^[`\"']?(.+?)[`\"']?\s*[:：=]\s*\S", stripped)
+        if match is None:
+            return None
+        key = match.group(1)
+    return key.strip(" `\"'")
+
+
+def _has_ephemeral_failure_state(text: str) -> bool:
+    for line in text.splitlines():
+        key = _state_field_key(line)
+        if key is None:
+            continue
+        korean_key = re.sub(r"\s+", "", key)
+        if EPHEMERAL_FAILURE_KOREAN_KEY.fullmatch(korean_key):
+            return True
+        english_key = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key)
+        english_key = re.sub(r"[^a-zA-Z0-9]+", "_", english_key).strip("_").lower()
+        if EPHEMERAL_FAILURE_ENGLISH_KEY.fullmatch(english_key):
+            return True
+    return False
+
+
 def _state_findings(consumer_root: Path, state: Path) -> Iterable[Finding]:
     text = state.read_text(encoding="utf-8")
     rel = _rel(consumer_root, state)
@@ -714,7 +927,7 @@ def _state_findings(consumer_root: Path, state: Path) -> Iterable[Finding]:
         yield Finding("consumer-state", rel, "동적 Git 수치가 문서에 고정되어 있다")
     if STATE_FILE_COUNTS.search(text):
         yield Finding("consumer-state", rel, "파일 개수가 문서에 고정되어 있다")
-    if any(pattern.search(text) for pattern in EPHEMERAL_FAILURE_STATE):
+    if _has_ephemeral_failure_state(text):
         yield Finding("consumer-state", rel, "임시 실패 상태가 문서에 고정되어 있다")
     if "## 첫 다음 행동" in sections:
         tail = sections["## 첫 다음 행동"][0]
@@ -860,13 +1073,16 @@ def consumer_findings(
     started("consumer-markdown-links")
     for path in _consumer_contract_files(core_root, consumer_root, contract):
         rel = _rel(consumer_root, path)
-        if path.suffix == ".md" and rel not in pointers:
+        try:
             text = path.read_text(encoding="utf-8")
+        except UnicodeError:
+            text = ""
+        if path.suffix == ".md" and rel not in pointers:
             missing = [header for header in DOC_HEADERS if header not in text]
             if missing:
                 yield Finding("consumer-document-headers", rel, f"최소 설명 누락: {' '.join(missing)}")
         if path.suffix == ".md":
-            for target in MD_LINK.findall(path.read_text(encoding="utf-8")):
+            for target in MD_LINK.findall(text):
                 if target.startswith(("http://", "https://", "#", "mailto:")):
                     continue
                 resolved = (path.parent / target.split("#", 1)[0]).resolve()
@@ -878,10 +1094,27 @@ def consumer_findings(
     if not gitmodules.is_file():
         yield Finding("consumer-submodule", ".gitmodules", "Core submodule 선언 파일이 없다")
     else:
-        paths = re.findall(r"(?m)^\s*path\s*=\s*(.+?)\s*$", gitmodules.read_text(encoding="utf-8"))
+        try:
+            gitmodules_text = gitmodules.read_text(encoding="utf-8")
+        except UnicodeError as exc:
+            yield Finding(
+                "consumer-submodule",
+                ".gitmodules",
+                f"UTF-8 submodule 선언을 읽을 수 없다: {exc}",
+            )
+            gitmodules_text = ""
+        paths = re.findall(r"(?m)^\s*path\s*=\s*(.+?)\s*$", gitmodules_text)
         normalized = {Path(value).as_posix() for value in paths}
         if Path(contract["core_path"]).as_posix() not in normalized:
             yield Finding("consumer-submodule", ".gitmodules", "core_path와 일치하는 submodule path가 없다")
+    if contract["consumer_role"] == "host":
+        linked, detail = host_consumer_gitlink_status(
+            core_root,
+            consumer_root,
+            str(contract["core_path"]),
+        )
+        if not linked:
+            yield Finding("consumer-submodule", Path(contract["core_path"]).as_posix(), detail)
 
 
 def run_consumer(core_root: Path, consumer_root: Path) -> Report:

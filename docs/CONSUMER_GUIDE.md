@@ -139,11 +139,15 @@ python -B -m core_check --core-root <CORE_PATH> --consumer-root . gate
 
 Consumer는 wrapper·adapter·명시적 출력 인자·read-only mount/ACL 중 자기 환경에 맞는 통합 경계를 선택한다. 예를 들어 `<HOST_WORK_ROOT>`를 소비 root 안에 두고 Core 공개 CLI에는 읽기 전용 `--core-root`를, 산출물에는 `<HOST_WORK_ROOT>` 아래 경로를 전달할 수 있다. 출력 경로를 분리할 수 없는 도구는 Core에 실행하지 않는다. 공개 계약과 호환되는 최소 Consumer 입력을 따로 만들더라도 이를 Core 복사본이나 대체 배포물로 사용하지 않는다.
 
-Host의 `context`, `gate`와 기능 사용은 시작 전에 Core가 clean이어야 한다. 순수 read-only `verify`는 dirty Core의 원인을 진단할 수 있지만 기능 Runtime을 실행하지 않고 전후 불변을 대조하며, 결과가 `1`이면 소비·완료 성공 근거가 아니다. Host gate는 Maintainer 소유의 Core 내부 회귀를 소비 완료의 필수 검사로 다시 실행하지 않는다. 별도의 격리된 read-only 진단을 실행할 수는 있지만 Maintainer 회귀 근거를 대신하지 않는다.
+Host의 `context`, `gate`와 기능 사용은 계약 해석 전 소비 정책·부모 gitlink·Core 원시 상태 관찰, 부모 HEAD·index gitlink와 실행 Core HEAD 일치, Core clean을 하나의 결속 기준선으로 통과해야 한다. 순수 read-only `verify`는 dirty Core·어긋난 gitlink·잘못된 submodule 선언의 원인을 finding으로 진단할 수 있지만 기능 Runtime을 실행하지 않고 원시 상태의 전후 불변만 대조하며, 결과가 `1`이면 소비·완료 성공 근거가 아니다. Host gate는 Maintainer 소유의 Core 내부 회귀를 소비 완료의 필수 검사로 다시 실행하지 않는다. 별도의 격리된 read-only 진단을 실행할 수는 있지만 Maintainer 회귀 근거를 대신하지 않는다.
+
+관찰 중 확인한 정책·gitlink·Core 변경이나 시작한 관찰의 불변성을 끝까지 확인하지 못한 오류는 후속 Maintainer 역할로 무시하지 않는다. 처음부터 Host 관찰을 시작할 수 없는 정상 Maintainer 경로와 이 실패를 구분한다.
 
 현재 Git 기반 참조 검사는 HEAD와 index의 직접 일치, index 우회 flag, 실제 worktree bytes와 HEAD blob의 일치, tracked entry type·mode·symlink target, untracked·ignored 항목과 빈 directory를 확인한다. 따라서 Git의 줄바꿈 정규화로 `git status`가 clean이어도 실제 bytes가 다르면 실패한다. `filter`·`working-tree-encoding`·`ident` content 변환 attribute가 필요한 checkout은 hashing 전에 fail-closed한다. nested gitlink는 같은 기준으로 재귀 검사한다. 실행 뒤에는 실제 Git metadata directory만 제외한 tree의 내용·구조·지속 mtime과 HEAD·index·local config 지문을 대조한다. Git 기준이나 사후 불변을 증명할 수 없으면 검증은 실패다.
 
 정책과 gate는 위반을 중단·탐지한다. 실제 쓰기 syscall 자체를 차단해야 하는 Host 실행 환경은 `core_path`를 read-only mount 또는 동등한 filesystem ACL로 제공해야 하며, 그 강제가 없으면 “물리적으로 쓰기 불가”라고 주장할 수 없다.
+
+Core 내부 Python entry를 import한 뒤에 시작하는 관찰 기준선만으로는 import 직전·직후의 clean revision 교체를 증명할 수 없다. 범용 Host 완료를 주장하려면 Consumer가 소유한 Core 외부 launcher가 gitlink와 불변 checkout을 먼저 고정한 뒤 import하거나, 실행 전체를 immutable/read-only checkout에서 시작해야 한다. 현재 in-Core 참조 CLI만으로 이 부트스트랩 구간이 닫혔다고 주장하지 않는다.
 
 ## 6A. 선택 기능 `shared_data` v1
 
@@ -161,7 +165,7 @@ python -B -I -c $bootstrap info
 
 따라서 Host gate가 `info` 선언 일치를 확인해도 `optional-features`는 `not_applicable`로 기록한다. Consumer 계약 검사는 요구 기능의 설치 구조·최소 버전을 별도로 확인하고, 실제 기능 완료 근거가 필요하면 아래 verified `invoke` 결과를 사용한다.
 
-`invoke`는 실행 중인 Core와 `--consumer-root`의 소비 계약을 먼저 대조한다. 계약 버전은 Core와 정확히 같아야 하고, Consumer가 `required_core_capabilities.shared_data`에 호출할 최소 버전을 선언해야 한다. storage root가 계약의 `core_path`와 겹치거나 Consumer 밖이면 `--write` 여부와 관계없이 Dispatcher 생성 전에 거부한다. 통과한 storage는 Consumer 상대 canonical 경로로만 Dispatcher에 전달하고, 계약의 `core_path`를 내부 보호 경로에 자동 합산해 각 storage 경로 해석 때 다시 검사한다. 계약에 선언된 보호 경로와 호출 보호 경로도 함께 합산되며, Host 역할은 Core clean 기준과 전후 tree·HEAD/index 불변까지 통과해야 한다.
+`invoke`는 계약 해석 전 소비 정책·부모 gitlink·Core 상태를 관찰하고 실행 중인 Core와 `--consumer-root`의 소비 계약을 대조한다. 계약 버전은 Core와 정확히 같아야 하고, Consumer가 `required_core_capabilities.shared_data`에 호출할 최소 버전을 선언해야 한다. storage root가 계약의 `core_path`와 겹치거나 Consumer 밖이면 `--write` 여부와 관계없이 Dispatcher 생성 전에 거부한다. 통과한 storage는 Consumer 상대 canonical 경로로만 Dispatcher에 전달하고, 계약의 `core_path`를 내부 보호 경로에 자동 합산해 각 storage 경로 해석 때 다시 검사한다. 계약에 선언된 보호 경로와 호출 보호 경로도 함께 합산되며, Host 역할은 부모 HEAD·index gitlink와 Core HEAD 일치, Core clean, 소비 정책·gitlink·Core의 전후 불변까지 통과해야 한다.
 
 ```powershell
 $request = '{"operation":"source.list","arguments":{}}'

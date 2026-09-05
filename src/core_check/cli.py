@@ -16,12 +16,16 @@ import sys
 from .context import build as build_context
 from .declarations import consumer_contract, declared_compatibility
 from .gate import (
-    HostCoreBaseline,
-    capture_host_core_baseline,
-    host_core_baseline_status,
+    HostConsumerBaseline,
+    HostObservationError,
+    HostConsumerObservation,
+    capture_host_consumer_baseline,
+    capture_host_consumer_observation,
+    host_consumer_baseline_status,
+    host_consumer_observation_status,
     run as run_gate,
 )
-from .integrity import host_core_cleanliness, run_all, run_consumer
+from .integrity import run_all, run_consumer
 from .primitives import CheckError, Report
 
 EXIT_OK = 0
@@ -57,24 +61,67 @@ def _merge(core: Report, consumer: Report) -> Report:
 
 def _host_core_baseline(
     core_root: Path, consumer_root: Path | None, *, require_clean: bool
-) -> HostCoreBaseline | None:
+) -> HostConsumerBaseline | HostConsumerObservation | None:
     if consumer_root is None:
         return None
+    core_root = core_root.resolve()
+    consumer_root = consumer_root.resolve()
+    observation = None
+    observation_error: Exception | None = None
+    try:
+        core_relative = core_root.relative_to(consumer_root).as_posix()
+        observation = capture_host_consumer_observation(
+            core_root,
+            consumer_root,
+            core_relative,
+        )
+    except HostObservationError:
+        raise
+    except (CheckError, OSError, ValueError) as exc:
+        observation_error = exc
     contract = consumer_contract(core_root, consumer_root)
+    if observation is not None:
+        unchanged, detail = host_consumer_observation_status(observation)
+        if not unchanged:
+            raise CheckError(f"소비 계약 해석 중 상태가 변경됐다: {detail}")
     if contract["consumer_role"] != "host":
         return None
-    clean, detail = host_core_cleanliness(core_root)
-    if require_clean and not clean:
-        raise CheckError(f"Host Core 읽기 전용 사전 검사 실패: {detail}")
-    return capture_host_core_baseline(core_root, require_clean=require_clean)
+    if observation is None:
+        raise CheckError(
+            "Host Core 관찰 기준선 검사 실패: "
+            f"{observation_error or '관찰 기준선 없음'}"
+        )
+    if not require_clean:
+        return observation
+    try:
+        return capture_host_consumer_baseline(
+            core_root,
+            consumer_root,
+            str(contract["core_path"]),
+            require_clean=require_clean,
+            expected_observation=observation,
+        )
+    except (CheckError, OSError) as exc:
+        label = (
+            "Host Core 읽기 전용 사전 검사 실패"
+            if require_clean
+            else "Host Core 결속 기준선 검사 실패"
+        )
+        raise CheckError(f"{label}: {exc}") from exc
 
 
 def _require_host_core_unchanged(
-    core_root: Path, baseline: HostCoreBaseline | None
+    core_root: Path,
+    baseline: HostConsumerBaseline | HostConsumerObservation | None,
 ) -> None:
     if baseline is None:
         return
-    unchanged, detail = host_core_baseline_status(core_root, baseline)
+    if core_root.resolve() != baseline.core_root:
+        raise CheckError("Host 기준선의 Core root가 실행 대상과 다르다")
+    if isinstance(baseline, HostConsumerObservation):
+        unchanged, detail = host_consumer_observation_status(baseline)
+    else:
+        unchanged, detail = host_consumer_baseline_status(baseline)
     if not unchanged:
         raise CheckError(f"Host 공개 인터페이스 실행 중 {detail}")
 
@@ -83,6 +130,7 @@ def cmd_verify(core_root: Path, consumer_root: Path | None = None) -> int:
     """소비자: Core 자체 또는 Core와 소비 계약의 구조 위반을 확인한다."""
     baseline = _host_core_baseline(core_root, consumer_root, require_clean=False)
     try:
+        contract_version = _version(core_root)
         report = run_all(core_root)
         scope = "core"
         if consumer_root is not None:
@@ -91,7 +139,7 @@ def cmd_verify(core_root: Path, consumer_root: Path | None = None) -> int:
     finally:
         _require_host_core_unchanged(core_root, baseline)
     payload = report.as_dict()
-    payload.update({"contract_version": _version(core_root), "scope": scope})
+    payload.update({"contract_version": contract_version, "scope": scope})
     _emit(payload)
     return EXIT_OK if report.ok else EXIT_FINDINGS
 
@@ -100,11 +148,12 @@ def cmd_context(core_root: Path, consumer_root: Path, matched: list[str]) -> int
     """소비자: scope가 있는 시작 문맥을 구성하고 재현성 지문을 반환한다."""
     baseline = _host_core_baseline(core_root, consumer_root, require_clean=True)
     try:
+        contract_version = _version(core_root)
         package = build_context(core_root, consumer_root, matched)
     finally:
         _require_host_core_unchanged(core_root, baseline)
     payload = package.as_dict()
-    payload["contract_version"] = _version(core_root)
+    payload["contract_version"] = contract_version
     _emit(payload)
     return EXIT_OK
 

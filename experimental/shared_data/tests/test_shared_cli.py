@@ -97,20 +97,41 @@ def configure_consumer(
         + "\n```\n<!-- /agent-core-consumer:v1 -->\n",
         encoding="utf-8",
     )
-    if consumer_role == "host" and not (core_link / ".git").exists():
-        commands = (
-            ["git", "init", "--quiet"],
-            ["git", "add", "-A"],
-            [
-                "git",
-                "-c", "user.name=Core Test",
-                "-c", "user.email=core-test@example.invalid",
-                "-c", "commit.gpgsign=false",
-                "commit", "--quiet", "-m", "fixture",
-            ],
+    if consumer_role == "host":
+        if not (core_link / ".git").exists():
+            commands = (
+                ["git", "init", "--quiet"],
+                ["git", "config", "core.autocrlf", "false"],
+                ["git", "add", "-A"],
+                [
+                    "git",
+                    "-c", "user.name=Core Test",
+                    "-c", "user.email=core-test@example.invalid",
+                    "-c", "commit.gpgsign=false",
+                    "commit", "--quiet", "-m", "fixture",
+                ],
+            )
+            for command in commands:
+                subprocess.run(command, cwd=core_link, capture_output=True, check=True)
+        (root / ".gitmodules").write_text(
+            '[submodule "core"]\n\tpath = core\n\turl = https://example.invalid/core.git\n',
+            encoding="utf-8",
         )
-        for command in commands:
-            subprocess.run(command, cwd=core_link, capture_output=True, check=True)
+        if not (root / ".git").exists():
+            commands = (
+                ["git", "init", "--quiet"],
+                ["git", "config", "core.autocrlf", "false"],
+                ["git", "add", "-A"],
+                [
+                    "git",
+                    "-c", "user.name=Core Test",
+                    "-c", "user.email=core-test@example.invalid",
+                    "-c", "commit.gpgsign=false",
+                    "commit", "--quiet", "-m", "host fixture",
+                ],
+            )
+            for command in commands:
+                subprocess.run(command, cwd=root, capture_output=True, check=True)
 
 
 class PublicSharedDataCliTests(unittest.TestCase):
@@ -395,6 +416,237 @@ class PublicSharedDataCliTests(unittest.TestCase):
             self.assertEqual(blocked.returncode, 1, payload)
             self.assertIn("Host Core 읽기 전용 사전 검사 실패", payload["error"])
             self.assertFalse((root / "runtime" / "blocked").exists())
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host gitlink boundary를 건너뛴다")
+    def test_host_unlinked_core_head_is_rejected_before_public_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="shared-cli-host-gitlink-") as raw_root:
+            root = Path(raw_root)
+            configure_consumer(root, consumer_role="host")
+            subprocess.run(
+                [
+                    "git",
+                    "-c", "user.name=Core Test",
+                    "-c", "user.email=core-test@example.invalid",
+                    "-c", "commit.gpgsign=false",
+                    "commit", "--quiet", "--allow-empty", "-m", "unlinked core",
+                ],
+                cwd=root / "core",
+                capture_output=True,
+                check=True,
+            )
+            blocked = self.run_cli(
+                root,
+                request={"operation": "initialize", "arguments": {}},
+                write=True,
+                storage_root="runtime/blocked",
+                consumer_role="host",
+            )
+            payload = json.loads(blocked.stdout)
+            self.assertEqual(blocked.returncode, 1, payload)
+            self.assertIn("부모 gitlink와 실행 Core HEAD가 다르다", payload["error"])
+            self.assertFalse((root / "runtime" / "blocked").exists())
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host 사후 결속을 건너뛴다")
+    def test_host_runtime_rejects_clean_linked_revision_replacement(self) -> None:
+        from core_check.runtime_boundary import (
+            RuntimeBoundaryError,
+            prepare_consumer_runtime_boundary,
+            require_consumer_runtime_boundary_unchanged,
+        )
+
+        with tempfile.TemporaryDirectory(prefix="shared-cli-host-post-link-") as raw_root:
+            root = Path(raw_root)
+            configure_consumer(root, consumer_role="host")
+            boundary = prepare_consumer_runtime_boundary(
+                root / "core",
+                root,
+                capability_id="shared_data",
+                write_paths=("runtime/data",),
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-c", "user.name=Core Test",
+                    "-c", "user.email=core-test@example.invalid",
+                    "-c", "commit.gpgsign=false",
+                    "commit", "--quiet", "--allow-empty", "-m", "replacement",
+                ],
+                cwd=root / "core",
+                capture_output=True,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "add", "--", "core"],
+                cwd=root,
+                capture_output=True,
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-c", "user.name=Core Test",
+                    "-c", "user.email=core-test@example.invalid",
+                    "-c", "commit.gpgsign=false",
+                    "commit", "--quiet", "-m", "move gitlink",
+                ],
+                cwd=root,
+                capture_output=True,
+                check=True,
+            )
+            with self.assertRaisesRegex(RuntimeBoundaryError, "사후 불변"):
+                require_consumer_runtime_boundary_unchanged(boundary)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host 정책 사후 결속을 건너뛴다")
+    def test_host_runtime_rejects_consumer_policy_change_after_boundary(self) -> None:
+        from core_check.runtime_boundary import (
+            RuntimeBoundaryError,
+            prepare_consumer_runtime_boundary,
+            require_consumer_runtime_boundary_unchanged,
+        )
+
+        with tempfile.TemporaryDirectory(prefix="shared-cli-host-post-policy-") as raw_root:
+            root = Path(raw_root)
+            configure_consumer(root, consumer_role="host")
+            boundary = prepare_consumer_runtime_boundary(
+                root / "core",
+                root,
+                capability_id="shared_data",
+                write_paths=("runtime/data",),
+            )
+            policy = root / "PROJECT_RULES.md"
+            policy.write_text(
+                policy.read_text(encoding="utf-8") + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(RuntimeBoundaryError, "사후 불변"):
+                require_consumer_runtime_boundary_unchanged(boundary)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host 관찰 결속을 건너뛴다")
+    def test_host_runtime_rejects_linked_swap_during_compatibility_read(self) -> None:
+        from core_check import runtime_boundary
+
+        with tempfile.TemporaryDirectory(prefix="shared-cli-host-entry-link-") as raw_root:
+            root = Path(raw_root)
+            configure_consumer(root, consumer_role="host")
+            original = runtime_boundary.declared_compatibility
+
+            def read_then_replace(core_root: Path) -> dict[str, object]:
+                compatibility = original(core_root)
+                subprocess.run(
+                    [
+                        "git",
+                        "-c", "user.name=Core Test",
+                        "-c", "user.email=core-test@example.invalid",
+                        "-c", "commit.gpgsign=false",
+                        "commit", "--quiet", "--allow-empty", "-m", "replacement",
+                    ],
+                    cwd=root / "core",
+                    capture_output=True,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "add", "--", "core"],
+                    cwd=root,
+                    capture_output=True,
+                    check=True,
+                )
+                subprocess.run(
+                    [
+                        "git",
+                        "-c", "user.name=Core Test",
+                        "-c", "user.email=core-test@example.invalid",
+                        "-c", "commit.gpgsign=false",
+                        "commit", "--quiet", "-m", "move gitlink",
+                    ],
+                    cwd=root,
+                    capture_output=True,
+                    check=True,
+                )
+                return compatibility
+
+            with patch.object(
+                runtime_boundary,
+                "declared_compatibility",
+                side_effect=read_then_replace,
+            ):
+                with self.assertRaisesRegex(
+                    runtime_boundary.RuntimeBoundaryError,
+                    "계약 해석 중",
+                ):
+                    runtime_boundary.prepare_consumer_runtime_boundary(
+                        root / "core",
+                        root,
+                        capability_id="shared_data",
+                        write_paths=("runtime/data",),
+                    )
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host 역할 결속을 건너뛴다")
+    def test_host_runtime_rejects_role_flip_during_contract_parse(self) -> None:
+        from core_check import runtime_boundary
+
+        with tempfile.TemporaryDirectory(prefix="shared-cli-host-role-") as raw_root:
+            root = Path(raw_root)
+            configure_consumer(root, consumer_role="host")
+            original = runtime_boundary.consumer_contract
+
+            def flip_before_parse(*args: object, **kwargs: object):
+                policy = root / "PROJECT_RULES.md"
+                policy.write_text(
+                    policy.read_text(encoding="utf-8").replace(
+                        '"consumer_role": "host"',
+                        '"consumer_role": "maintainer"',
+                    ),
+                    encoding="utf-8",
+                )
+                return original(*args, **kwargs)
+
+            with patch.object(
+                runtime_boundary,
+                "consumer_contract",
+                side_effect=flip_before_parse,
+            ):
+                with self.assertRaisesRegex(
+                    runtime_boundary.RuntimeBoundaryError,
+                    "소비 계약 해석 중",
+                ):
+                    runtime_boundary.prepare_consumer_runtime_boundary(
+                        root / "core",
+                        root,
+                        capability_id="shared_data",
+                        write_paths=("runtime/data",),
+                    )
+
+    @unittest.skipUnless(shutil.which("git"), "Git이 없어 관찰 실패 fixture를 건너뛴다")
+    def test_host_runtime_rejects_role_flip_during_observation(self) -> None:
+        from core_check import gate, runtime_boundary
+
+        with tempfile.TemporaryDirectory(prefix="shared-cli-host-observation-") as raw_root:
+            root = Path(raw_root)
+            configure_consumer(root, consumer_role="host")
+            original = gate._policy_file_digest
+            reads = 0
+
+            def flip_after_first_digest(path: Path) -> str:
+                nonlocal reads
+                digest = original(path)
+                reads += 1
+                if reads == 1:
+                    path.write_text(
+                        path.read_text(encoding="utf-8").replace(
+                            '"consumer_role": "host"', '"consumer_role": "maintainer"',
+                        ), encoding="utf-8",
+                    )
+                return digest
+
+            with patch.object(gate, "_policy_file_digest", side_effect=flip_after_first_digest):
+                with self.assertRaisesRegex(
+                    runtime_boundary.RuntimeBoundaryError, "관찰 기준선",
+                ):
+                    runtime_boundary.prepare_consumer_runtime_boundary(
+                        root / "core", root, capability_id="shared_data",
+                        write_paths=("runtime/data",),
+                    )
+            self.assertFalse((root / "runtime").exists())
 
     def test_invoke_exception_still_runs_host_post_boundary_check(self) -> None:
         from experimental.shared_data import cli as shared_cli

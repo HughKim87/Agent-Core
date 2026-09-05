@@ -79,7 +79,7 @@
 
 `info`는 역할·Consumer 입력·Runtime storage와 무관하고 쓰기 가능 경로를 열지 않는 정적 discovery다. Core tree·Git 의미 상태의 전후 불변을 정상·예외 경로 모두에서 증명하며 dirty Core에서도 실행할 수 있지만 기능 소비·가용성·완료 성공 근거가 아니다. Git 기준선을 증명할 수 없으면 fail-closed한다.
 
-`shared_data invoke`는 verified Consumer 계약, Core와 정확히 같은 `contract_version`, Consumer의 `required_core_capabilities.shared_data` 최소 버전 선언을 요구한다. Runtime storage가 계약의 `core_path`와 겹치거나 Consumer 밖이면 dispatch 전에 실패한다. 통과한 storage는 Consumer 상대 canonical 경로로 dispatch되고 `core_path`는 내부 보호 경로에 합산되어 각 storage 해석 때 다시 검사된다. Host 역할에서는 기능 실행 전 clean 기준과 실행 후 Core 불변을 함께 요구한다.
+`shared_data invoke`는 verified Consumer 계약, Core와 정확히 같은 `contract_version`, Consumer의 `required_core_capabilities.shared_data` 최소 버전 선언을 요구한다. Runtime storage가 계약의 `core_path`와 겹치거나 Consumer 밖이면 dispatch 전에 실패한다. 통과한 storage는 Consumer 상대 canonical 경로로 dispatch되고 `core_path`는 내부 보호 경로에 합산되어 각 storage 해석 때 다시 검사된다. Host 역할에서는 계약 해석 전 소비 정책·부모 gitlink·Core 관찰, 부모 HEAD·index gitlink와 Core HEAD 일치, 기능 실행 전 clean, 실행 후 결속 불변을 함께 요구한다. 순수 `verify`는 불일치 gitlink를 실행 허가로 쓰지 않고 finding으로 진단한다. 다만 Core 내부 entry import 전에 일어나는 revision 교체는 Consumer 소유 외부 launcher 또는 immutable checkout이 별도로 닫아야 한다.
 
 ## 4. 호환·비호환
 
@@ -101,7 +101,7 @@
 ## 6. 의존성과 텍스트
 
 - Core 자체 필수 경로의 Python package 의존성은 표준 라이브러리뿐이고 필수 외부 실행 도구는 없다.
-- `git` CLI는 Core 자체 검증에는 선택 사항이지만, 소비 계약의 submodule revision과 `host`의 Core clean 상태를 증명하는 역할별 소비 gate에서는 필수다. Host gate는 `git`이 없으면 읽기 전용 기준을 증명할 수 없으므로 실패한다.
+- `git` CLI는 선택 의존성이다. 선택 기능이 설치되지 않은 Core 자체 검증에는 필요하지 않지만, 설치된 선택 기능이 Git-backed 정적 discovery를 공개하면 그 기능의 `optional-features` 검사에 필요하다. 또한 소비 계약의 submodule revision과 `host`의 Core clean 상태를 증명하는 역할별 소비 gate에서는 필수다. 필요한 경로에서 `git`이 없으면 기준을 증명할 수 없으므로 fail-closed한다.
 - Host clean 증명은 검사 중 content 변환을 실행하지 않는다. tracked 경로에 `filter`, `working-tree-encoding` 또는 `ident` attribute가 필요하면 해당 checkout은 Host gate에서 지원하지 않고 fail-closed한다.
 - Host clean 증명의 tracked 일반 파일 내용은 Git 줄바꿈 정규화 전의 실제 worktree bytes로 HEAD blob과 대조한다. 따라서 `git status`가 clean이어도 checkout bytes가 다르면 실패한다.
 - 선택 기능이 없어도 필수 검증이 통과해야 한다.

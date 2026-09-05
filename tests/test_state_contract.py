@@ -98,38 +98,36 @@ class StateContractTest(unittest.TestCase):
                     any("파일 개수" in finding.message for finding in self._findings(text))
                 )
 
-    def test_ephemeral_failure_state_is_detected(self) -> None:
-        for value in (
-            "실패 횟수",
-            "실패횟수",
-            "실패 카운터",
-            "연속 실패: 3회",
-            "실패 건수: 3",
-            "실패 누적 3회",
-            "실패 세 회",
-            "시도 방법",
-            "시도한 방법",
-            "시도해 본 방법",
-            "방법 순서",
-            "방법의 순서",
-            "중단 플래그",
-            "중단 여부",
-            "중단 상태",
-            "중단 유무",
-            "실패는 3회",
-            "세 번 실패",
-            "재시도 3회",
-            "중단됨: true",
+    def test_structured_ephemeral_failure_fields_are_detected(self) -> None:
+        for field in (
+            "- 실패 횟수: 2",
+            "- 시도 방법: shell",
+            "- 방법 순서: shell, api",
+            "- 중단 상태: true",
+            '- "failure_count": 2',
+            "| attempted_methods | shell |",
+            "- lastAttemptOrder: shell, api",
+            "- stop_state: true",
+            "- 실패 사건 이력: 1차 shell, 2차 api",
+            "- failure_event_history: shell, api",
         ):
-            with self.subTest(value=value):
-                findings = self._findings(VALID_STATE.replace("- 없음", f"- {value}: 없음", 1))
+            with self.subTest(field=field):
+                findings = self._findings(VALID_STATE.replace("- 없음", field, 1))
                 self.assertTrue(any("임시 실패 상태" in finding.message for finding in findings))
 
     def test_general_failure_policy_text_is_not_ephemeral_state(self) -> None:
-        text = VALID_STATE.replace("- 없음", "- 실패를 예방하는 정책을 적용한다", 1)
-        self.assertFalse(
-            any("임시 실패 상태" in finding.message for finding in self._findings(text))
-        )
+        for value in (
+            "실패를 예방하는 정책을 적용한다",
+            "실패 카운터 정책 검증은 아직 `not_run`이다",
+            "failure counter policy verification is `not_run`",
+            "현재 차단 원인은 계약 불일치다",
+            "재시작 조건: 사용자가 계약을 선택한다",
+        ):
+            with self.subTest(value=value):
+                text = VALID_STATE.replace("- 없음", f"- {value}", 1)
+                self.assertFalse(
+                    any("임시 실패 상태" in finding.message for finding in self._findings(text))
+                )
 
     def test_vague_first_action_is_detected(self) -> None:
         for value in (
@@ -248,6 +246,47 @@ class StateContractTest(unittest.TestCase):
         self.assertFalse(
             any("필수 절이 없다: ## 차단" in finding.message for finding in self._findings(text))
         )
+
+    def test_duplicate_required_sections_are_detected(self) -> None:
+        for section in (
+            "현재 단계", "직전 게이트", "승인 상태",
+            "차단", "알려진 위험", "첫 다음 행동",
+        ):
+            with self.subTest(section=section):
+                findings = self._findings(VALID_STATE + f"\n## {section}\n")
+                self.assertTrue(any(
+                    f"필수 절이 중복됐다: ## {section}" in finding.message
+                    for finding in findings
+                ))
+
+    def test_fenced_examples_do_not_replace_real_declarations(self) -> None:
+        declarations = (
+            ("- 결과: `pass`", "판정이 없다"),
+            ("1. `PROJECT_RULES.md`의 선언을 파싱한다.", "번호"),
+        )
+        for fence in ("```", "~~~", "````"):
+            for declaration, expected in declarations:
+                with self.subTest(fence=fence, declaration=declaration):
+                    text = VALID_STATE.replace(
+                        declaration, f"{fence}md\n{declaration}\n{fence}"
+                    )
+                    self.assertTrue(any(
+                        expected in finding.message for finding in self._findings(text)
+                    ))
+
+    def test_fenced_examples_beside_real_declarations_are_ignored(self) -> None:
+        for fence in ("```", "~~~", "````"):
+            with self.subTest(fence=fence):
+                text = VALID_STATE.replace(
+                    "- 결과: `pass`",
+                    f"- 결과: `pass`\n{fence}md\n- 예시: `fail`\n"
+                    f"## 직전 게이트\n{fence}",
+                ).replace(
+                    "1. `PROJECT_RULES.md`의 선언을 파싱한다.",
+                    f"1. `PROJECT_RULES.md`의 선언을 파싱한다.\n"
+                    f"{fence}md\n1. 계속한다.\n## 첫 다음 행동\n{fence}",
+                )
+                self.assertEqual(self._findings(text), [])
 
     def test_size_budget_is_enforced(self) -> None:
         findings = self._findings(VALID_STATE + ("x" * 3_000))

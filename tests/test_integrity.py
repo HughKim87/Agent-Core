@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -26,7 +27,12 @@ from core_check.integrity import (  # noqa: E402
     host_core_git_fingerprint,
     run_consumer,
 )
-from core_check.primitives import UnsafePathError, fingerprint, resolve_inside  # noqa: E402
+from core_check.primitives import (  # noqa: E402
+    CheckError,
+    UnsafePathError,
+    fingerprint,
+    resolve_inside,
+)
 
 DOC_HEADERS = """- 목적: 결함 주입용 표본.
 - 읽는 시점: 검사 확인 시.
@@ -250,8 +256,11 @@ def build_consumer(base: Path) -> tuple[Path, Path]:
 def set_consumer_role(consumer: Path, role: str) -> None:
     policy = consumer / "PROJECT_RULES.md"
     policy.write_text(
-        policy.read_text(encoding="utf-8").replace(
-            '"consumer_role": "maintainer"', f'"consumer_role": "{role}"'
+        re.sub(
+            r'("consumer_role"\s*:\s*)"[^"]+"',
+            lambda match: f'{match.group(1)}"{role}"',
+            policy.read_text(encoding="utf-8"),
+            count=1,
         ),
         encoding="utf-8",
     )
@@ -306,6 +315,11 @@ def initialize_clean_git(root: Path) -> None:
     for command in commands:
         subprocess.run(command, cwd=root, capture_output=True, check=True)
     refresh_raw_worktree_from_index(root)
+
+
+def initialize_host_consumer_gitlink(core: Path, consumer: Path) -> None:
+    initialize_clean_git(core)
+    initialize_clean_git(consumer)
 
 
 def add_nested_gitlink(core: Path, base: Path) -> Path:
@@ -1224,7 +1238,7 @@ class PublicInterfaceTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
     def test_host_verify_diagnoses_dirty_core_but_context_rejects_use(self) -> None:
         set_consumer_role(self.consumer, "host")
-        initialize_clean_git(self.core)
+        initialize_host_consumer_gitlink(self.core, self.consumer)
         (self.core / "data.json").write_text('{"changed": true}\n', encoding="utf-8")
         code, payload = self._run(
             "--core-root", str(self.core), "--consumer-root", str(self.consumer), "verify"
@@ -1243,7 +1257,7 @@ class PublicInterfaceTest(unittest.TestCase):
     @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
     def test_host_verify_checks_core_after_unexpected_error(self) -> None:
         set_consumer_role(self.consumer, "host")
-        initialize_clean_git(self.core)
+        initialize_host_consumer_gitlink(self.core, self.consumer)
 
         def mutate_then_fail(root: Path):
             (root / "unexpected-cache").mkdir()
@@ -1256,6 +1270,129 @@ class PublicInterfaceTest(unittest.TestCase):
         self.assertEqual(code, self.cli.EXIT_UNUSABLE)
         self.assertEqual(payload["kind"], "CheckError")
         self.assertIn("Core tree 또는 HEAD/index 상태가 실행 중 변경", payload["error"])
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host 진단 fixture를 건너뛴다")
+    def test_host_verify_diagnoses_unlinked_core_head_as_finding(self) -> None:
+        set_consumer_role(self.consumer, "host")
+        initialize_host_consumer_gitlink(self.core, self.consumer)
+        subprocess.run(
+            [
+                "git",
+                "-c", "user.name=Core Test",
+                "-c", "user.email=core-test@example.invalid",
+                "-c", "commit.gpgsign=false",
+                "commit", "--quiet", "--allow-empty", "-m", "unlinked",
+            ],
+            cwd=self.core,
+            capture_output=True,
+            check=True,
+        )
+        code, payload = self._run(
+            "--core-root", str(self.core), "--consumer-root", str(self.consumer), "verify"
+        )
+        self.assertEqual(code, self.cli.EXIT_FINDINGS, payload)
+        self.assertTrue(
+            any(finding["check"] == "consumer-submodule" for finding in payload["findings"])
+        )
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host 진단 fixture를 건너뛴다")
+    def test_host_verify_diagnoses_malformed_gitmodules_as_finding(self) -> None:
+        set_consumer_role(self.consumer, "host")
+        initialize_host_consumer_gitlink(self.core, self.consumer)
+        (self.consumer / ".gitmodules").write_bytes(b"\xff\xfe\x00")
+        code, payload = self._run(
+            "--core-root", str(self.core), "--consumer-root", str(self.consumer), "verify"
+        )
+        self.assertEqual(code, self.cli.EXIT_FINDINGS, payload)
+        self.assertTrue(
+            any(
+                finding["check"] == "consumer-submodule"
+                and "UTF-8" in finding["message"]
+                for finding in payload["findings"]
+            )
+        )
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host 진단 fixture를 건너뛴다")
+    def test_host_verify_version_read_is_inside_observation_boundary(self) -> None:
+        set_consumer_role(self.consumer, "host")
+        initialize_host_consumer_gitlink(self.core, self.consumer)
+        original = self.cli._version
+
+        def mutate_during_version(root: Path) -> int:
+            version = original(root)
+            (root / "version-read-cache").mkdir()
+            return version
+
+        with patch.object(self.cli, "_version", side_effect=mutate_during_version):
+            code, payload = self._run(
+                "--core-root", str(self.core), "--consumer-root", str(self.consumer), "verify"
+            )
+        self.assertEqual(code, self.cli.EXIT_UNUSABLE)
+        self.assertEqual(payload["kind"], "CheckError")
+        self.assertIn("실행 중 변경", payload["error"])
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host CLI 역할 fixture를 건너뛴다")
+    def test_host_cli_rejects_role_flip_during_contract_parse(self) -> None:
+        set_consumer_role(self.consumer, "host")
+        initialize_host_consumer_gitlink(self.core, self.consumer)
+        original = self.cli.consumer_contract
+
+        def flip_before_parse(*args: object, **kwargs: object):
+            set_consumer_role(self.consumer, "maintainer")
+            return original(*args, **kwargs)
+
+        with patch.object(
+            self.cli,
+            "consumer_contract",
+            side_effect=flip_before_parse,
+        ):
+            code, payload = self._run(
+                "--core-root", str(self.core),
+                "--consumer-root", str(self.consumer),
+                "verify",
+            )
+        self.assertEqual(code, self.cli.EXIT_UNUSABLE)
+        self.assertIn("소비 계약 해석 중", payload["error"])
+
+    @unittest.skipUnless(shutil.which("git"), "Git이 없어 관찰 실패 fixture를 건너뛴다")
+    def test_host_context_rejects_role_flip_during_observation(self) -> None:
+        from core_check import gate
+
+        set_consumer_role(self.consumer, "host")
+        initialize_host_consumer_gitlink(self.core, self.consumer)
+        original = gate._policy_file_digest
+        reads = 0
+
+        def flip_after_first_digest(path: Path) -> str:
+            nonlocal reads
+            digest = original(path)
+            reads += 1
+            if reads == 1:
+                set_consumer_role(self.consumer, "maintainer")
+            return digest
+
+        with patch.object(gate, "_policy_file_digest", side_effect=flip_after_first_digest):
+            code, payload = self._run(
+                "--core-root", str(self.core),
+                "--consumer-root", str(self.consumer), "context",
+            )
+        self.assertEqual(code, self.cli.EXIT_UNUSABLE)
+        self.assertIn("관찰 기준선 고정 중 변경", payload["error"])
+        self.assertEqual(
+            self.cli.consumer_contract(self.core, self.consumer)["consumer_role"],
+            "maintainer",
+        )
+
+    def test_maintainer_context_allows_unavailable_host_observation(self) -> None:
+        with patch.object(
+            self.cli, "capture_host_consumer_observation",
+            side_effect=integrity_module.CheckError("no Host Git baseline"),
+        ):
+            code, payload = self._run(
+                "--core-root", str(self.core),
+                "--consumer-root", str(self.consumer), "context",
+            )
+        self.assertEqual(code, self.cli.EXIT_OK)
 
     def test_every_public_command_has_a_consumer_note(self) -> None:
         import inspect
@@ -1300,6 +1437,7 @@ class GateRobustnessTest(unittest.TestCase):
         cli.run_all = lambda root: (_ for _ in ()).throw(RuntimeError("예상 못한 오류"))
         try:
             with tempfile.TemporaryDirectory() as tmp:
+                build_clean(Path(tmp))
                 code, payload = self._run("--root", tmp, "verify")
             self.assertEqual(code, cli.EXIT_UNUSABLE)
             self.assertTrue(payload["unexpected"])
@@ -1512,7 +1650,7 @@ class IntegrationGateTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             core, consumer = build_consumer(Path(tmp))
             set_consumer_role(consumer, "host")
-            initialize_clean_git(core)
+            initialize_host_consumer_gitlink(core, consumer)
             result = self.gate.run(core, consumer)
             self.assertTrue(result.ok, result.as_dict())
             preflight = [s for s in result.steps if s.name == "host-core-read-only-preflight"][0]
@@ -1521,12 +1659,267 @@ class IntegrationGateTest(unittest.TestCase):
             self.assertEqual(regression.status, "not_applicable")
             self.assertFalse(regression.required)
 
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host gitlink fixture를 건너뛴다")
+    def test_host_gate_rejects_core_head_different_from_parent_gitlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            set_consumer_role(consumer, "host")
+            initialize_host_consumer_gitlink(core, consumer)
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=Core Test",
+                    "-c",
+                    "user.email=core-test@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--quiet",
+                    "--allow-empty",
+                    "-m",
+                    "unlinked core revision",
+                ],
+                cwd=core,
+                capture_output=True,
+                check=True,
+            )
+            result = self.gate.run(core, consumer)
+            self.assertEqual(result.failed_step, "host-core-read-only-preflight")
+            preflight = next(
+                step
+                for step in result.steps
+                if step.name == "host-core-read-only-preflight"
+            )
+            self.assertIn("부모 gitlink와 실행 Core HEAD가 다르다", preflight.detail)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host baseline fixture를 건너뛴다")
+    def test_require_clean_baseline_rejects_change_during_clean_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, _ = build_consumer(Path(tmp))
+            initialize_clean_git(core)
+            target = core / "data.json"
+            original = self.gate.host_core_cleanliness
+
+            def mutate_after_clean(root: Path) -> tuple[bool, str]:
+                result = original(root)
+                target.write_text('{"changed": true}\n', encoding="utf-8")
+                return result
+
+            with patch.object(
+                self.gate,
+                "host_core_cleanliness",
+                side_effect=mutate_after_clean,
+            ):
+                with self.assertRaisesRegex(CheckError, "clean 판정 중 변경"):
+                    self.gate.capture_host_core_baseline(core, require_clean=True)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host 결속 fixture를 건너뛴다")
+    def test_host_consumer_baseline_rejects_head_swap_after_gitlink_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            set_consumer_role(consumer, "host")
+            initialize_host_consumer_gitlink(core, consumer)
+            original = self.gate.host_consumer_gitlink_fingerprint
+            link_checks = 0
+
+            def swap_after_first_check(*args: object, **kwargs: object) -> str:
+                nonlocal link_checks
+                value = original(*args, **kwargs)
+                link_checks += 1
+                if link_checks == 1:
+                    subprocess.run(
+                        [
+                            "git",
+                            "-c", "user.name=Core Test",
+                            "-c", "user.email=core-test@example.invalid",
+                            "-c", "commit.gpgsign=false",
+                            "commit", "--quiet", "--allow-empty", "-m", "swapped",
+                        ],
+                        cwd=core,
+                        capture_output=True,
+                        check=True,
+                    )
+                return value
+
+            with patch.object(
+                self.gate,
+                "host_consumer_gitlink_fingerprint",
+                side_effect=swap_after_first_check,
+            ):
+                with self.assertRaisesRegex(CheckError, "gitlink|Core HEAD"):
+                    self.gate.capture_host_consumer_baseline(
+                        core,
+                        consumer,
+                        "core",
+                        require_clean=True,
+                    )
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host 관찰 fixture를 건너뛴다")
+    def test_host_gate_rejects_linked_revision_swap_during_contract_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            set_consumer_role(consumer, "host")
+            initialize_host_consumer_gitlink(core, consumer)
+            original = self.gate.consumer_contract
+
+            def parse_then_replace(*args: object, **kwargs: object):
+                contract = original(*args, **kwargs)
+                subprocess.run(
+                    [
+                        "git",
+                        "-c", "user.name=Core Test",
+                        "-c", "user.email=core-test@example.invalid",
+                        "-c", "commit.gpgsign=false",
+                        "commit", "--quiet", "--allow-empty", "-m", "replacement",
+                    ],
+                    cwd=core,
+                    capture_output=True,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "add", "--", "core"],
+                    cwd=consumer,
+                    capture_output=True,
+                    check=True,
+                )
+                subprocess.run(
+                    [
+                        "git",
+                        "-c", "user.name=Core Test",
+                        "-c", "user.email=core-test@example.invalid",
+                        "-c", "commit.gpgsign=false",
+                        "commit", "--quiet", "-m", "move gitlink",
+                    ],
+                    cwd=consumer,
+                    capture_output=True,
+                    check=True,
+                )
+                return contract
+
+            with patch.object(
+                self.gate,
+                "consumer_contract",
+                side_effect=parse_then_replace,
+            ):
+                result = self.gate.run(core, consumer)
+            self.assertEqual(result.failed_step, "host-core-read-only-preflight")
+            preflight = next(
+                step
+                for step in result.steps
+                if step.name == "host-core-read-only-preflight"
+            )
+            self.assertIn("계약 해석 중", preflight.detail)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host 역할 fixture를 건너뛴다")
+    def test_host_gate_rejects_role_flip_during_contract_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            set_consumer_role(consumer, "host")
+            initialize_host_consumer_gitlink(core, consumer)
+            original = self.gate.consumer_contract
+
+            def flip_before_parse(*args: object, **kwargs: object):
+                set_consumer_role(consumer, "maintainer")
+                return original(*args, **kwargs)
+
+            with patch.object(
+                self.gate,
+                "consumer_contract",
+                side_effect=flip_before_parse,
+            ):
+                result = self.gate.run(core, consumer)
+            self.assertEqual(result.failed_step, "host-core-read-only-preflight")
+            preflight = next(
+                step
+                for step in result.steps
+                if step.name == "host-core-read-only-preflight"
+            )
+            self.assertIn("소비 계약 해석 중", preflight.detail)
+
+    @unittest.skipUnless(shutil.which("git"), "Git이 없어 관찰 실패 fixture를 건너뛴다")
+    def test_host_gate_rejects_role_flip_during_observation(self) -> None:
+        for read_fails in (False, True):
+            with self.subTest(read_fails=read_fails), tempfile.TemporaryDirectory() as tmp:
+                core, consumer = build_consumer(Path(tmp))
+                set_consumer_role(consumer, "host")
+                initialize_host_consumer_gitlink(core, consumer)
+                original = self.gate._policy_file_digest
+                reads = 0
+
+                def flip_after_first_digest(path: Path) -> str:
+                    nonlocal reads
+                    reads += 1
+                    if reads > 1 and read_fails:
+                        raise OSError("policy observation interrupted")
+                    digest = original(path)
+                    if reads == 1:
+                        set_consumer_role(consumer, "maintainer")
+                    return digest
+
+                with patch.object(
+                    self.gate, "_policy_file_digest", side_effect=flip_after_first_digest,
+                ), patch.object(self.gate, "_integrity") as core_execution:
+                    result = self.gate.run(core, consumer)
+                self.assertFalse(result.ok)
+                self.assertEqual(result.failed_step, "host-core-read-only-preflight")
+                core_execution.assert_not_called()
+                self.assertEqual(
+                    self.gate.consumer_contract(core, consumer)["consumer_role"],
+                    "maintainer",
+                )
+
+    @unittest.skipUnless(shutil.which("git"), "Git이 없어 Host 정책 link fixture를 건너뛴다")
+    def test_host_gate_rejects_consumer_policy_symlink_retarget(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            host_policy = consumer / "HOST_POLICY.md"
+            maintainer_policy = consumer / "MAINTAINER_POLICY.md"
+            original_policy = consumer / "PROJECT_RULES.md"
+            host_policy.write_text(
+                original_policy.read_text(encoding="utf-8").replace(
+                    '"consumer_role": "maintainer"',
+                    '"consumer_role": "host"',
+                ),
+                encoding="utf-8",
+            )
+            maintainer_policy.write_text(
+                original_policy.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            original_policy.unlink()
+            try:
+                original_policy.symlink_to(host_policy.name)
+            except OSError as exc:
+                self.skipTest(f"file symlink를 만들 수 없다: {exc}")
+            initialize_host_consumer_gitlink(core, consumer)
+            original = self.gate.consumer_contract
+
+            def retarget_before_parse(*args: object, **kwargs: object):
+                original_policy.unlink()
+                original_policy.symlink_to(maintainer_policy.name)
+                return original(*args, **kwargs)
+
+            with patch.object(
+                self.gate,
+                "consumer_contract",
+                side_effect=retarget_before_parse,
+            ):
+                result = self.gate.run(core, consumer)
+            self.assertEqual(result.failed_step, "host-core-read-only-preflight")
+            preflight = next(
+                step
+                for step in result.steps
+                if step.name == "host-core-read-only-preflight"
+            )
+            self.assertIn("소비 계약 해석 중", preflight.detail)
+
     @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
     def test_host_gate_detects_head_only_change_after_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             core, consumer = build_consumer(Path(tmp))
             set_consumer_role(consumer, "host")
-            initialize_clean_git(core)
+            initialize_host_consumer_gitlink(core, consumer)
 
             def commit_without_tree_change(*args, **kwargs):
                 subprocess.run(
@@ -1556,7 +1949,57 @@ class IntegrationGateTest(unittest.TestCase):
                 result = self.gate.run(core, consumer)
             side_effect = [s for s in result.steps if s.name == "core-no-side-effects"][0]
             self.assertEqual(side_effect.status, "fail")
-            self.assertIn("HEAD/index", side_effect.detail)
+            self.assertRegex(side_effect.detail, "HEAD/index|gitlink")
+            self.assertFalse(result.ok)
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host 결속 fixture를 건너뛴다")
+    def test_host_gate_detects_clean_linked_revision_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            set_consumer_role(consumer, "host")
+            initialize_host_consumer_gitlink(core, consumer)
+
+            def replace_linked_revision(*args: object, **kwargs: object):
+                subprocess.run(
+                    [
+                        "git",
+                        "-c", "user.name=Core Test",
+                        "-c", "user.email=core-test@example.invalid",
+                        "-c", "commit.gpgsign=false",
+                        "commit", "--quiet", "--allow-empty", "-m", "replacement",
+                    ],
+                    cwd=core,
+                    capture_output=True,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "add", "--", "core"],
+                    cwd=consumer,
+                    capture_output=True,
+                    check=True,
+                )
+                subprocess.run(
+                    [
+                        "git",
+                        "-c", "user.name=Core Test",
+                        "-c", "user.email=core-test@example.invalid",
+                        "-c", "commit.gpgsign=false",
+                        "commit", "--quiet", "-m", "move gitlink",
+                    ],
+                    cwd=consumer,
+                    capture_output=True,
+                    check=True,
+                )
+                return self.gate.StepResult(
+                    "optional-features", "not_applicable", "fixture", required=False
+                )
+
+            with patch.object(self.gate, "_optional", side_effect=replace_linked_revision):
+                result = self.gate.run(core, consumer)
+            side_effect = next(
+                step for step in result.steps if step.name == "core-no-side-effects"
+            )
+            self.assertEqual(side_effect.status, "fail")
             self.assertFalse(result.ok)
 
     @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
@@ -1627,7 +2070,7 @@ class IntegrationGateTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             core, consumer = build_consumer(Path(tmp))
             set_consumer_role(consumer, "host")
-            initialize_clean_git(core)
+            initialize_host_consumer_gitlink(core, consumer)
 
             def mutate_consumer_role(*args, **kwargs):
                 policy = consumer / "PROJECT_RULES.md"
@@ -1656,12 +2099,93 @@ class IntegrationGateTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             core, consumer = build_consumer(Path(tmp))
             set_consumer_role(consumer, "host")
-            initialize_clean_git(core)
+            initialize_host_consumer_gitlink(core, consumer)
             (core / "data.json").write_text('{"changed": true}\n', encoding="utf-8")
             result = self.gate.run(core, consumer)
             self.assertEqual(result.failed_step, "host-core-read-only-preflight")
             statuses = {step.name: step.status for step in result.steps}
             self.assertEqual(statuses["regression-tests"], "not_run")
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host preflight fixture를 건너뛴다")
+    def test_host_preflight_side_effect_is_measured_before_early_return(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            set_consumer_role(consumer, "host")
+            initialize_host_consumer_gitlink(core, consumer)
+
+            def mutate_then_fail(*args: object, **kwargs: object):
+                (core / "data.json").write_text('{"changed": true}\n', encoding="utf-8")
+                return (
+                    self.gate.StepResult(
+                        "host-core-read-only-preflight",
+                        "fail",
+                        "fixture",
+                    ),
+                    None,
+                )
+
+            with patch.object(
+                self.gate,
+                "_host_core_read_only_preflight",
+                side_effect=mutate_then_fail,
+            ):
+                result = self.gate.run(core, consumer)
+            statuses = {step.name: step.status for step in result.steps}
+            self.assertEqual(statuses["core-no-side-effects"], "fail")
+            self.assertIn("증명할 수 없다", [
+                step.detail
+                for step in result.steps
+                if step.name == "core-no-side-effects"
+            ][0])
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host parent fixture를 건너뛴다")
+    def test_host_preflight_parent_only_change_fails_side_effect_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            core, consumer = build_consumer(Path(tmp))
+            set_consumer_role(consumer, "host")
+            initialize_host_consumer_gitlink(core, consumer)
+            parent_head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=consumer,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=True,
+            ).stdout.strip()
+
+            def mutate_parent_then_fail(*args: object, **kwargs: object):
+                subprocess.run(
+                    [
+                        "git",
+                        "update-index",
+                        "--add",
+                        "--cacheinfo",
+                        f"160000,{parent_head},core",
+                    ],
+                    cwd=consumer,
+                    capture_output=True,
+                    check=True,
+                )
+                return (
+                    self.gate.StepResult(
+                        "host-core-read-only-preflight",
+                        "fail",
+                        "fixture",
+                    ),
+                    None,
+                )
+
+            with patch.object(
+                self.gate,
+                "_host_core_read_only_preflight",
+                side_effect=mutate_parent_then_fail,
+            ):
+                result = self.gate.run(core, consumer)
+            side_effect = next(
+                step for step in result.steps if step.name == "core-no-side-effects"
+            )
+            self.assertEqual(side_effect.status, "fail")
+            self.assertIn("부모 gitlink", side_effect.detail)
 
     @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
     def test_host_gate_blocks_ignored_cache_before_tests(self) -> None:
@@ -1669,7 +2193,7 @@ class IntegrationGateTest(unittest.TestCase):
             core, consumer = build_consumer(Path(tmp))
             set_consumer_role(consumer, "host")
             (core / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
-            initialize_clean_git(core)
+            initialize_host_consumer_gitlink(core, consumer)
             cache = core / "__pycache__"
             cache.mkdir()
             (cache / "created.pyc").write_bytes(b"cache")

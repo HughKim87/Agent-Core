@@ -74,6 +74,15 @@ class RoutingCompletenessTest(unittest.TestCase):
         ):
             self.assertIn(fragment, text)
 
+    def test_work_contract_owns_completion_condition_reconciliation_once(self) -> None:
+        heading = "### 완료 조건 대조"
+        occurrences = [
+            (f"rules/{path.name}", read(path).count(heading))
+            for path in RULES_DIR.glob("*.md")
+            if heading in read(path)
+        ]
+        self.assertEqual(occurrences, [("rules/work-contract.md", 1)])
+
 
 class FixtureStructureTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -145,12 +154,12 @@ class FixtureStructureTest(unittest.TestCase):
 
 
 class FailureStopScenarioTest(unittest.TestCase):
-    """정책 문구와 합성 이벤트 모델을 검사하며 Host Runtime을 검증하지 않는다."""
+    """명령 창의 합성 이벤트 모델을 검사하며 정책 정본을 다시 소유하지 않는다."""
 
     def setUp(self) -> None:
         self.data = json.loads(read(FAILURE_FIXTURE))
 
-    def test_fixture_contract_and_rule_fragments(self) -> None:
+    def test_fixture_contract_and_owner_metadata(self) -> None:
         self.assertEqual(self.data["fixture_version"], 3)
         self.assertEqual(self.data["evidence_level"], "synthetic-policy-model")
         self.assertIn("실제 Host Runtime 동작을 검증하지 않는다", self.data["purpose"])
@@ -164,8 +173,23 @@ class FailureStopScenarioTest(unittest.TestCase):
                 "reference": "rules/handoff.md",
             },
         )
+        self.assertTrue(self.data["cases"], "failure scenarios must not be empty")
         ids = [case["id"] for case in self.data["cases"]]
         self.assertEqual(len(ids), len(set(ids)))
+        required_ids = {
+            "third-failure-blocks-fourth-result-attempt",
+            "same-result-new-command-starts-at-zero",
+            "correction-with-retry-does-not-inherit",
+            "non-counting-events-do-not-consume-limit",
+            "abandoned-tool-candidate-counts-once",
+            "status-message-does-not-reset-active-command",
+            "result-candidates-cannot-overrun-remaining-slots",
+            "uncertain-external-effect-requires-state-check",
+            "user-cancel-closes-command-window",
+            "new-execution-command-preempts-stopped-window",
+            "ordinary-result-candidates-are-serial",
+        }
+        self.assertTrue(required_ids <= set(ids), f"missing scenarios: {sorted(required_ids - set(ids))}")
         command_ids = [
             command["id"]
             for case in self.data["cases"]
@@ -173,73 +197,23 @@ class FailureStopScenarioTest(unittest.TestCase):
         ]
         self.assertEqual(len(command_ids), len(set(command_ids)))
         for case in self.data["cases"]:
+            self.assertTrue(case["commands"], case["id"])
             for command in case["commands"]:
                 self.assertIsInstance(command["opens_window"], bool)
-        for relative, fragments in self.data["rule_fragments"].items():
-            text = read(ROOT / relative)
-            for fragment in fragments:
-                self.assertIn(fragment, text, f"{relative}에 정책 문구가 없다: {fragment}")
+                self.assertTrue(command["events"], command["id"])
+                self.assertTrue(command["expected"], command["id"])
+                self.assertEqual(len(command["events"]), len(command["expected"]), command["id"])
+        self.assertNotIn("rule_fragments", self.data)
 
-    def test_failure_policy_has_one_normative_owner(self) -> None:
-        canonical = read(ROOT / "rules" / "failure-records.md")
-        for fragment in (
-            "`임시 실패 상태`는 현재 명령 창의 카운터",
-            "세 번째 실패가 확정되면",
-            "새 명령 창은 0부터 시작하며",
-        ):
-            self.assertIn(fragment, canonical)
-
-        noncanonical = [
-            self.data["policy_roles"][role]
-            for role in ("route", "delegate", "reference")
-        ]
-        for relative in noncanonical:
-            text = read(ROOT / relative)
-            self.assertNotIn("세 번째 실패가 확정되면", text, relative)
-            self.assertNotIn("새 명령 창은 0부터 시작하며", text, relative)
-            self.assertNotIn("실패 횟수·시도 방법·방법 순서·중단 플래그", text, relative)
-
-        handoff = read(ROOT / "rules" / "handoff.md")
-        self.assertIn(
-            "상시 정책 route가 선택한 실패 처리 소유자가 정의한 임시 실패 상태",
-            handoff,
-        )
-        self.assertNotIn("(failure-records.md)", handoff)
-
-    def test_failure_policy_paraphrase_is_rejected_outside_owner(self) -> None:
-        stop_rule = re.compile(
-            r"(?:세|3)\s*(?:차례|번|회|번째).*?실패.*?"
-            r"(?:이후|추가|다음).*?(?:실행|시도).*?(?:금지|차단|중단)"
-        )
-        reset_rule = re.compile(
-            r"(?:최종 보고|취소).*?(?:누적값|카운터|실패 횟수).*?"
-            r"(?:버리|폐기|초기화).*?(?:다음|새).*?"
-            r"(?:실행 요청|실행 명령).*?(?:영|0)"
-        )
-
-        def has_normative_duplicate(text: str) -> bool:
-            paragraphs = (
-                re.sub(r"\s+", " ", paragraph)
-                for paragraph in re.split(r"\n\s*\n", text)
-            )
-            return any(
-                stop_rule.search(paragraph) or reset_rule.search(paragraph)
-                for paragraph in paragraphs
-            )
-
-        paraphrase = (
-            "같은 사용자 실행 요청에서 결과 후보가 세 차례 실패하면 이후 후보 "
-            "실행을 금지한다. 최종 보고나 취소로 요청이 닫힌 뒤에는 누적값을 "
-            "버리고, 다음 실행 요청은 영에서 다시 계산한다."
-        )
-        for role in ("route", "delegate", "reference"):
-            relative = self.data["policy_roles"][role]
-            original = read(ROOT / relative)
-            self.assertFalse(has_normative_duplicate(original), relative)
-            self.assertTrue(
-                has_normative_duplicate(f"{original}\n\n{paraphrase}\n"),
-                f"{relative}의 바꿔쓴 규범 중복을 탐지하지 못했다",
-            )
+    def test_failure_policy_has_one_routed_owner(self) -> None:
+        roles = self.data["policy_roles"]
+        canonical = roles["canonical"]
+        self.assertTrue((ROOT / canonical).is_file())
+        self.assertEqual(routed_owners().count(canonical), 1)
+        self.assertEqual(roles["route"], "PROJECT_RULES.md")
+        self.assertNotEqual(roles["delegate"], canonical)
+        self.assertNotEqual(roles["reference"], canonical)
+        self.assertNotIn("(failure-records.md)", read(ROOT / roles["reference"]))
 
     def test_scenarios(self) -> None:
         limit = self.data["failure_limit"]
@@ -318,6 +292,13 @@ class FailureStopScenarioTest(unittest.TestCase):
                         count = 0
                         stopped = False
                         action = "closed"
+                    elif kind == "new-user-execution-command":
+                        active_candidate = False
+                        awaiting_state_check = False
+                        command_open = True
+                        count = 0
+                        stopped = False
+                        action = "new-window"
                     elif kind == "safe-recovery":
                         action = "allowed-recovery" if command_open else "no-command"
                     elif kind == "minimal-read":

@@ -1,7 +1,7 @@
 {
   "fixture_version": 3,
   "evidence_level": "synthetic-policy-model",
-  "purpose": "정책 문구와 합성 이벤트 모델의 일관성을 검사하며 실제 Host Runtime 동작을 검증하지 않는다.",
+  "purpose": "명령 창의 합성 이벤트와 기대 상태를 검사하며 정책 정본이나 실제 Host Runtime 동작을 검증하지 않는다.",
   "failure_limit": 3,
   "policy_roles": {
     "canonical": "rules/failure-records.md",
@@ -9,26 +9,38 @@
     "delegate": "rules/work-contract.md",
     "reference": "rules/handoff.md"
   },
-  "rule_fragments": {
-    "PROJECT_RULES.md": [
-      "현재 사용자 실행 명령에서 확인된 결과 실패의 재시도를 제한·중단"
-    ],
-    "rules/work-contract.md": [
-      "결과 시도의 실패 판정, 재시도 제한과 중단은",
-      "실패 처리 소유자만 판정한다."
-    ],
-    "rules/failure-records.md": [
-      "명령 창마다 임시 카운터 하나만 만들고",
-      "카운터는 최대 1만 올린다.",
-      "새 명령 창은 0부터 시작하며",
-      "별도 실패 문서나 다음 세션에 저장하지 않는다.",
-      "명령 창 전체가 공유하는 단일 카운터와 직렬 결과 판정이 필요한 최소 제한이다."
-    ],
-    "rules/handoff.md": [
-      "상시 정책 route가 선택한 실패 처리 소유자가 정의한 임시 실패 상태"
-    ]
-  },
   "cases": [
+    {
+      "id": "ordinary-result-candidates-are-serial",
+      "commands": [
+        {
+          "id": "ordinary-serial-command",
+          "opens_window": true,
+          "events": [
+            {"type": "result-attempt"},
+            {"type": "result-attempt"},
+            {"type": "result-modification"},
+            {"type": "failure"},
+            {"type": "result-modification"},
+            {"type": "result-attempt"},
+            {"type": "result-modification"},
+            {"type": "failure"},
+            {"type": "final-report"}
+          ],
+          "expected": [
+            {"count": 0, "stopped": false, "action": "allowed"},
+            {"count": 0, "stopped": false, "action": "blocked"},
+            {"count": 0, "stopped": false, "action": "blocked"},
+            {"count": 1, "stopped": false, "action": "continue"},
+            {"count": 1, "stopped": false, "action": "allowed"},
+            {"count": 1, "stopped": false, "action": "blocked"},
+            {"count": 1, "stopped": false, "action": "blocked"},
+            {"count": 2, "stopped": false, "action": "continue"},
+            {"count": 0, "stopped": false, "action": "allowed-report"}
+          ]
+        }
+      ]
+    },
     {
       "id": "third-failure-blocks-fourth-result-attempt",
       "commands": [
@@ -312,6 +324,37 @@
             {"count": 0, "stopped": false, "action": "closed"},
             {"count": 0, "stopped": false, "action": "no-command"},
             {"count": 0, "stopped": false, "action": "no-command"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "new-execution-command-preempts-stopped-window",
+      "commands": [
+        {
+          "id": "preempted-command-window",
+          "opens_window": true,
+          "events": [
+            {"type": "result-attempt"},
+            {"type": "failure"},
+            {"type": "result-attempt"},
+            {"type": "failure"},
+            {"type": "result-attempt"},
+            {"type": "failure"},
+            {"type": "new-user-execution-command"},
+            {"type": "result-attempt"},
+            {"type": "failure"}
+          ],
+          "expected": [
+            {"count": 0, "stopped": false, "action": "allowed"},
+            {"count": 1, "stopped": false, "action": "continue"},
+            {"count": 1, "stopped": false, "action": "allowed"},
+            {"count": 2, "stopped": false, "action": "continue"},
+            {"count": 2, "stopped": false, "action": "allowed"},
+            {"count": 3, "stopped": true, "action": "stop"},
+            {"count": 0, "stopped": false, "action": "new-window"},
+            {"count": 0, "stopped": false, "action": "allowed"},
+            {"count": 1, "stopped": false, "action": "continue"}
           ]
         }
       ]

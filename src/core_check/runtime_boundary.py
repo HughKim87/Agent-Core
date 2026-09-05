@@ -8,11 +8,16 @@ from typing import Iterable
 
 from .declarations import consumer_contract, declared_compatibility
 from .gate import (
+    HostObservationError,
     HostCoreBaseline,
+    HostConsumerBaseline,
     capture_host_core_baseline,
+    capture_host_consumer_baseline,
+    capture_host_consumer_observation,
     host_core_baseline_status,
+    host_consumer_baseline_status,
+    host_consumer_observation_status,
 )
-from .integrity import host_core_cleanliness
 from .primitives import CheckError, resolve_inside
 
 
@@ -28,7 +33,7 @@ class ConsumerRuntimeBoundary:
     consumer_root: Path
     write_paths: tuple[str, ...]
     protected_paths: tuple[str, ...]
-    host_baseline: HostCoreBaseline | None
+    host_baseline: HostConsumerBaseline | None
 
 
 def _paths_overlap(first: Path, second: Path) -> bool:
@@ -55,11 +60,29 @@ def prepare_consumer_runtime_boundary(
     """계약·기능·쓰기 위치를 확인한 뒤 선택 Runtime 실행 경계를 고정한다."""
     core_root = core_root.resolve()
     consumer_root = consumer_root.resolve()
+    entry_observation = None
+    entry_observation_error: Exception | None = None
+    try:
+        entry_core_relative = core_root.relative_to(consumer_root).as_posix()
+        entry_observation = capture_host_consumer_observation(
+            core_root,
+            consumer_root,
+            entry_core_relative,
+        )
+    except HostObservationError as exc:
+        raise _runtime_error(f"Host 관찰 기준선 검사 실패: {exc}", exc)
+    except (CheckError, OSError, ValueError) as exc:
+        entry_observation_error = exc
     try:
         contract = consumer_contract(core_root, consumer_root)
         compatibility = declared_compatibility(core_root)
     except (CheckError, OSError) as exc:
         raise _runtime_error(f"검증된 Consumer 계약이 필요하다: {exc}", exc)
+
+    if entry_observation is not None:
+        unchanged, detail = host_consumer_observation_status(entry_observation)
+        if not unchanged:
+            raise RuntimeBoundaryError(f"소비 계약 해석 중 상태가 변경됐다: {detail}")
 
     contract_version = contract.get("contract_version")
     active_contract_version = compatibility.get("contract_version")
@@ -132,15 +155,23 @@ def prepare_consumer_runtime_boundary(
                     f"{relative} <-> {protected_relative}"
                 )
 
-    baseline: HostCoreBaseline | None = None
+    baseline: HostConsumerBaseline | None = None
     if contract.get("consumer_role") == "host":
-        clean, detail = host_core_cleanliness(core_root)
-        if not clean:
-            raise RuntimeBoundaryError(f"Host Core 읽기 전용 사전 검사 실패: {detail}")
+        if entry_observation is None:
+            raise RuntimeBoundaryError(
+                "Host Core 읽기 전용 사전 검사 실패: 계약 해석 전 상태를 "
+                f"고정할 수 없다: {entry_observation_error or '관찰 기준선 없음'}"
+            )
         try:
-            baseline = capture_host_core_baseline(core_root, require_clean=True)
+            baseline = capture_host_consumer_baseline(
+                core_root,
+                consumer_root,
+                core_relative,
+                require_clean=True,
+                expected_observation=entry_observation,
+            )
         except (CheckError, OSError) as exc:
-            raise _runtime_error(f"Host Core 사전 상태를 증명할 수 없다: {exc}", exc)
+            raise _runtime_error(f"Host Core 읽기 전용 사전 검사 실패: {exc}", exc)
 
     return ConsumerRuntimeBoundary(
         core_root=core_root,
@@ -157,7 +188,7 @@ def require_consumer_runtime_boundary_unchanged(
     """Host Runtime이 Core tree와 Git 의미 상태를 바꾸지 않았음을 확인한다."""
     if boundary.host_baseline is None:
         return
-    unchanged, detail = host_core_baseline_status(boundary.core_root, boundary.host_baseline)
+    unchanged, detail = host_consumer_baseline_status(boundary.host_baseline)
     if not unchanged:
         raise RuntimeBoundaryError(f"Host Core 사후 불변 검사 실패: {detail}")
 
