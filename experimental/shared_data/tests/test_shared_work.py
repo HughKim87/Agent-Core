@@ -322,6 +322,95 @@ class WorkStateTests(unittest.TestCase):
             rebuilt = original(WORK_ID)
             self.assertEqual(rebuilt["payload"]["status"], "in_progress")
 
+    def test_interleaved_transition_rejects_stale_state_without_appending(self) -> None:
+        for initial_status, outcome, target in (
+            ("requested", "success", "in_progress"),
+            ("in_progress", "success", "in_progress"),
+            ("requested", "rejected", None),
+        ):
+            with self.subTest(initial=initial_status, outcome=outcome):
+                with tempfile.TemporaryDirectory(prefix="shared-work-race-") as raw_root:
+                    runtime = Runtime(Path(raw_root))
+                    current = runtime.create()
+                    if initial_status == "in_progress":
+                        current = runtime.work.transition(
+                            WORK_ID, expected_state_hash=current["content_hash"],
+                            actor="agent:setup", action="start", outcome="success",
+                            to_status="in_progress", next_action="checkpoint",
+                            timestamp=datetime(2026, 8, 19, 1, 1, tzinfo=UTC),
+                        )
+                    competitor = WorkStateService(runtime.store)
+                    winner = {}
+                    injected = False
+
+                    def replay_then_compete(events, work_id):
+                        nonlocal injected
+                        authoritative = replay_work_events(events, work_id)
+                        if not injected:
+                            injected = True
+                            # B commits after A reads authority, before A appends.
+                            winner["state"] = competitor.transition(
+                                WORK_ID, expected_state_hash=current["content_hash"],
+                                actor="agent:B", action="checkpoint-B", outcome="success",
+                                to_status="in_progress", next_action="B next",
+                                timestamp=datetime(2026, 8, 19, 1, 2, tzinfo=UTC),
+                            )
+                            winner["stream"] = runtime.store.list_events("work_events")
+                        return authoritative
+
+                    with patch(
+                        "experimental.shared_data.work_state.replay_work_events",
+                        side_effect=replay_then_compete,
+                    ):
+                        with self.assertRaises(ExpectationMismatchError):
+                            runtime.work.transition(
+                                WORK_ID, expected_state_hash=current["content_hash"],
+                                actor="agent:A", action="stale-A", outcome=outcome,
+                                to_status=target, next_action="A next",
+                                timestamp=datetime(2026, 8, 19, 1, 3, tzinfo=UTC),
+                            )
+                    self.assertTrue(injected)
+                    self.assertIn("stream", winner)
+                    self.assertEqual(runtime.store.list_events("work_events"), winner["stream"])
+                    self.assertEqual(runtime.work.get_state(WORK_ID), winner["state"])
+                    self.assertEqual(
+                        replay_work_events(winner["stream"][0], WORK_ID),
+                        winner["state"]["payload"],
+                    )
+                    self.assertEqual(
+                        runtime.work.rebuild_snapshot(WORK_ID)["payload"],
+                        winner["state"]["payload"],
+                    )
+
+    def test_sequential_stale_hash_is_rejected_and_fresh_hash_can_continue(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="shared-work-stale-") as raw_root:
+            runtime = Runtime(Path(raw_root))
+            requested = runtime.create()
+            started = runtime.work.transition(
+                WORK_ID, expected_state_hash=requested["content_hash"],
+                actor="agent:B", action="start", outcome="success",
+                to_status="in_progress", next_action="B next",
+                timestamp=datetime(2026, 8, 19, 1, 1, tzinfo=UTC),
+            )
+            before = runtime.store.list_events("work_events")
+            with self.assertRaises(ExpectationMismatchError):
+                runtime.work.transition(
+                    WORK_ID, expected_state_hash=requested["content_hash"],
+                    actor="agent:A", action="checkpoint", outcome="success",
+                    to_status="in_progress", next_action="A next",
+                    timestamp=datetime(2026, 8, 19, 1, 2, tzinfo=UTC),
+                )
+            self.assertEqual(runtime.store.list_events("work_events"), before)
+            continued = runtime.work.transition(
+                WORK_ID, expected_state_hash=started["content_hash"],
+                actor="agent:A", action="checkpoint", outcome="success",
+                to_status="in_progress", next_action="A next",
+                timestamp=datetime(2026, 8, 19, 1, 2, tzinfo=UTC),
+            )
+            events, _ = runtime.store.list_events("work_events")
+            self.assertEqual(len(events), len(before[0]) + 1)
+            self.assertEqual(continued["payload"], replay_work_events(events, WORK_ID))
+
     def test_replay_rejects_request_mutation(self) -> None:
         with tempfile.TemporaryDirectory(prefix="shared-work-replay-") as raw_root:
             runtime = Runtime(Path(raw_root))

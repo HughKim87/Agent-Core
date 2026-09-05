@@ -328,15 +328,19 @@ class WorkStateService:
             raise WorkProjectionPending("request event는 저장됐지만 work snapshot 재구축이 남았다") from exc
 
     def get_state(self, work_id: str) -> dict[str, Any]:
+        current, _ = self._state_and_stream(work_id)
+        return current
+
+    def _state_and_stream(self, work_id: str) -> tuple[dict[str, Any], str]:
         identifier = _work_id(work_id)
         current = self.store.get_record(identifier)
         if current["record_type"] != "work_state":
             raise WorkStateError("work_id가 work_state record를 가리키지 않는다")
-        events, _ = self._events()
+        events, stream_hash = self._events()
         authoritative = replay_work_events(events, identifier)
         if current["payload"] != authoritative:
             raise WorkProjectionPending("work snapshot이 event 정본보다 뒤처졌다")
-        return current
+        return current, stream_hash
 
     def list_states(self, *, status: str | None = None) -> list[dict[str, Any]]:
         if status is not None and status not in WORK_STATUSES:
@@ -370,7 +374,8 @@ class WorkStateService:
         evidence_refs: Sequence[str] = (),
         timestamp: datetime | None = None,
     ) -> dict[str, Any]:
-        current = self.get_state(work_id)
+        # Bind append CAS to the same stream used to validate this state.
+        current, stream_hash = self._state_and_stream(work_id)
         if current["content_hash"] != expected_state_hash:
             raise ExpectationMismatchError("현재 work state hash가 expected 값과 다르다")
         event_time = timestamp or datetime.now(UTC)
@@ -397,7 +402,6 @@ class WorkStateService:
             validate_execution_contract(
                 self.store, current["payload"]["request"].get("execution")
             )
-        events, stream_hash = self._events()
         appended = self.store.append_event(
             "work_events",
             _event_payload(
