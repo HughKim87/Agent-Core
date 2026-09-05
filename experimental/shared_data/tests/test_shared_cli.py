@@ -250,6 +250,123 @@ class PublicSharedDataCliTests(unittest.TestCase):
         self.assertEqual(payload["operation"], operation)
         return payload["result"]
 
+    @staticmethod
+    def storage_bytes(root: Path) -> dict[str, bytes]:
+        storage = root / STORAGE_ROOT
+        return {p.relative_to(storage).as_posix(): p.read_bytes()
+                for p in storage.rglob("*") if p.is_file()}
+
+    def test_request_compare_validates_both_inputs_without_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.invoke(root, "initialize", {}, write=True)
+            valid = request_payload()
+            malformed = ({}, [], None, {**valid, "extra": True},
+                         {**valid, "authorized_actions": "write"},
+                         {k: v for k, v in valid.items() if k != "desired_outcome"})
+            before = self.storage_bytes(root)
+            for bad in malformed:
+                for side in ("previous", "current"):
+                    with self.subTest(bad=bad, side=side):
+                        arguments = {"previous": valid, "current": valid, side: bad}
+                        result = self.run_cli(root, request={"operation": "request.compare", "arguments": arguments})
+                        payload = json.loads(result.stdout)
+                        self.assertEqual(result.returncode, 1, payload)
+                        self.assertEqual(payload["kind"], "work_state_error")
+                        self.assertNotIn("unexpected", payload)
+                        self.assertEqual(before, self.storage_bytes(root))
+            same = self.invoke(root, "request.compare", {"previous": valid, "current": valid})
+            self.assertFalse(same["invalidated"])
+            changed = self.invoke(root, "request.compare", {
+                "previous": valid, "current": {**valid, "desired_outcome": "새 결과"}})
+            self.assertEqual(changed["changed_fields"], ["desired_outcome"])
+            self.assertTrue(changed["reapproval_required"])
+            self.assertEqual(before, self.storage_bytes(root))
+
+    def test_every_operation_rejects_unknown_arguments_without_writes(self) -> None:
+        from experimental.shared_data.cli import OPERATIONS
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.invoke(root, "initialize", {}, write=True)
+            before = self.storage_bytes(root)
+            for operation in OPERATIONS:
+                with self.subTest(operation=operation):
+                    result = self.run_cli(root, request={
+                        "operation": operation, "arguments": {"unrecognized_argument": True}}, write=True)
+                    payload = json.loads(result.stdout)
+                    self.assertEqual(result.returncode, 1, payload)
+                    self.assertEqual(payload["operation"], operation)
+                    self.assertEqual(payload["kind"], "shared_data_cli_error")
+                    self.assertEqual(before, self.storage_bytes(root))
+
+    def test_missing_reference_operations_are_structured_and_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.invoke(root, "initialize", {}, write=True)
+            before = self.storage_bytes(root)
+            for operation, key in (("source.get", "record_id"), ("knowledge.get", "record_id"),
+                                   ("decision.get", "record_id"), ("work.get", "work_id"),
+                                   ("lifecycle.get", "target_id")):
+                with self.subTest(operation=operation):
+                    result = self.run_cli(root, request={"operation": operation,
+                                          "arguments": {key: SOURCE_ID}})
+                    payload = json.loads(result.stdout)
+                    self.assertEqual(result.returncode, 1, payload)
+                    self.assertFalse(payload["ok"])
+                    self.assertNotIn("unexpected", payload)
+                    self.assertNotIn("Traceback", result.stderr)
+                    self.assertEqual(before, self.storage_bytes(root))
+
+    def test_remaining_public_operations_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.invoke(root, "initialize", {}, write=True)
+
+            def create(operation: str, arguments: dict) -> dict:
+                before = self.storage_bytes(root)
+                denied = self.run_cli(root, request={"operation": operation, "arguments": arguments})
+                self.assertEqual(denied.returncode, 1, denied.stdout)
+                self.assertEqual(json.loads(denied.stdout)["kind"], "write_not_enabled")
+                self.assertEqual(before, self.storage_bytes(root))
+                return self.invoke(root, operation, arguments, write=True)
+
+            source = create("source.create", dict(source_kind="user_statement", locator="request://matrix",
+                evidence_role="primary", verification_status="verified", record_id=SOURCE_ID))
+            self.assertEqual(self.invoke(root, "source.get", {"record_id": SOURCE_ID}), source)
+            self.assertEqual(self.invoke(root, "source.list", {}), [source])
+            self.assertIn("integrity", self.invoke(root, "source.verify", {"record_id": SOURCE_ID}))
+            knowledge = create("knowledge.create", dict(statement="검증된 진술", classification="fact", scope="test",
+                source_ids=[SOURCE_ID], verification_status="verified", verified_by="agent:test"))
+            self.assertEqual(self.invoke(root, "knowledge.get", {"record_id": knowledge["id"]}), knowledge)
+            self.assertEqual(self.invoke(root, "knowledge.list", {}), [knowledge])
+            decision = create("decision.create", {"payload": {
+                "problem": "채택 여부", "requirements": ["근거 보존"],
+                "options": [{"label": "adopt", "impact": "채택"}, {"label": "hold", "impact": "보류"}],
+                "selected_option": "adopt", "rationale": "요건 충족", "impacts": ["현재 목록 포함"],
+                "source_ids": [SOURCE_ID], "requires_user_approval": True,
+                "approval_kind": "standing_policy", "approved_by": "user:test",
+                "decided_at": "2026-09-06T00:00:00Z"}, "timestamp": "2026-09-06T00:00:00Z"})
+            self.assertEqual(self.invoke(root, "decision.get", {"record_id": decision["id"]}), decision)
+            self.assertEqual(self.invoke(root, "decision.list", {}), [decision])
+            states = self.invoke(root, "lifecycle.register_existing", {
+                "actor": "agent:test", "approval_kind": "standing_policy"}, write=True)
+            self.assertEqual({x["payload"]["target_id"] for x in states}, {SOURCE_ID, knowledge["id"], decision["id"]})
+            current = self.invoke(root, "lifecycle.get", {"target_id": SOURCE_ID})
+            self.assertEqual(current["record"], source)
+            self.assertEqual(len(self.invoke(root, "lifecycle.list", {})), 3)
+            self.assertEqual(len(self.invoke(root, "lifecycle.current", {})), 3)
+            history = self.invoke(root, "lifecycle.history", {"target_id": SOURCE_ID})
+            self.assertEqual(len(history), 1)
+            rebuilt = self.invoke(root, "lifecycle.rebuild", {"target_id": SOURCE_ID}, write=True)
+            transition = dict(target_id=SOURCE_ID, expected_state_hash=rebuilt["content_hash"],
+                action="request_review", actor="agent:test", approval_kind="agent_in_scope", reason="재검토")
+            reviewed = create("lifecycle.transition", transition)
+            self.assertEqual(reviewed["payload"]["state"], "review_required")
+            self.assertEqual(len(self.invoke(root, "lifecycle.history", {"target_id": SOURCE_ID})), 2)
+            self.assertIsInstance(self.invoke(root, "lifecycle.audit", {"actor": "agent:test"}, write=True), list)
+            work = create("work.create", dict(request=request_payload(), actor="user:test", next_action="검증", work_id=WORK_ID))
+            self.assertEqual(self.invoke(root, "work.list", {"status": "requested"}), [work])
+
     def test_info_matches_declaration_and_request_schema(self) -> None:
         from core_check.gate import capture_host_core_baseline
 

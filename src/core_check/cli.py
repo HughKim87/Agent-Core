@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 import sys
 
-from .context import build as build_context
+from .context import STARTUP_BUDGET_CHARS, build as build_context
 from .declarations import consumer_contract, declared_compatibility
 from .gate import (
     HostConsumerBaseline,
@@ -144,12 +144,15 @@ def cmd_verify(core_root: Path, consumer_root: Path | None = None) -> int:
     return EXIT_OK if report.ok else EXIT_FINDINGS
 
 
-def cmd_context(core_root: Path, consumer_root: Path, matched: list[str]) -> int:
+def cmd_context(
+    core_root: Path, consumer_root: Path, matched: list[str],
+    budget: int = STARTUP_BUDGET_CHARS,
+) -> int:
     """소비자: scope가 있는 시작 문맥을 구성하고 재현성 지문을 반환한다."""
     baseline = _host_core_baseline(core_root, consumer_root, require_clean=True)
     try:
         contract_version = _version(core_root)
-        package = build_context(core_root, consumer_root, matched)
+        package = build_context(core_root, consumer_root, matched, budget=budget)
     finally:
         _require_host_core_unchanged(core_root, baseline)
     payload = package.as_dict()
@@ -177,6 +180,8 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument(
         "--rule", action="append", default=[], help="core: 또는 consumer: scope가 있는 규칙 ID"
     )
+    context.add_argument("--budget", type=int, default=STARTUP_BUDGET_CHARS,
+                         help="시작 문맥의 양의 정수 문자 예산 (기본 20000)")
     return parser
 
 
@@ -207,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "context":
             if consumer_root is None:
                 raise CheckError("context 명령에는 --consumer-root가 필요하다")
-            return cmd_context(core_root, consumer_root, args.rule)
+            return cmd_context(core_root, consumer_root, args.rule, args.budget)
     except CheckError as exc:
         _emit({"ok": False, "error": str(exc), "kind": type(exc).__name__})
         return EXIT_UNUSABLE

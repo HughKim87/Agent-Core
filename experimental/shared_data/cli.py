@@ -16,7 +16,7 @@ from .knowledge import KnowledgeService
 from .lifecycle import LifecycleService
 from .record import DataPathError, RecordValidationError
 from .store import RecordIOError
-from .work_state import WorkStateService
+from .work_state import WorkStateService, validate_work_request
 from . import create_shared_data_store
 
 
@@ -386,7 +386,9 @@ class Dispatcher:
 
     def _request_compare(self, raw: Mapping[str, Any]) -> Any:
         values = _arguments(raw, required={"previous", "current"})
-        return compare_request_contract(values["previous"], values["current"])
+        return compare_request_contract(
+            validate_work_request(values["previous"]), validate_work_request(values["current"])
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:

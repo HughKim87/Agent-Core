@@ -133,6 +133,13 @@ python -B -m core_check --core-root <CORE_PATH> --consumer-root . gate
 
 `not_run`이 있는 결과는 성공이 아니다.
 
+`context --rule`은 반복 지정할 수 있다. 여러 규칙을 조합해 기본 20,000자 예산을 넘으면 `--budget 40000`처럼 필요한 양의 정수 문자 예산을 명시한다. 예산 초과는 내용을 절단하지 않고 `ContextBudgetError`로 거부한다. 동일 입력·선택에서 충분한 예산만 달라지면 내용·scope·fingerprint는 같다.
+
+```powershell
+python -B -m core_check --core-root <CORE_PATH> --consumer-root . context --rule core:rules/work-contract.md --rule core:rules/staged-work-design.md --budget 40000
+```
+
+
 ### Host의 Core 읽기 전용 실행
 
 `host`는 Core를 라이브러리 입력으로만 사용한다. Core 안에서 명령을 실행하거나 Core를 현재 작업 디렉터리, cache, 임시 경로, 로그 경로 또는 출력 경로로 사용하지 않는다. 모든 쓰기 가능 경로는 소비 root 안에 명시한다. 이 저장소의 Python 참조 구현은 bytecode cache를 막기 위해 `-B`를 사용하지만, 상위 불변식은 특정 실행기가 아니라 Core와 쓰기 경계의 완전한 분리다.

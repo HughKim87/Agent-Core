@@ -25,6 +25,8 @@
 
 `quick`과 `standard`는 영구 단계 설계 포인터를 저장하지 않는다. `controlled`는 `phase_id`, 소비 root 상대 `design_ref`, 검토한 내용의 `design_fingerprint`가 모두 필요하다. 생성·전이 직전에 현재 파일 bytes를 다시 hash하며 보호 경계·Runtime storage·root 밖 파일은 읽지 않는다. hash 차이는 내용 revision 변경이므로 event append 전에 `design_invalidated` 오류로 변경 검토를 요구한다. 오류 이름은 호환성을 위해 유지하며 그 자체가 재승인 판정은 아니다.
 
+공개 `request.compare`는 previous·current 각각에 작업 생성과 같은 work request 필수 field·type·execution 검증과 정규화를 적용한다. 빈 object·array·null·미지원 field는 쓰기 없이 구조화된 계약 오류로 거부한다. 비교는 설계 파일의 현재 내용이나 사용자 승인을 검증하는 작업이 아니다.
+
 `request.compare`는 요청 field 또는 실행 등급·단계·설계 경로가 바뀌면 `invalidated`와 `reapproval_required`를 반환한다. 같은 단계·경로의 fingerprint만 바뀌면 두 값은 false이고 `design_review_required`는 true다. 이는 내용 검토 필요 판정이며 의미가 같다는 자동 승인이나 증명이 아니다.
 
 승인된 목표·범위·권한·성공 조건이 유지되는 서식·설명·검증 근거 갱신은 `work.refresh_design`으로 같은 작업에서 이어 간다. 호출자는 `work_id`, `expected_state_hash`, `actor`, 현재 파일과 일치하는 `reviewed_fingerprint`, 명시적 `decisions_unchanged: true`, 비어 있지 않은 `evidence_refs`와 선택적 `timestamp`를 제공한다. Runtime은 호출자의 의미 검토를 추론하지 않는다. 결정이 달라졌다면 이 operation을 사용할 수 없으며 작업 계약과 필요한 승인을 다시 확정한다.

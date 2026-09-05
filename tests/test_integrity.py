@@ -868,6 +868,11 @@ class ContextTest(unittest.TestCase):
             "별도 실패 사건 문서는 Core gate가 거부하며 시작 문맥에 포함하지 않는다",
         )
 
+    def test_budget_rejects_non_positive_or_non_integer(self) -> None:
+        for value in (0, -1, True, 1.5, "20000", None):
+            with self.subTest(value=value), self.assertRaises(self.context.ContextBudgetError):
+                self.context.build(self.core, self.consumer, budget=value)
+
     def test_startup_context_is_within_budget(self) -> None:
         package = self.context.build(self.core, self.consumer)
         self.assertLessEqual(package.chars, self.context.STARTUP_BUDGET_CHARS)
@@ -1327,6 +1332,42 @@ class PublicInterfaceTest(unittest.TestCase):
         )
         self.assertEqual(code, self.cli.EXIT_UNUSABLE)
         self.assertEqual(payload["kind"], "CheckError")
+
+    def test_context_explicit_budget_preserves_fingerprint_and_rejects_overflow(self) -> None:
+        args = ("--core-root", str(self.core), "--consumer-root", str(self.consumer),
+                "context", "--rule", "core:rules/sample.md")
+        code, default = self._run(*args)
+        self.assertEqual(code, self.cli.EXIT_OK)
+        code, exact = self._run(*args, "--budget", str(default["chars"]))
+        self.assertEqual(code, self.cli.EXIT_OK)
+        self.assertEqual(default, exact)
+        for budget in (default["chars"] - 1, 0, -1):
+            code, rejected = self._run(*args, "--budget", str(budget))
+            self.assertEqual(code, self.cli.EXIT_UNUSABLE)
+            self.assertEqual(rejected["kind"], "ContextBudgetError")
+            self.assertNotIn("unexpected", rejected)
+
+    def test_context_real_core_rule_composition(self) -> None:
+        # Copy the released Core text into a temporary packaging fixture.
+        actual_core = self.consumer / "actual-core"
+        shutil.copytree(ROOT, actual_core,
+                        ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"))
+        policy = self.consumer / "PROJECT_RULES.md"
+        policy.write_text(policy.read_text(encoding="utf-8").replace(
+            '"core_path": "core"', '"core_path": "actual-core"'), encoding="utf-8")
+        rules = ["work-contract", "rule-governance", "document-work", "staged-work-design"]
+        args = ["--core-root", str(actual_core), "--consumer-root", str(self.consumer), "context"]
+        for rule in rules:
+            args.extend(["--rule", f"core:rules/{rule}.md"])
+        code, package = self._run(*args, "--budget", "1000000")
+        self.assertEqual(code, self.cli.EXIT_OK, package)
+        self.assertEqual(len(package["optional"]), len(rules))
+        code, exact = self._run(*args, "--budget", str(package["chars"]))
+        self.assertEqual(code, self.cli.EXIT_OK)
+        self.assertEqual(package, exact)
+        code, rejected = self._run(*args, "--budget", str(package["chars"] - 1))
+        self.assertEqual(code, self.cli.EXIT_UNUSABLE)
+        self.assertEqual(rejected["kind"], "ContextBudgetError")
 
     def test_context_requires_consumer_root(self) -> None:
         code, payload = self._run("--core-root", str(self.core), "context")

@@ -81,6 +81,8 @@ def build(
     budget: int = STARTUP_BUDGET_CHARS,
 ) -> ContextPackage:
     """필수 세 문서와 현재 행동에 일치한 scoped 규칙만 선택한다."""
+    if type(budget) is not int or budget <= 0:
+        raise ContextBudgetError("시작 컨텍스트 예산은 양의 정수여야 한다")
     core_root = core_root.resolve()
     consumer_root = consumer_root.resolve()
     contract = consumer_contract(core_root, consumer_root)
