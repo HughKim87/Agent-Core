@@ -572,13 +572,76 @@ def _startup_context(core_root: Path, consumer_root: Path) -> StepResult:
 
 _UNITTEST_RUNNER = r"""
 import contextlib, json, sys, unittest
+class EvidenceResult(unittest.TextTestResult):
+    # Count methods with observed non-skip outcomes, independently of skip events.
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.executed = 0
+        self.subtests_executed = 0
+        self.skipped_methods = 0
+        self.skipped_subtests = 0
+        self.fixture_skips = 0
+        self._active = None
+        self._observed = False
+
+    def startTest(self, test):
+        super().startTest(test)
+        self._active = test
+        self._observed = False
+
+    def stopTest(self, test):
+        self.executed += int(self._observed)
+        self._active = None
+        super().stopTest(test)
+
+    def addSuccess(self, test):
+        self._observed = True
+        super().addSuccess(test)
+
+    def addFailure(self, test, err):
+        self._observed = self._active is not None
+        super().addFailure(test, err)
+
+    def addError(self, test, err):
+        self._observed = self._active is not None
+        super().addError(test, err)
+
+    def addExpectedFailure(self, test, err):
+        self._observed = True
+        super().addExpectedFailure(test, err)
+
+    def addUnexpectedSuccess(self, test):
+        self._observed = True
+        super().addUnexpectedSuccess(test)
+
+    def addSubTest(self, test, subtest, err):
+        self._observed = True
+        self.subtests_executed += 1
+        super().addSubTest(test, subtest, err)
+
+    def addSkip(self, test, reason):
+        if self._active is None:
+            self.fixture_skips += 1
+        elif test is self._active:
+            self.skipped_methods += 1
+        else:
+            self.skipped_subtests += 1
+        super().addSkip(test, reason)
+
+
 with contextlib.redirect_stdout(sys.stderr):
     suite = unittest.TestLoader().discover(sys.argv[1], pattern="test_*.py")
-    result = unittest.TextTestRunner(stream=sys.stderr, verbosity=1).run(suite)
+    result = unittest.TextTestRunner(stream=sys.stderr, verbosity=1, resultclass=EvidenceResult).run(suite)
 skipped = [{"test": str(test), "reason": reason} for test, reason in result.skipped]
-executed = result.testsRun - len(skipped)
+executed = result.executed
 status = "fail" if not result.wasSuccessful() else ("pass" if executed else "not_run")
 print(json.dumps({"status": status, "tests_run": result.testsRun, "executed": executed,
+                  "unexecuted_methods": result.testsRun - executed,
+                  "subtests_executed": result.subtests_executed,
+                  "skipped_methods": result.skipped_methods,
+                  "skipped_subtests": result.skipped_subtests,
+                  "fixture_skips": result.fixture_skips,
                   "skipped": len(skipped), "skip_reasons": skipped,
                   "failures": len(result.failures), "errors": len(result.errors),
                   "expected_failures": len(result.expectedFailures),
@@ -602,14 +665,17 @@ def _test_suite(tests_dir: Path, *, execution_root: Path, environment: dict[str,
     try:
         payload = json.loads(completed.stdout)
         counts = ("tests_run", "executed", "skipped", "failures", "errors",
-                  "expected_failures", "unexpected_successes")
+                  "expected_failures", "unexpected_successes", "unexecuted_methods",
+                  "subtests_executed", "skipped_methods", "skipped_subtests", "fixture_skips")
         if not isinstance(payload, dict) or any(
             type(payload.get(key)) is not int or payload[key] < 0 for key in counts
         ):
             raise ValueError("invalid test counts")
         if (not isinstance(payload.get("skip_reasons"), list)
                 or len(payload["skip_reasons"]) != payload["skipped"]
-                or payload["tests_run"] != payload["executed"] + payload["skipped"]):
+                or payload["tests_run"] != payload["executed"] + payload["unexecuted_methods"]
+                or payload["skipped"] != (payload["skipped_methods"] + payload["skipped_subtests"]
+                                           + payload["fixture_skips"])):
             raise ValueError("inconsistent test counts")
         status = ("fail" if payload["failures"] or payload["errors"] or payload["unexpected_successes"]
                   else "pass" if payload["executed"] else "not_run")
@@ -628,7 +694,7 @@ def _test_suite(tests_dir: Path, *, execution_root: Path, environment: dict[str,
 def _tests(core_root: Path) -> StepResult:
     tests_dir = core_root / "tests"
     if not tests_dir.is_dir():
-        return StepResult("regression-tests", "not_applicable", "tests 디렉터리가 없다")
+        return StepResult("regression-tests", "not_run", "필수 tests 디렉터리가 없다")
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONUTF8"] = "1"
@@ -700,7 +766,11 @@ def _optional(
             detail = completed.stderr.strip() or completed.stdout.strip() or "info 결과가 선언과 다르다"
             return StepResult("optional-features", "fail", f"{capability_id}: {detail[-500:]}")
         tests_dir = core_root / declaration["entry_module"].replace(".", "/") / "tests"
-        if tests_dir.is_dir() and run_internal_tests:
+        if run_internal_tests and not tests_dir.is_dir():
+            return StepResult("optional-features", "not_run",
+                              f"{capability_id}: 필수 tests 디렉터리가 없다",
+                              evidence={"target": str(tests_dir), "suites": suites})
+        if run_internal_tests:
             tested = _test_suite(tests_dir, execution_root=execution_root, environment=environment)
             suites[capability_id] = tested.as_dict()
             if tested.status != "pass":

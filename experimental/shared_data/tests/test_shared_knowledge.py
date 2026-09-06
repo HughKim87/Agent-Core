@@ -83,6 +83,27 @@ def decision_payload() -> dict:
 
 
 class KnowledgeSchemaTests(unittest.TestCase):
+    def test_enum_validators_reject_non_strings_with_domain_error(self):
+        from experimental.shared_data.knowledge import (
+            validate_source_payload, validate_knowledge_payload, validate_decision_payload,
+        )
+        source = dict(source_kind="user_statement", locator="request://type-test",
+                      observed_at="2026-08-17T01:00:00Z", verification_status="observed",
+                      evidence_role="primary", version_or_hash=None)
+        knowledge = dict(statement="A test statement.", classification="fact", scope="fixture",
+                         source_ids=[SOURCE_ID], verification_status="candidate", verified_by=None)
+        for validator, valid, fields in (
+            (validate_source_payload, source, ("source_kind", "verification_status", "evidence_role")),
+            (validate_knowledge_payload, knowledge, ("classification", "verification_status")),
+            (validate_decision_payload, decision_payload(), ("approval_kind",)),
+        ):
+            validator(valid)
+            for field in fields:
+                for bad in ([], {}, None, False, 0):
+                    with self.subTest(field=field, bad=bad):
+                        with self.assertRaises(KnowledgeRecordError):
+                            validator({**valid, field: bad})
+
     def test_schema_fields_and_enums_match_runtime(self) -> None:
         schemas = ROOT / "experimental" / "shared_data" / "schemas"
         source = json.loads((schemas / "source-payload-v1.schema.json").read_text(encoding="utf-8"))

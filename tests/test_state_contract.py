@@ -54,6 +54,25 @@ class StateContractTest(unittest.TestCase):
             state.write_text(text, encoding="utf-8")
             return state_contract_findings(root, state)
 
+    def test_nested_fields_do_not_parse_quoted_or_code_examples(self):
+        for field, expected in (
+            ('- 예시: `runtime: {failure_count=2}`', False),
+            ('- 설명: "예시는 {failure_count=2}입니다"', False),
+            ('- runtime: {note: "예시는 {failure_count=2}입니다"}', False),
+            ('- runtime: {note: `failure_count: 2`}', False),
+            ('- runtime: {note: "literal, failure_count: 2", deployment_failure_count: 2}', False),
+            ('- runtime: {note: `example`, nested: {"currentFailureCount": 2}}', True),
+            ('- runtime: {note: "literal, braces {}", failure_count=2}', True),
+            ('- `failure_count`: 2', True),
+            ('- `failure_count: 2`', False),
+            ('- ``runtime: {failure_count=2}``', False),
+            ('| runtime | {failure_count=2} |', True),
+            ('- 확인된 실패 횟수: 2', True),
+        ):
+            with self.subTest(field=field):
+                findings = self._findings(VALID_STATE.replace("- 없음", field, 1))
+                self.assertEqual(any("임시 실패 상태" in f.message for f in findings), expected, findings)
+
     def test_valid_consumer_state_passes(self) -> None:
         self.assertEqual(self._findings(VALID_STATE), [])
 

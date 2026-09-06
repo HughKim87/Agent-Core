@@ -222,6 +222,14 @@ def build_clean(root: Path) -> None:
         },
     )
     (root / "data.json").write_text('{"a": 1}\n', encoding="utf-8")
+    (root / "tests").mkdir()
+    (root / "tests" / "test_case.py").write_text(
+        "import json, unittest\nfrom pathlib import Path\n"
+        "class Fixture(unittest.TestCase):\n"
+        " def test_data(self): self.assertEqual(json.loads((Path(__file__).resolve().parents[1] / 'data.json').read_text()), {'a': 1})\n",
+        encoding="utf-8",
+    )
+
 
 
 def build_consumer(base: Path) -> tuple[Path, Path]:
@@ -1724,10 +1732,15 @@ class IntegrationGateTest(unittest.TestCase):
 
     def test_not_applicable_does_not_fail_but_not_run_does(self) -> None:
         result = self.gate.run(self.root)
-        regression = [s for s in result.steps if s.name == "regression-tests"][0]
-        self.assertEqual(regression.status, "not_applicable")
+        optional = next(s for s in result.steps if s.name == "optional-features")
+        self.assertEqual(optional.status, "not_applicable")
+        self.assertTrue(result.ok, result.as_dict())
+        (self.root / "tests").rename(self.root / "unavailable-tests")
+        result = self.gate.run(self.root)
+        regression = next(s for s in result.steps if s.name == "regression-tests")
+        self.assertEqual(regression.status, "not_run")
         self.assertTrue(regression.required)
-        self.assertTrue(result.ok, "not_applicable 은 실패가 아니다")
+        self.assertFalse(result.ok)
 
     def test_single_required_failure_fails_whole_gate(self) -> None:
         (self.root / "data.json").write_text("{broken", encoding="utf-8")
@@ -1750,7 +1763,7 @@ class IntegrationGateTest(unittest.TestCase):
         import os
 
         tests = self.root / "tests"
-        tests.mkdir()
+        tests.mkdir(exist_ok=True)
         (tests / "test_failure.py").write_text(
             "import unittest\n\n"
             "class FailureTest(unittest.TestCase):\n"
@@ -2365,9 +2378,101 @@ class IntegrationGateTest(unittest.TestCase):
             self.assertEqual(statuses["regression-tests"], "not_run")
             self.assertEqual(statuses["core-no-side-effects"], "pass")
 
+    def test_subtest_and_fixture_execution_evidence(self):
+        cases = [('import unittest\n'
+          'class T(unittest.TestCase):\n'
+          ' def test_it(self):\n'
+          '  with self.subTest(i=1): self.assertEqual(1,1)\n'
+          "  with self.subTest(i=2): self.skipTest('fixture')\n",
+          'pass',
+          1,
+          1,
+          0),
+         ('import unittest\n'
+          'class T(unittest.TestCase):\n'
+          ' def test_it(self):\n'
+          '  for i in range(2):\n'
+          "   with self.subTest(i=i): self.skipTest('fixture')\n",
+          'not_run',
+          0,
+          2,
+          0),
+         ('import unittest\n'
+          'class T(unittest.TestCase):\n'
+          ' def test_it(self):\n'
+          '  with self.subTest(outer=1):\n'
+          "   with self.subTest(inner=1): self.skipTest('fixture')\n",
+          'not_run',
+          0,
+          1,
+          0),
+         ('import unittest\n'
+          'class T(unittest.TestCase):\n'
+          ' @classmethod\n'
+          " def setUpClass(cls): raise unittest.SkipTest('fixture')\n"
+          ' def test_it(self): pass\n',
+          'not_run',
+          0,
+          1,
+          1),
+         ('import unittest\n'
+          "def setUpModule(): raise unittest.SkipTest('fixture')\n"
+          'class T(unittest.TestCase):\n'
+          ' def test_it(self): pass\n',
+          'not_run',
+          0,
+          1,
+          1),
+         ('import unittest\n'
+          'class T(unittest.TestCase):\n'
+          ' def test_it(self):\n'
+          "  with self.subTest(i=1): self.fail('fixture')\n"
+          "  with self.subTest(i=2): self.skipTest('fixture')\n",
+          'fail',
+          1,
+          1,
+          0),
+         ('import unittest\n'
+          'class T(unittest.TestCase):\n'
+          ' @unittest.expectedFailure\n'
+          " def test_it(self): self.fail('expected')\n",
+          'pass',
+          1,
+          0,
+          0),
+         ('import unittest\n'
+          'class T(unittest.TestCase):\n'
+          ' @unittest.expectedFailure\n'
+          ' def test_it(self): pass\n',
+          'fail',
+          1,
+          0,
+          0),
+         ('import unittest\n'
+          'class T(unittest.TestCase):\n'
+          ' @classmethod\n'
+          " def setUpClass(cls): raise RuntimeError('fixture')\n"
+          ' def test_it(self): pass\n',
+          'fail',
+          0,
+          0,
+          0)]
+        for source, status, executed, skipped, fixture_skips in cases:
+            with self.subTest(source=source):
+                (self.root / "tests" / "test_case.py").write_text(source, encoding="utf-8")
+                step = self.gate._tests(self.root)
+                self.assertEqual(step.status, status, step.as_dict())
+                result = step.evidence
+                self.assertEqual(result["status"], status)
+                self.assertEqual(result["executed"], executed)
+                self.assertEqual(result["skipped"], skipped)
+                self.assertEqual(result["fixture_skips"], fixture_skips)
+                self.assertEqual(result["tests_run"], executed + result["unexecuted_methods"])
+                self.assertEqual(skipped, result["skipped_methods"] + result["skipped_subtests"] + fixture_skips)
+
     def test_test_runner_reports_executed_skipped_and_failures(self):
         tests = self.root / "tests"
-        tests.mkdir()
+        tests.mkdir(exist_ok=True)
         for source, status, executed, skipped, errors in (
             ("", "not_run", 0, 0, 0),
             ("import unittest\n@unittest.skip('fixture reason')\nclass T(unittest.TestCase):\n def test_it(self): pass\n", "not_run", 0, 1, 0),
@@ -2385,9 +2490,28 @@ class IntegrationGateTest(unittest.TestCase):
                     self.assertEqual(step.evidence["skip_reasons"][0]["reason"], "fixture reason")
                 self.assertTrue(step.detail)
 
+    def test_public_gate_rejects_missing_required_suites(self):
+        with tempfile.TemporaryDirectory() as raw:
+            packaged = Path(raw) / "core"
+            shutil.copytree(ROOT, packaged,
+                            ignore=shutil.ignore_patterns(".git", "tests", "__pycache__", "*.pyc"))
+            initialize_clean_git(packaged)
+            completed = subprocess.run(
+                [sys.executable, "-B", "-I", "-c",
+                 "import sys,runpy;sys.path.insert(0,sys.argv.pop(1));runpy.run_module('core_check',run_name='__main__')",
+                 str(packaged / "src"), "--core-root", str(packaged), "gate"],
+                capture_output=True, text=True, encoding="utf-8", check=False,
+            )
+            payload = json.loads(completed.stdout)
+            self.assertNotEqual(completed.returncode, 0, payload)
+            self.assertFalse(payload["ok"])
+            self.assertEqual(self.gate._tests(packaged).status, "not_run")
+            optional = self.gate._optional(packaged, execution_root=packaged, run_internal_tests=True)
+            self.assertEqual(optional.status, "not_run", optional.as_dict())
+
     def test_test_runner_unavailable_or_early_exit_is_not_pass(self):
         tests = self.root / "tests"
-        tests.mkdir()
+        tests.mkdir(exist_ok=True)
         with patch.object(self.gate.subprocess, "run", side_effect=OSError("unavailable")):
             self.assertEqual(self.gate._tests(self.root).status, "not_run")
         (tests / "test_exit.py").write_text("import os\nos._exit(0)\n", encoding="utf-8")

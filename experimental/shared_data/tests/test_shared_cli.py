@@ -256,6 +256,26 @@ class PublicSharedDataCliTests(unittest.TestCase):
         return {p.relative_to(storage).as_posix(): p.read_bytes()
                 for p in storage.rglob("*") if p.is_file()}
 
+    def test_source_enum_types_reject_without_storage_changes(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.invoke(root, "initialize", {}, write=True)
+            valid = dict(source_kind="user_statement", locator="request://type-check", evidence_role="primary")
+            for field in ("source_kind", "verification_status", "evidence_role"):
+                for bad in ([], {}, False, 0, "", "unknown"):
+                    with self.subTest(field=field, bad=bad):
+                        before = self.storage_bytes(root)
+                        completed = self.run_cli(root, request={"operation": "source.create",
+                            "arguments": {**valid, field: bad}}, write=True)
+                        payload = json.loads(completed.stdout)
+                        self.assertEqual(completed.returncode, 1, payload)
+                        self.assertEqual(payload["kind"], "knowledge_validation", payload)
+                        self.assertFalse(payload.get("unexpected", False), payload)
+                        self.assertEqual(self.storage_bytes(root), before)
+            for status in (None, "observed", "verified"):
+                record = self.invoke(root, "source.create", {**valid, "verification_status": status}, write=True)
+                self.assertEqual(record["payload"]["verification_status"], status or "observed")
+
     def test_request_compare_validates_both_inputs_without_writes(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)

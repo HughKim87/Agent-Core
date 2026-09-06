@@ -975,11 +975,59 @@ def _state_field_key(line: str) -> str | None:
         key = cells[0]
     else:
         stripped = re.sub(r"^[-*+]\s+", "", stripped)
-        match = re.match(r"^[`\"']?(.+?)[`\"']?\s*[:：=]\s*\S", stripped)
+        match = re.match(
+            r"^(?:(?P<quote>`+|[\"'])(?P<quoted>.*?)(?P=quote)|(?P<plain>[^`\"'：:=]+?))\s*[:：=]\s*\S",
+            stripped,
+        )
         if match is None:
             return None
-        key = match.group(1)
+        key = match.group("quoted") if match.group("quote") else match.group("plain")
     return key.strip(" `\"'")
+
+
+def _object_state_keys(value: str) -> Iterable[str]:
+    """Read object-valued fields; quoted/code values remain opaque examples."""
+    value = value.strip()
+    if not value.startswith("{"):
+        return
+    # Tokenize strings before punctuation so braces/commas inside text cannot
+    # create fields. Backtick runs also preserve Markdown code-span boundaries.
+    token_pattern = re.compile(
+        r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|(?P<ticks>`+)[\s\S]*?(?P=ticks)|[{}\[\],:=]|[^\s{}\[\],:=\"'`]+"
+    )
+    tokens = [match.group(0) for match in token_pattern.finditer(value)]
+
+    def object_keys(index: int):
+        index += 1  # opening brace
+        while index < len(tokens) and tokens[index] != "}":
+            key = tokens[index]
+            index += 1
+            if index >= len(tokens) or tokens[index] not in (":", "="):
+                return index
+            index += 1
+            if index >= len(tokens) or tokens[index] in (",", "}"):
+                return index
+            yield key.strip(" `\"'")
+            if tokens[index] == "{":
+                index = yield from object_keys(index)
+            else:
+                depth = 0
+                while index < len(tokens):
+                    token = tokens[index]
+                    if depth == 0 and token in (",", "}"):
+                        break
+                    if token in ("[", "{"):
+                        depth += 1
+                    elif token in ("]", "}"):
+                        depth -= 1
+                    index += 1
+            if index < len(tokens) and tokens[index] == ",":
+                index += 1
+            else:
+                break
+        return index + 1
+
+    yield from object_keys(0)
 
 
 def _has_ephemeral_failure_state(text: str) -> bool:
@@ -992,13 +1040,13 @@ def _has_ephemeral_failure_state(text: str) -> bool:
             if stripped.startswith(("#", ">")):
                 continue
             keys = [_state_field_key(line)]
-            keys.extend(
-                match.group(1).strip(" `\"'")
-                for match in re.finditer(
-                    r"(?:\{|,)\s*[`\"']?([^,:={}]+?)[`\"']?\s*[:=]\s*[^\s,}]",
-                    stripped,
-                )
-            )
+            if stripped.startswith("|"):
+                cells = stripped.strip("|").split("|")
+                value = cells[1].strip() if len(cells) > 1 else ""
+            else:
+                field = re.match(r"^[`\"']?.+?[`\"']?\s*[:：=]\s*(.*)$", stripped)
+                value = field.group(1) if field and keys[0] is not None else ""
+            keys.extend(_object_state_keys(value))
             for key in keys:
                 if key is None:
                     continue

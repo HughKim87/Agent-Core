@@ -129,11 +129,11 @@ def validate_source_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     source_kind = payload["source_kind"]
     status = payload["verification_status"]
     role = payload["evidence_role"]
-    if source_kind not in SOURCE_KINDS:
+    if not isinstance(source_kind, str) or source_kind not in SOURCE_KINDS:
         raise KnowledgeRecordError(f"지원하지 않는 source_kind: {source_kind}")
-    if status not in SOURCE_VERIFICATION_STATUSES:
+    if not isinstance(status, str) or status not in SOURCE_VERIFICATION_STATUSES:
         raise KnowledgeRecordError(f"지원하지 않는 verification_status: {status}")
-    if role not in SOURCE_EVIDENCE_ROLES:
+    if not isinstance(role, str) or role not in SOURCE_EVIDENCE_ROLES:
         raise KnowledgeRecordError(f"지원하지 않는 evidence_role: {role}")
     locator = _non_empty(payload["locator"], "locator")
     observed_at = payload["observed_at"]
@@ -165,12 +165,12 @@ def validate_knowledge_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     if "\n" in statement or "\r" in statement or len(statement) > 500:
         raise KnowledgeRecordError("statement는 줄바꿈 없는 500자 이하 한 문장이어야 한다")
     classification = payload["classification"]
-    if classification not in KNOWLEDGE_CLASSES:
+    if not isinstance(classification, str) or classification not in KNOWLEDGE_CLASSES:
         raise KnowledgeRecordError(f"지원하지 않는 classification: {classification}")
     scope = _non_empty(payload["scope"], "scope")
     source_ids = _uuid_list(payload["source_ids"], "source_ids")
     status = payload["verification_status"]
-    if status not in KNOWLEDGE_VERIFICATION_STATUSES:
+    if not isinstance(status, str) or status not in KNOWLEDGE_VERIFICATION_STATUSES:
         raise KnowledgeRecordError(f"지원하지 않는 verification_status: {status}")
     verifier = payload["verified_by"]
     if status == "verified":
@@ -216,7 +216,7 @@ def validate_decision_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(requires_user, bool):
         raise KnowledgeRecordError("requires_user_approval은 boolean이어야 한다")
     approval_kind = payload["approval_kind"]
-    if approval_kind not in DECISION_APPROVAL_KINDS:
+    if not isinstance(approval_kind, str) or approval_kind not in DECISION_APPROVAL_KINDS:
         raise KnowledgeRecordError(f"지원하지 않는 approval_kind: {approval_kind}")
     if requires_user and approval_kind not in {"user", "standing_policy"}:
         raise KnowledgeRecordError("사용자 승인 필요 결정은 user 또는 standing_policy 승인이 필요하다")
@@ -280,6 +280,14 @@ class KnowledgeService:
         record_id: str | None = None,
         timestamp: datetime | None = None,
     ) -> dict[str, Any]:
+        for field, value, allowed in (
+            ("source_kind", source_kind, SOURCE_KINDS),
+            ("evidence_role", evidence_role, SOURCE_EVIDENCE_ROLES),
+            ("verification_status", "observed" if verification_status is None else verification_status,
+             SOURCE_VERIFICATION_STATUSES),
+        ):
+            if not isinstance(value, str) or value not in allowed:
+                raise KnowledgeRecordError(f"지원하지 않는 {field}: {value}")
         normalized_time, rendered_time = _render_time(timestamp)
         locator = _non_empty(locator, "locator")
         if source_kind in {"local_document", "local_data"}:
@@ -292,7 +300,7 @@ class KnowledgeService:
             version_or_hash = actual_hash
             verification_status = "verified"
         else:
-            verification_status = verification_status or "observed"
+            verification_status = "observed" if verification_status is None else verification_status
         payload = validate_source_payload(
             {
                 "source_kind": source_kind,
