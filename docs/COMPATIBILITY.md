@@ -98,7 +98,7 @@
 3. 부모 정책에 소비 계약 선언, 도메인 route, 보호 경로를 둔다.
 4. Core 내부 진입·상태 문서에 대한 의존을 제거한다.
 5. 기존 `--root` 호출을 Core 자체는 `--core-root`, 소비 통합은 `--consumer-root`로 바꾼다.
-6. 소비 통합 gate를 통과한 뒤 부모의 submodule gitlink를 갱신한다.
+6. [소비 안내](CONSUMER_GUIDE.md) §7에 따라 이전할 소비 파일과 Core gitlink를 격리된 후보 부모 snapshot에 고정하고 Host 소비 gate를 실행한다. 통과한 입력을 승인된 실제 소비 작업에서 반영한 뒤, 실제 부모 HEAD·index·Core가 일치하는 상태의 소비 gate로 완료를 확인한다.
 
 ## 6. 의존성과 텍스트
 

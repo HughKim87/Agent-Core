@@ -33,14 +33,14 @@ Core SHA를 다른 문서나 선언에 다시 적지 않는다.
 
 ## 3. Core 연결
 
-소비 저장소 루트에서 원하는 상대경로를 정해 Core 저장소 전체를 submodule로 추가한다.
+최초 연결은 §7의 격리된 후보 Consumer에서 시작한다. 그 후보 root에서 원하는 상대경로를 정해 Core 저장소 전체를 submodule로 추가한다.
 
 ```powershell
 git submodule add <AGENT_CORE_REMOTE> <CORE_PATH>
 git submodule update --init --recursive
 ```
 
-`CORE_PATH`는 저장소 안쪽의 상대경로여야 한다. 개인키·토큰·사용자별 절대경로를 저장소 파일에 기록하지 않는다.
+`CORE_PATH`는 저장소 안쪽의 상대경로여야 한다. 개인키·토큰·사용자별 절대경로를 저장소 파일에 기록하지 않는다. §4·5의 소비 입력과 `.gitmodules`·gitlink를 후보 부모 commit에 포함한 다음 §7의 후보 gate·실제 반영·반영 후 gate를 수행한다. 부모 HEAD에 gitlink가 없는 최초 연결 상태는 Host 소비 완료 상태가 아니다.
 
 이미 Core가 연결된 저장소를 clone할 때는 다음 중 하나를 사용한다.
 
@@ -133,6 +133,8 @@ python -B -m core_check --core-root <CORE_PATH> --consumer-root . gate
 
 `not_run`이 있는 결과는 성공이 아니다.
 
+새 revision을 checkout하거나 gitlink만 stage한 상태의 Host gate는 revision 불일치로 실패한다. `verify`는 그 원인을 finding으로 보여줄 수 있지만 종료 코드 `1`을 후보 통과로 해석하지 않는다. 갱신 절차와 각 gate의 검증 대상은 §7을 따른다.
+
 `context --rule`은 반복 지정할 수 있다. 여러 규칙을 조합해 기본 20,000자 예산을 넘으면 `--budget 40000`처럼 필요한 양의 정수 문자 예산을 명시한다. 예산 초과는 내용을 절단하지 않고 `ContextBudgetError`로 거부한다. 동일 입력·선택에서 충분한 예산만 달라지면 내용·scope·fingerprint는 같다.
 
 ```powershell
@@ -192,11 +194,32 @@ $request | python -B -I -c $bootstrap `
 
 ## 7. Core 버전 갱신
 
-1. 소비 저장소 작업 트리를 깨끗하게 만든다.
-2. Core submodule에서 가져올 원격 commit을 fetch한다.
-3. 검증된 Core commit을 checkout한다.
-4. 소비 통합 gate를 실행한다.
-5. 부모 저장소에서 변경된 gitlink만 검토·commit한다.
+### 후보와 실제 소비 반영
+
+Host 소비 완료에는 부모 HEAD·index gitlink와 실행 Core HEAD의 일치가 필요하다. 따라서 실제 소비 저장소에서 새 Core를 checkout한 뒤 부모 commit 전에 gate를 통과시키려는 순서는 성립하지 않는다. stage만 추가해도 부모 HEAD와 index가 달라 실패한다. 아래 절차는 검증 대상인 후보 부모 snapshot을 먼저 만들며, 기존 gate의 결속 조건을 유지한다.
+
+1. Maintainer에서 검증된 Core revision과 호환성을 확인하고, 반영할 소비 입력·Git 쓰기·임시 자원의 범위를 정한다. 실제 소비 저장소는 마지막 검증 상태에 둔다. 무관한 변경을 임의로 삭제하거나 commit하지 않는다.
+2. 승인된 임시 공간에 고정한 소비 부모 snapshot의 별도 clone과 전체 Core submodule을 준비한다. 최초 연결이면 §3~5의 승인된 입력을 이 후보에서 구성한다. 미커밋 소비 입력을 반영하기로 했다면 정확한 경로와 bytes를 후보에 포함한다. 보호 자료를 읽거나 복제할 권한은 이 절차에서 생기지 않는다.
+3. 후보 Core에서 검증된 revision을 fetch·checkout하고, 후보 부모에서 변경된 gitlink와 필요한 소비 계약 파일만 검토·commit한다. 이 commit은 검사할 입력의 고정점이며 소비 완료나 배포 승인 근거가 아니다. 새 Core commit을 Host에서 만드는 절차도 아니다.
+4. 후보의 부모 HEAD·index·Core가 모두 새 revision을 가리키는 상태에서 §6의 Host 소비 gate를 실행한다. 후보의 정책·진입·상태·route·기능 요구는 실제 반영할 입력과 같아야 한다. 유효한 가짜 상태로 바꾸어 통과시키지 않는다. 실패하면 실제 소비 저장소는 이전 상태에 유지하고 후보 원인을 해결한다.
+5. 통과한 후보와 실제 반영할 입력을 다시 대조한다. 실제 부모·입력이 준비 이후 달라졌으면 영향받은 후보 근거를 다시 검증한다. 승인된 소비 작업에서 해당 gitlink와 소비 파일만 실제 부모 commit에 반영하고 Core checkout을 맞춘다. 후보 commit을 그대로 반영할지 동일 변경을 별도 commit으로 만들지는 Consumer가 정한다.
+6. 실제 반영된 소비 저장소에서 부모 HEAD·index·Core의 일치와 §6의 소비 gate를 확인한 뒤 그 범위의 소비 완료를 보고한다. 후보 gate 통과만으로 실제 환경의 결과를 대신하지 않는다. 실패 시 사용·게시를 중단하고 §9의 승인된 복구 경로를 따른다.
+
+기존 연결을 갱신하는 후보에서는 다음 명령 순서를 사용할 수 있다. `CONSUMER_SNAPSHOT`과 `VERIFIED_CORE_COMMIT`은 사전에 확인한 고정 객체이며, 경로·Git 쓰기·정리 범위는 소비 작업에서 정한다. 아래 `git add` 예시는 gitlink만 바뀌는 경우다. 계약 이전이 필요하면 승인된 소비 파일도 명시적으로 포함한다.
+
+```powershell
+git clone --no-checkout <CONSUMER_SOURCE> <CANDIDATE_ROOT>
+git -C <CANDIDATE_ROOT> checkout --detach <CONSUMER_SNAPSHOT>
+git -C <CANDIDATE_ROOT> submodule update --init --recursive
+git -C <CANDIDATE_ROOT>/<CORE_PATH> fetch origin <VERIFIED_CORE_COMMIT>
+git -C <CANDIDATE_ROOT>/<CORE_PATH> checkout --detach <VERIFIED_CORE_COMMIT>
+git -C <CANDIDATE_ROOT> add -- <CORE_PATH>
+git -C <CANDIDATE_ROOT> commit -m "Validate Core update candidate"
+```
+
+그다음 후보 root를 작업 디렉터리로 하고 §6의 Python 검색 경로와 `--consumer-root .`를 사용해 gate를 실행한다. 임시 작업·출력은 후보 Consumer가 소유하며 Core 안에 만들지 않는다. 후보 생성·commit 권한이나 필요한 입력이 없으면 검증은 `not_run`이다. `verify`의 불일치 finding 무시, Host 역할 변경, 내부 helper 호출로 gate를 우회하지 않는다.
+
+후보 clone은 연결·갱신을 위한 한시 검증 자원이며 Core 배포 사본이나 상시 Runtime으로 유지하지 않는다. 종료 시 승인된 정확한 임시 대상만 정리한다. 일반 작업에 후보 clone을 요구하지 않는다. 실제 filesystem read-only 강제와 import 이전 경계의 한계는 §6을 따른다.
 
 Host는 Core commit을 만들거나 Core 원격에 push하지 않으며 Core 안의 어떤 로컬 파일도 만들거나 바꾸지 않는다. Maintainer도 사용자 승인과 전체 게이트 없이 push하지 않는다.
 
@@ -212,7 +235,8 @@ Host는 Core commit을 만들거나 Core 원격에 push하지 않으며 Core 안
 
 - submodule 초기화 실패: `.gitmodules`와 gitlink가 같은 commit에 있는지 확인하고 `git submodule update --init --recursive`를 다시 실행한다.
 - 계약 버전 불일치: Core의 [호환성 문서](COMPATIBILITY.md)에 따라 소비 파일을 먼저 이전한다.
-- gate 실패: gitlink를 갱신하지 않고 실패한 검사와 경로를 교정한다.
+- 후보 gate 실패: 실제 소비 부모를 갱신하지 않고 후보의 실패한 검사와 입력을 교정한다.
+- 반영 후 gate 실패: 소비·게시를 중단한다. 현재 사용자 변경을 보존하고, 정확한 복구가 승인된 경우 마지막 검증된 부모 gitlink·소비 입력과 Core checkout을 함께 복원해 소비 gate를 확인한다. 후보 검증 통과를 실제 반영 성공으로 바꾸지 않는다.
 - Host Core 변경 감지: 변경을 폐기하지 말고 정확한 diff를 보존해 Maintainer 작업으로 이관한다.
 - 자격 증명 노출 의심: 저장소 이력에 복제하지 말고 해당 자격 증명을 폐기·교체한 뒤 원격 접근을 재검증한다.
 

@@ -2519,6 +2519,134 @@ class IntegrationGateTest(unittest.TestCase):
 
 
 
+@unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 소비 갱신 fixture를 건너뛴다")
+class ConsumerUpdateWorkflowTest(unittest.TestCase):
+    """실제 submodule checkout과 공개 CLI로 후보·반영 경계를 검증한다.
+
+    입력 Core는 합성 계약이고 실행기는 현재 검토 중인 CLI다. 배포된 Core 코드나
+    외부 Host 환경의 검증으로 확대하지 않는다.
+    """
+
+    def _git(self, root: Path, *args: str) -> str:
+        result = subprocess.run(
+            ["git", "-c", "protocol.file.allow=always", "-c", "core.autocrlf=false",
+             "-c", "user.name=Core Test", "-c", "user.email=core-test@example.invalid",
+             "-c", "commit.gpgsign=false", *args],
+            cwd=root, capture_output=True, text=True, encoding="utf-8", check=True,
+        )
+        return result.stdout.strip()
+
+    def _clone(self, source: Path, target: Path, snapshot: str) -> None:
+        self._git(target.parent, "clone", "--quiet", "--no-checkout", str(source), str(target))
+        self._git(target, "checkout", "--quiet", "--detach", snapshot)
+        self._git(target, "submodule", "update", "--init", "--recursive")
+        self.assertTrue((target / "core" / ".git").is_file())
+
+    def _snapshot(self, consumer: Path) -> tuple[str, ...]:
+        from core_check.gate import consumer_tree_digest, tree_digest
+
+        return (
+            self._git(consumer, "rev-parse", "HEAD"),
+            self._git(consumer, "ls-files", "--stage"),
+            self._git(consumer / "core", "rev-parse", "HEAD"),
+            tree_digest(consumer / "core"),
+            consumer_tree_digest(consumer / "core", consumer),
+        )
+
+    def _cli(self, consumer: Path, command: str, expected_code: int) -> dict:
+        before = self._snapshot(consumer)
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(ROOT / "src")
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        result = subprocess.run(
+            [sys.executable, "-B", "-m", "core_check", "--core-root", "core",
+             "--consumer-root", ".", command],
+            cwd=consumer, env=env, capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertEqual(result.returncode, expected_code, result.stdout + result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["ok"], expected_code == 0, payload)
+        self.assertEqual(self._snapshot(consumer), before)
+        return payload
+
+    def test_candidate_revision_transition_preserves_live_consumer_until_verified(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="core-update-test-") as temporary:
+            base = Path(temporary)
+            upstream, seed = build_consumer(base / "seed")
+            set_consumer_role(seed, "host")
+            (seed / ".gitmodules").write_text(
+                f'[submodule "core"]\n\tpath = core\n\turl = {upstream.as_posix()}\n',
+                encoding="utf-8",
+            )
+            initialize_host_consumer_gitlink(upstream, seed)
+            revision_a = self._git(upstream, "rev-parse", "HEAD")
+            parent_a = self._git(seed, "rev-parse", "HEAD")
+            live = base / "live"
+            self._clone(seed, live, parent_a)
+            self._cli(live, "gate", 0)
+            live_before = self._snapshot(live)
+
+            (upstream / "data.json").write_bytes(b'{"revision": "B"}\n')
+            self._git(upstream, "add", "--", "data.json")
+            self._git(upstream, "commit", "--quiet", "-m", "fixture revision B")
+            revision_b = self._git(upstream, "rev-parse", "HEAD")
+            self.assertNotEqual(revision_a, revision_b)
+            candidate = base / "candidate"
+            self._clone(live, candidate, parent_a)
+            self._git(candidate / "core", "fetch", "origin", revision_b)
+            self._git(candidate / "core", "checkout", "--quiet", "--detach", revision_b)
+
+            for staged, diagnostic in (
+                (False, "부모 gitlink와 실행 Core HEAD가 다르다"),
+                (True, "부모 HEAD와 index의 Core gitlink가 다르다"),
+            ):
+                with self.subTest(staged=staged):
+                    if staged:
+                        self._git(candidate, "add", "--", "core")
+                    payload = self._cli(candidate, "verify", 1)
+                    self.assertTrue(any(diagnostic in f["message"] for f in payload["findings"]))
+                    payload = self._cli(candidate, "gate", 1)
+                    self.assertTrue(any(diagnostic in step["detail"] for step in payload["steps"]))
+                    self.assertEqual(self._snapshot(live), live_before)
+
+            self._git(candidate, "commit", "--quiet", "-m", "Validate Core update candidate")
+            self._cli(candidate, "gate", 0)
+            self.assertEqual(self._snapshot(live), live_before)
+
+            data = candidate / "core" / "data.json"
+            original_data = data.read_bytes()
+            data.write_bytes(b'{"unexpected": true}\n')
+            payload = self._cli(candidate, "gate", 1)
+            self.assertTrue(any(
+                step["name"] == "host-core-read-only-preflight" and step["status"] == "fail"
+                for step in payload["steps"]
+            ))
+            data.write_bytes(original_data)
+            state = candidate / "CURRENT.md"
+            original_state = state.read_bytes()
+            state.write_text(
+                original_state.decode("utf-8").replace("## 차단", "## 다른 절"), encoding="utf-8"
+            )
+            payload = self._cli(candidate, "verify", 1)
+            self.assertTrue(any(f["check"] == "consumer-state" for f in payload["findings"]))
+            self._cli(candidate, "gate", 1)
+            self.assertEqual(self._snapshot(live), live_before)
+            state.write_bytes(original_state)
+
+            # Review exactly the candidate input, then apply only its gitlink to live.
+            self.assertEqual(self._git(candidate, "diff", "--name-only", parent_a, "HEAD"), "core")
+            self.assertEqual(self._git(candidate, "status", "--porcelain"), "")
+            self._git(live / "core", "fetch", "origin", revision_b)
+            self._git(live / "core", "checkout", "--quiet", "--detach", revision_b)
+            self._git(live, "add", "--", "core")
+            self._git(live, "commit", "--quiet", "-m", "Apply verified Core update")
+            self.assertEqual(
+                self._git(live, "rev-parse", "HEAD^{tree}"),
+                self._git(candidate, "rev-parse", "HEAD^{tree}"),
+            )
+            self._cli(live, "gate", 0)
+
+
 class CompatibilityTest(unittest.TestCase):
     """선언과 실제 동작의 일치."""
 
