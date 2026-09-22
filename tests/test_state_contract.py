@@ -51,7 +51,7 @@ class StateContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             state = root / "CURRENT.md"
-            state.write_text(text, encoding="utf-8")
+            state.write_bytes(text.encode("utf-8"))
             return state_contract_findings(root, state)
 
     def test_nested_fields_do_not_parse_quoted_or_code_examples(self):
@@ -217,13 +217,13 @@ class StateContractTest(unittest.TestCase):
         findings = self._findings(
             VALID_STATE.replace("- 결과: `pass`", "- 첫 결과: `pass`\n- 둘째 결과: `fail`")
         )
-        self.assertTrue(any("누적" in finding.message for finding in findings))
+        self.assertTrue(any("판정 2개" in finding.message for finding in findings))
 
     def test_korean_accumulated_gate_history_is_detected(self) -> None:
         findings = self._findings(
             VALID_STATE.replace("- 결과: `pass`", "- 첫 판정: 통과\n- 둘째 판정: 실패")
         )
-        self.assertTrue(any("누적" in finding.message for finding in findings))
+        self.assertTrue(any("판정 2개" in finding.message for finding in findings))
 
     def test_two_gate_judgments_on_one_line_are_detected(self) -> None:
         findings = self._findings(
@@ -231,7 +231,7 @@ class StateContractTest(unittest.TestCase):
                 "- 결과: `pass`", "- 이전 판정: 통과 / 현재 판정: 실패"
             )
         )
-        self.assertTrue(any("누적" in finding.message for finding in findings))
+        self.assertTrue(any("판정 2개" in finding.message for finding in findings))
 
     def test_missing_gate_judgment_is_detected(self) -> None:
         findings = self._findings(VALID_STATE.replace("- 결과: `pass`", "- 결과 대기"))
@@ -244,7 +244,7 @@ class StateContractTest(unittest.TestCase):
                     "- 결과: `pass`", f"- 결과: `pass`\n- 산출물: {artifact}"
                 )
                 self.assertFalse(
-                    any("누적" in finding.message for finding in self._findings(text))
+                    any("판정 2개" in finding.message for finding in self._findings(text))
                 )
 
     def test_korean_gate_judgment_accepts_sentence_punctuation(self) -> None:
@@ -254,7 +254,7 @@ class StateContractTest(unittest.TestCase):
                 findings = self._findings(text)
                 self.assertFalse(
                     any(
-                        "판정이 없다" in finding.message or "누적" in finding.message
+                        "판정이 없다" in finding.message or "판정 2개" in finding.message
                         for finding in findings
                     )
                 )
@@ -415,6 +415,86 @@ class StateContractTest(unittest.TestCase):
     def test_size_budget_is_enforced(self) -> None:
         findings = self._findings(VALID_STATE + ("x" * 3_000))
         self.assertTrue(any("예산" in finding.message for finding in findings))
+
+    def test_judgment_diagnostics_report_original_lines_after_ignored_examples(self) -> None:
+        block = (
+            '- 결과: `pass`\n```md\n- 예시: `fail`\n```\n'
+            '    - 예시: `fail`\n<!--\n- 예시: `fail`\n-->\n'
+            '- 실제 사용: <!-- 참고 --> `not_run`'
+        )
+        text = VALID_STATE.replace('- 결과: `pass`', block)
+        lines = text.splitlines()
+        expected = (
+            lines.index('- 결과: `pass`') + 1,
+            lines.index('- 실제 사용: <!-- 참고 --> `not_run`') + 1,
+        )
+        for newline in ("\n", "\r\n"):
+            with self.subTest(newline=repr(newline)):
+                findings = self._findings(text.replace("\n", newline))
+                self.assertEqual(len(findings), 1, findings)
+                message = findings[0].message
+                self.assertIn("판정 2개", message)
+                self.assertIn(f"({expected[0]}, {expected[1]}행)", message)
+                self.assertIn("알려진 위험", message)
+                self.assertNotIn("과거 판정", message)
+
+    def test_same_line_judgments_and_separate_risk_have_distinct_diagnostics(self) -> None:
+        line = '- 결과: `pass` / 실제 사용: `not_run`'
+        text = VALID_STATE.replace('- 결과: `pass`', line)
+        number = text.splitlines().index(line) + 1
+        findings = self._findings(text)
+        self.assertEqual(len(findings), 1)
+        self.assertIn(f"({number}, {number}행)", findings[0].message)
+        for judgment in ("pass", "fail", "not_run", "not_applicable"):
+            with self.subTest(judgment=judgment):
+                valid = VALID_STATE.replace('`pass`', f'`{judgment}`').replace(
+                    '## 알려진 위험\n\n- 없음',
+                    '## 알려진 위험\n\n- 실제 사용은 `not_run`이다.',
+                )
+                self.assertEqual(self._findings(valid), [])
+
+    def test_heading_and_missing_declaration_diagnostics_use_real_locations(self) -> None:
+        missing = VALID_STATE.replace("## 차단", "## 다른 절")
+        findings = self._findings(missing)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("필수 절이 없다: ## 차단", findings[0].message)
+        self.assertNotIn("행)", findings[0].message)
+        duplicate = VALID_STATE + '\n```md\n## 차단\n```\n## 차단\n'
+        findings = self._findings(duplicate)
+        first = VALID_STATE.splitlines().index("## 차단") + 1
+        last = len(duplicate.splitlines())
+        self.assertEqual(len(findings), 1)
+        self.assertIn(f"({first}, {last}행)", findings[0].message)
+        forbidden = VALID_STATE + '\n## 작업 이력\n'
+        findings = self._findings(forbidden)
+        self.assertIn(f"({len(forbidden.splitlines())}행)", findings[0].message)
+        self.assertIn("제목 패턴", findings[0].message)
+        for declaration, heading, expected in (
+            ('- 결과: `pass`', '## 직전 게이트', '판정이 없다'),
+            ('1. `PROJECT_RULES.md`의 선언을 파싱한다.', '## 첫 다음 행동', '번호'),
+        ):
+            with self.subTest(heading=heading):
+                text = VALID_STATE.replace(declaration, '')
+                findings = self._findings(text)
+                self.assertEqual(len(findings), 1)
+                self.assertIn(expected, findings[0].message)
+                self.assertIn(f"절 시작 {text.splitlines().index(heading) + 1}행", findings[0].message)
+
+    def test_action_diagnostic_keeps_original_line_after_fence(self) -> None:
+        text = VALID_STATE.replace(
+            '1. `PROJECT_RULES.md`의 선언을 파싱한다.',
+            '```md\n1. 예시를 확인한다.\n```\n1. 계속한다.',
+        )
+        findings = self._findings(text)
+        self.assertEqual(len(findings), 1)
+        self.assertIn(f"({text.splitlines().index('1. 계속한다.') + 1}행)", findings[0].message)
+
+    def test_consumer_guide_example_satisfies_state_contract(self) -> None:
+        guide = (ROOT / 'docs' / 'CONSUMER_GUIDE.md').read_text(encoding='utf-8')
+        marker = '<!-- consumer-state-example -->'
+        self.assertEqual(guide.count(marker), 1)
+        example = guide.split(marker, 1)[1].split('```markdown\n', 1)[1].split('```', 1)[0]
+        self.assertEqual(self._findings(example), [])
 
 
 if __name__ == "__main__":

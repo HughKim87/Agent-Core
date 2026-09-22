@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -880,18 +881,36 @@ def check_temporary_canonical_links(root: Path) -> Iterable[Finding]:
                 yield Finding("temporary-canonical-links", rel, f"한시 자료를 참조한다: {target}")
 
 
-def _markdown_h2_sections(text: str) -> dict[str, list[str]]:
-    sections: dict[str, list[str]] = {}
+@dataclass
+class _MarkdownSection:
+    body: str
+    heading_line: int
+    line_starts: list[tuple[int, int]]
+
+    def line_at(self, offset: int) -> int:
+        return next(
+            (number for start, number in reversed(self.line_starts) if start <= offset),
+            self.heading_line,
+        )
+
+
+def _markdown_h2_sections(text: str) -> dict[str, list[_MarkdownSection]]:
+    sections: dict[str, list[_MarkdownSection]] = {}
     heading: str | None = None
+    heading_line = 0
     body: list[str] = []
+    body_size = 0
+    line_starts: list[tuple[int, int]] = []
     fence: tuple[str, int] | None = None
     in_comment = False
 
     def flush() -> None:
         if heading is not None:
-            sections.setdefault(heading, []).append("".join(body))
+            sections.setdefault(heading, []).append(
+                _MarkdownSection("".join(body), heading_line, line_starts)
+            )
 
-    for line in text.splitlines(keepends=True):
+    for line_number, line in enumerate(text.splitlines(keepends=True), 1):
         content = line.rstrip("\r\n")
         if fence is not None:
             closing_match = re.fullmatch(r" {0,3}(`{3,}|~{3,})[ \t]*", content)
@@ -949,10 +968,16 @@ def _markdown_h2_sections(text: str) -> dict[str, list[str]]:
             flush()
             title = re.sub(r"\s+#+\s*$", "", match.group(1)).strip()
             heading = f"## {title}"
+            heading_line = line_number
             body = []
+            body_size = 0
+            line_starts = []
             continue
         if heading is not None:
-            body.append(content + "\n")
+            line_starts.append((body_size, line_number))
+            fragment = content + "\n"
+            body.append(fragment)
+            body_size += len(fragment)
     flush()
     return sections
 
@@ -1034,7 +1059,7 @@ def _has_ephemeral_failure_state(text: str) -> bool:
     # Reuse the state parser's fence/comment/code-span boundaries, including
     # fields before the first real section. Do not interpret examples as state.
     sections = _markdown_h2_sections("## State fields\n" + text)
-    for body in (body for bodies in sections.values() for body in bodies):
+    for body in (section.body for bodies in sections.values() for section in bodies):
         for line in body.splitlines():
             stripped = re.sub(r"^[-*+]\s+", "", line.strip())
             if stripped.startswith(("#", ">")):
@@ -1066,12 +1091,21 @@ def _state_findings(consumer_root: Path, state: Path) -> Iterable[Finding]:
     sections = _markdown_h2_sections(text)
     for section in STATE_SECTIONS:
         if section not in sections:
-            yield Finding("consumer-state", rel, f"필수 절이 없다: {section}")
+            yield Finding("consumer-state", rel, f"필수 절이 없다: {section}. 실제 제목 절을 추가한다")
         elif len(sections[section]) > 1:
-            yield Finding("consumer-state", rel, f"필수 절이 중복됐다: {section}")
+            lines = ", ".join(str(item.heading_line) for item in sections[section])
+            yield Finding(
+                "consumer-state", rel,
+                f"필수 절이 중복됐다: {section} ({lines}행). 현재 내용을 한 절에 모은다",
+            )
     for heading in sections:
         if FORBIDDEN_STATE_SECTION.search(heading.removeprefix("## ")):
-            yield Finding("consumer-state", rel, f"완료 상세 절을 포함한다: {heading}")
+            lines = ", ".join(str(item.heading_line) for item in sections[heading])
+            yield Finding(
+                "consumer-state", rel,
+                f"완료 상세 절의 제목 패턴에 일치한다: {heading} ({lines}행). "
+                "실제 내용을 검토해 현재 상태와 완료 이력을 구분한다",
+            )
     if len(text) > STATE_BUDGET_CHARS:
         yield Finding("consumer-state", rel, f"{len(text)}자가 예산 {STATE_BUDGET_CHARS}자를 넘었다")
     if DYNAMIC_NUMBERS.search(text):
@@ -1082,24 +1116,46 @@ def _state_findings(consumer_root: Path, state: Path) -> Iterable[Finding]:
         yield Finding("consumer-state", rel, "임시 실패 상태가 문서에 고정되어 있다")
     if "## 첫 다음 행동" in sections:
         tail = sections["## 첫 다음 행동"][0]
-        actions = [line.strip() for line in tail.splitlines() if re.match(r"^\d+\.", line.strip())]
+        actions: list[tuple[str, int]] = []
+        offset = 0
+        for line in tail.body.splitlines(keepends=True):
+            if re.match(r"^\d+\.", line.strip()):
+                actions.append((line.strip(), tail.line_at(offset)))
+            offset += len(line)
         if not actions:
-            yield Finding("consumer-state", rel, "번호가 매겨진 첫 다음 행동이 없다")
-        for action in actions:
+            yield Finding(
+                "consumer-state", rel,
+                f"번호가 매겨진 첫 다음 행동이 없다 (절 시작 {tail.heading_line}행). "
+                "대상과 판정 조건이 구체적인 번호 행동을 적는다",
+            )
+        for action, line_number in actions:
             content = re.sub(r"^\d+\.\s*", "", action)
             if (
                 not ACTION_EXECUTABLE_END.search(content)
                 or GENERIC_ACTION.fullmatch(content)
                 or (VAGUE_ACTION_END.search(content) and not _action_has_concrete_signal(content))
             ):
-                yield Finding("consumer-state", rel, f"첫 다음 행동이 모호하다: {action}")
+                yield Finding(
+                    "consumer-state", rel,
+                    f"첫 다음 행동이 모호하다: {action} ({line_number}행). "
+                    "대상 파일·명령·판정 조건을 구체화한다",
+                )
     if "## 직전 게이트" in sections:
         gates = sections["## 직전 게이트"][0]
-        judged = list(GATE_JUDGMENT.finditer(gates))
+        judged = list(GATE_JUDGMENT.finditer(gates.body))
         if not judged:
-            yield Finding("consumer-state", rel, "직전 게이트 절에 판정이 없다")
+            yield Finding(
+                "consumer-state", rel,
+                f"직전 게이트 절에 판정이 없다 (절 시작 {gates.heading_line}행). "
+                "실제 직전 결과 하나를 pass·fail·not_run·not_applicable로 적는다",
+            )
         elif len(judged) > 1:
-            yield Finding("consumer-state", rel, "직전 게이트 절에 과거 판정이 누적되어 있다")
+            lines = ", ".join(str(gates.line_at(match.start())) for match in judged)
+            yield Finding(
+                "consumer-state", rel,
+                f"직전 게이트 절에서 판정 {len(judged)}개를 인식했다 ({lines}행). "
+                "바로 앞 판정 하나를 남기고 별도 미검증 항목은 알려진 위험에서 설명한다",
+            )
 
 
 def state_contract_findings(consumer_root: Path, state: Path) -> list[Finding]:

@@ -1314,6 +1314,27 @@ class PublicInterfaceTest(unittest.TestCase):
         self.assertEqual(code, self.cli.EXIT_UNUSABLE)
         self.assertIn("error", payload)
 
+    def test_state_diagnostics_reach_public_verify_without_changing_result_fields(self) -> None:
+        state = self.consumer / "CURRENT.md"
+        valid = state.read_text(encoding="utf-8")
+        code, payload = self._run(
+            "--core-root", str(self.core), "--consumer-root", str(self.consumer), "verify"
+        )
+        self.assertEqual(code, self.cli.EXIT_OK, payload)
+        invalid = valid.replace("## 직전 게이트", "## 직전 게이트\n\n- 추가 판정: `not_run`")
+        state.write_bytes(invalid.encode("utf-8"))
+        code, payload = self._run(
+            "--core-root", str(self.core), "--consumer-root", str(self.consumer), "verify"
+        )
+        self.assertEqual(code, self.cli.EXIT_FINDINGS, payload)
+        findings = [f for f in payload["findings"] if f["check"] == "consumer-state"]
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(set(findings[0]), {"check", "path", "message", "severity"})
+        self.assertEqual(findings[0]["path"], "CURRENT.md")
+        self.assertIn("판정 2개", findings[0]["message"])
+        self.assertIn("행)", findings[0]["message"])
+        self.assertIn("알려진 위험", findings[0]["message"])
+
     def test_context_command_reports_selection(self) -> None:
         code, payload = self._run(
             "--core-root",
