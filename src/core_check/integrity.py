@@ -15,6 +15,10 @@ import subprocess
 
 from .declarations import (
     consumer_contract,
+    consumer_contract_files,
+    consumer_owned_path,
+    consumer_read_text,
+    consumer_rule_files,
     consumer_policy_path,
     consumer_routed_rule_paths,
     core_policy_path,
@@ -1085,8 +1089,9 @@ def _has_ephemeral_failure_state(text: str) -> bool:
     return False
 
 
-def _state_findings(consumer_root: Path, state: Path) -> Iterable[Finding]:
-    text = state.read_text(encoding="utf-8")
+def _state_findings(consumer_root: Path, state: Path, *, text: str | None = None) -> Iterable[Finding]:
+    if text is None:
+        text = state.read_text(encoding="utf-8")
     rel = _rel(consumer_root, state)
     sections = _markdown_h2_sections(text)
     for section in STATE_SECTIONS:
@@ -1170,18 +1175,7 @@ def _entry_targets(text: str) -> list[str]:
 
 
 def _consumer_contract_files(core_root: Path, consumer_root: Path, contract: dict[str, object]) -> list[Path]:
-    files = {
-        consumer_policy_path(core_root, consumer_root),
-        resolve_inside(consumer_root, contract["state"]),
-    }
-    for value in contract["entry_pointers"].values():
-        files.add(resolve_inside(consumer_root, value))
-    for value in contract["rule_roots"]:
-        files.update(resolve_inside(consumer_root, value).rglob("*.md"))
-    gitmodules = consumer_root / ".gitmodules"
-    if gitmodules.is_file():
-        files.add(gitmodules)
-    return sorted(path for path in files if path.is_file())
+    return consumer_contract_files(core_root, consumer_root, contract)
 
 
 def consumer_findings(
@@ -1198,6 +1192,7 @@ def consumer_findings(
     try:
         contract = consumer_contract(core_root, consumer_root)
         compatibility = declared_compatibility(core_root)
+        files = _consumer_contract_files(core_root, consumer_root, contract)
     except CheckError as exc:
         yield Finding("consumer-contract", "-", str(exc))
         if report is not None:
@@ -1247,16 +1242,17 @@ def consumer_findings(
     expected = [f"{core_rel}/{core_policy}", policy, Path(contract["state"]).as_posix()]
     started("consumer-entry")
     for agent, value in contract["entry_pointers"].items():
-        pointer = resolve_inside(consumer_root, value)
-        actual = _entry_targets(pointer.read_text(encoding="utf-8"))
+        pointer = consumer_owned_path(core_root, consumer_root, contract, value, kind="file", canonical=True)
+        actual = _entry_targets(consumer_read_text(core_root, consumer_root, contract, pointer))
         if actual != expected:
             yield Finding(
                 "consumer-entry", _rel(consumer_root, pointer), f"{agent} 진입 순서가 다르다: {actual}"
             )
 
-    state = resolve_inside(consumer_root, contract["state"])
+    state = consumer_owned_path(core_root, consumer_root, contract, contract["state"], kind="file", canonical=True)
     started("consumer-state")
-    yield from _state_findings(consumer_root, state)
+    yield from _state_findings(consumer_root, state, text=consumer_read_text(
+        core_root, consumer_root, contract, state))
 
     started("consumer-rule-routes")
     try:
@@ -1264,24 +1260,23 @@ def consumer_findings(
     except CheckError as exc:
         yield Finding("consumer-rule-routes", policy, str(exc))
         routes = []
-    active: list[str] = []
-    for value in contract["rule_roots"]:
-        root = resolve_inside(consumer_root, value)
-        active.extend(_rel(consumer_root, path) for path in sorted(root.glob("*.md")))
+    active = [_rel(consumer_root, path) for path in consumer_rule_files(core_root, consumer_root, contract)]
     for rule in active:
         if routes.count(rule) != 1:
             yield Finding("consumer-rule-routes", rule, f"route 수가 {routes.count(rule)}이다")
     for route in routes:
-        if not resolve_inside(consumer_root, route).is_file():
-            yield Finding("consumer-rule-routes", route, "고아 route")
+        try:
+            consumer_owned_path(core_root, consumer_root, contract, route, kind="file")
+        except CheckError:
+            yield Finding("consumer-rule-routes", route, "고아 route 또는 소비 경계 위반")
 
     pointers = {Path(value).as_posix() for value in contract["entry_pointers"].values()}
     started("consumer-document-headers")
     started("consumer-markdown-links")
-    for path in _consumer_contract_files(core_root, consumer_root, contract):
+    for path in files:
         rel = _rel(consumer_root, path)
         try:
-            text = path.read_text(encoding="utf-8")
+            text = consumer_read_text(core_root, consumer_root, contract, path)
         except UnicodeError:
             text = ""
         if path.suffix == ".md" and rel not in pointers:
@@ -1302,7 +1297,7 @@ def consumer_findings(
         yield Finding("consumer-submodule", ".gitmodules", "Core submodule 선언 파일이 없다")
     else:
         try:
-            gitmodules_text = gitmodules.read_text(encoding="utf-8")
+            gitmodules_text = consumer_read_text(core_root, consumer_root, contract, gitmodules)
         except UnicodeError as exc:
             yield Finding(
                 "consumer-submodule",
@@ -1326,7 +1321,10 @@ def consumer_findings(
 
 def run_consumer(core_root: Path, consumer_root: Path) -> Report:
     report = Report()
-    report.findings.extend(consumer_findings(core_root, consumer_root, report=report))
+    try:
+        report.findings.extend(consumer_findings(core_root, consumer_root, report=report))
+    except (CheckError, OSError, UnicodeError):
+        report.findings.append(Finding("consumer-contract", "-", "소비 계약 표면을 안전하게 검사할 수 없다"))
     return report
 
 

@@ -7,16 +7,19 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -885,6 +888,281 @@ class ContextTest(unittest.TestCase):
         package = self.context.build(self.core, self.consumer)
         self.assertLessEqual(package.chars, self.context.STARTUP_BUDGET_CHARS)
         self.assertEqual(len(package.required), 3)
+
+
+class ConsumerBoundaryTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.core, self.consumer = build_consumer(Path(self.tmp.name))
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_protected_declarations_preserve_relative_safety_without_metadata(self) -> None:
+        from core_check.declarations import consumer_contract
+        policy = self.consumer / "PROJECT_RULES.md"
+        original = policy.read_text(encoding="utf-8")
+        cases = [("missing-private/deeper", True), ("../outside-protected", False),
+                 (str(Path(self.tmp.name) / "absolute-protected"), False)]
+        if os.name == "nt":
+            other_drive = "Z:" if self.consumer.drive.upper() != "Z:" else "Y:"
+            cases += [(other_drive + "outside-protected", False),
+                      ("\\outside-protected", False), (self.consumer.drive + "private", True)]
+        original_stat, original_lstat = os.stat, os.lstat
+        for value, accepted in cases:
+            with self.subTest(path=value):
+                policy.write_text(original.replace('["private"]', json.dumps([value])), encoding="utf-8")
+                forbidden = self.consumer / value
+                touched = []
+                def guard(fn):
+                    def wrapped(path, *args, **kwargs):
+                        if isinstance(path, (str, bytes, os.PathLike)):
+                            candidate = Path(os.fsdecode(path))
+                            if candidate == forbidden or forbidden in candidate.parents:
+                                touched.append(candidate)
+                                raise AssertionError("protected metadata queried")
+                        return fn(path, *args, **kwargs)
+                    return wrapped
+                with patch("os.stat", guard(original_stat)), patch("os.lstat", guard(original_lstat)):
+                    if accepted:
+                        consumer_contract(self.core, self.consumer)
+                    else:
+                        with self.assertRaises(CheckError):
+                            consumer_contract(self.core, self.consumer)
+                self.assertEqual(touched, [])
+
+    def test_gitmodules_alias_preserves_existing_digest_input_identity(self) -> None:
+        from core_check.declarations import consumer_contract, consumer_contract_files
+        from core_check.gate import consumer_tree_digest
+        alias = self.consumer / ".gitmodules"
+        target = self.consumer / "module-declaration.txt"
+        target.write_bytes(alias.read_bytes())
+        original = Path.lstat
+        def lstat(path, *args, **kwargs):
+            if path == alias:
+                return SimpleNamespace(st_mode=stat.S_IFLNK, st_file_attributes=0)
+            return original(path, *args, **kwargs)
+        # Fixed fixture IDs from the existing Git implementation, independent of the new collector.
+        expected = hashlib.sha256()
+        for relative in sorted(["PROJECT_RULES.md", "CURRENT.md", "AGENTS.md", "CLAUDE.md",
+                                "rules/project.md", ".gitmodules"]):
+            expected.update(relative.encode("utf-8"))
+            expected.update((self.consumer / relative).read_bytes())
+        with patch.object(Path, "lstat", lstat), patch("os.readlink", return_value=str(target)):
+            contract = consumer_contract(self.core, self.consumer)
+            files = consumer_contract_files(self.core, self.consumer, contract)
+            self.assertIn(alias, files)
+            self.assertNotIn(target, files)
+            self.assertEqual(consumer_tree_digest(self.core, self.consumer), expected.hexdigest())
+
+    def test_rule_root_overlap_rejected_before_collection(self) -> None:
+        from core_check.declarations import consumer_contract
+        policy = self.consumer / "PROJECT_RULES.md"
+        original = policy.read_text(encoding="utf-8")
+        for value in ("core", "core/rules", "."):
+            with self.subTest(root=value):
+                policy.write_text(original.replace('["rules"]', json.dumps([value])), encoding="utf-8")
+                with patch.object(Path, "iterdir", side_effect=AssertionError("must not collect")):
+                    with self.assertRaises(CheckError):
+                        consumer_contract(self.core, self.consumer)
+
+    def test_recursive_rule_route_matches_collection_and_context(self) -> None:
+        from core_check.context import build
+        nested = self.consumer / "rules/nested"
+        nested.mkdir()
+        rule = nested / "child.md"
+        rule.write_text(RULE_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
+        report = run_consumer(self.core, self.consumer)
+        self.assertTrue(any(f.check == "consumer-rule-routes" and f.path == "rules/nested/child.md"
+                            for f in report.findings))
+        policy = self.consumer / "PROJECT_RULES.md"
+        policy.write_text(policy.read_text(encoding="utf-8").replace(
+            "<!-- /core-rule-routes:v1 -->",
+            "| nested | [child](rules/nested/child.md) |\n<!-- /core-rule-routes:v1 -->"), encoding="utf-8")
+        report = run_consumer(self.core, self.consumer)
+        self.assertTrue(report.ok, report.findings)
+        first = build(self.core, self.consumer, ["consumer:rules/nested/child.md"])
+        second = build(self.core, self.consumer, ["consumer:rules/nested/child.md"])
+        self.assertEqual(first.digest, second.digest)
+        self.assertEqual(first.optional[0].path, "rules/nested/child.md")
+
+    def test_virtual_links_reject_before_forbidden_metadata_enumeration_and_read(self) -> None:
+        from core_check.context import build
+        from core_check.gate import consumer_tree_digest
+        alias = self.consumer / "rules/project.md"
+        original_lstat = Path.lstat
+        original_read = Path.read_bytes
+        original_iterdir = Path.iterdir
+        for target in (self.consumer / "private/secret.md", self.core / "forbidden.md",
+                       Path(self.tmp.name) / "outside.md"):
+            for action in (lambda: run_consumer(self.core, self.consumer),
+                           lambda: consumer_tree_digest(self.core, self.consumer),
+                           lambda: build(self.core, self.consumer, ["consumer:rules/project.md"])):
+                with self.subTest(target=target, action=action):
+                    touched = []
+                    def lstat(path, *args, **kwargs):
+                        if path == alias:
+                            return SimpleNamespace(st_mode=stat.S_IFLNK, st_file_attributes=0)
+                        if path == target or target.parent == path:
+                            touched.append(("metadata", path))
+                        return original_lstat(path, *args, **kwargs)
+                    def read(path):
+                        if path == alias or path == target:
+                            touched.append(("read", path))
+                        return original_read(path)
+                    def iterdir(path):
+                        if path == target or path == target.parent:
+                            touched.append(("enumerate", path))
+                        return original_iterdir(path)
+                    with patch.object(Path, "lstat", lstat), patch("os.readlink", return_value=str(target)), \
+                         patch.object(Path, "read_bytes", read), patch.object(Path, "iterdir", iterdir):
+                        if action.__code__.co_names[0] == "run_consumer":
+                            self.assertFalse(action().ok)
+                        else:
+                            with self.assertRaises(CheckError):
+                                action()
+                    self.assertEqual(touched, [])
+
+    def test_directory_link_rejected_before_descent(self) -> None:
+        from core_check.gate import consumer_tree_digest
+        alias = self.consumer / "rules/linked"
+        alias.mkdir()
+        original = Path.lstat
+        target = self.consumer / "private"
+        def lstat(path, *args, **kwargs):
+            if path == alias:
+                return SimpleNamespace(st_mode=stat.S_IFDIR, st_file_attributes=0x400)
+            if path == target:
+                self.fail("protected target metadata queried")
+            return original(path, *args, **kwargs)
+        with patch.object(Path, "lstat", lstat), patch("os.readlink", return_value=str(target)):
+            with self.assertRaises(CheckError):
+                consumer_tree_digest(self.core, self.consumer)
+
+    def test_internal_file_alias_preserves_lexical_id_and_digest(self) -> None:
+        from core_check.context import build
+        from core_check.gate import consumer_tree_digest
+        alias = self.consumer / "rules/project.md"
+        target = self.consumer / "allowed.md"
+        target.write_bytes(alias.read_bytes())
+        original = Path.lstat
+        def lstat(path, *args, **kwargs):
+            if path == alias:
+                return SimpleNamespace(st_mode=stat.S_IFLNK, st_file_attributes=0)
+            return original(path, *args, **kwargs)
+        with patch.object(Path, "lstat", lstat), patch("os.readlink", return_value=str(target)):
+            self.assertTrue(run_consumer(self.core, self.consumer).ok)
+            package = build(self.core, self.consumer, ["consumer:rules/project.md"])
+            self.assertEqual(package.optional[0].path, "rules/project.md")
+            self.assertEqual(consumer_tree_digest(self.core, self.consumer),
+                             consumer_tree_digest(self.core, self.consumer))
+
+    def test_recheck_detects_retarget_and_read_failure(self) -> None:
+        from core_check.declarations import consumer_contract, consumer_read_bytes
+        contract = consumer_contract(self.core, self.consumer)
+        alias = self.consumer / "rules/project.md"
+        original = Path.lstat
+        def lstat(path, *args, **kwargs):
+            if path == alias:
+                return SimpleNamespace(st_mode=stat.S_IFLNK, st_file_attributes=0)
+            return original(path, *args, **kwargs)
+        with patch.object(Path, "lstat", lstat), patch("os.readlink", return_value=str(self.consumer / "private/secret.md")), \
+             patch.object(Path, "read_bytes", side_effect=AssertionError("must not read")):
+            with self.assertRaises(CheckError):
+                consumer_read_bytes(self.core, self.consumer, contract, alias)
+        with patch.object(Path, "read_bytes", side_effect=OSError("sensitive detail")):
+            with self.assertRaises(CheckError) as result:
+                consumer_read_bytes(self.core, self.consumer, contract, alias)
+            self.assertNotIn("sensitive detail", str(result.exception))
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction fixture")
+    def test_actual_junction_boundary_and_internal_directory(self) -> None:
+        from core_check.gate import consumer_tree_digest
+        from core_check.context import build
+        alias = self.consumer / "rules/linked"
+        allowed = self.consumer / "allowed"
+        allowed.mkdir()
+        (allowed / "child.md").write_text(RULE_BODY.format(headers=DOC_HEADERS), encoding="utf-8")
+        protected = self.consumer / "private"
+        protected.mkdir()
+        outside = Path(self.tmp.name) / "outside"
+        outside.mkdir()
+        original_lstat = Path.lstat
+        original_iterdir = Path.iterdir
+        original_read = Path.read_bytes
+        for target in (allowed, protected, outside, self.core):
+            completed = subprocess.run(["cmd", "/c", "mklink", "/J", str(alias), str(target)],
+                                       capture_output=True, check=False)
+            if completed.returncode:
+                self.skipTest("Windows junction creation unavailable")
+            try:
+                if target == allowed:
+                    policy = self.consumer / "PROJECT_RULES.md"
+                    policy.write_text(policy.read_text(encoding="utf-8").replace(
+                        "<!-- /core-rule-routes:v1 -->",
+                        "| linked | [child](rules/linked/child.md) |\n<!-- /core-rule-routes:v1 -->"), encoding="utf-8")
+                    self.assertTrue(run_consumer(self.core, self.consumer).ok)
+                    package = build(self.core, self.consumer, ["consumer:rules/linked/child.md"])
+                    self.assertEqual(package.optional[0].path, "rules/linked/child.md")
+                    self.assertTrue(consumer_tree_digest(self.core, self.consumer))
+                else:
+                    touched = []
+                    def lstat(path, *args, **kwargs):
+                        if path == target:
+                            touched.append("metadata")
+                        return original_lstat(path, *args, **kwargs)
+                    def iterdir(path):
+                        if path == target or path == alias:
+                            touched.append("enumerate")
+                        return original_iterdir(path)
+                    def read(path):
+                        if target in path.parents:
+                            touched.append("read")
+                        return original_read(path)
+                    # Core declaration reads are legitimate; collection itself must never descend.
+                    from core_check.declarations import consumer_contract, consumer_contract_files
+                    contract = consumer_contract(self.core, self.consumer)
+                    with patch.object(Path, "lstat", lstat), patch.object(Path, "iterdir", iterdir), \
+                         patch.object(Path, "read_bytes", read):
+                        with self.assertRaises(CheckError):
+                            consumer_contract_files(self.core, self.consumer, contract)
+                    self.assertEqual(touched, [])
+            finally:
+                os.rmdir(alias)  # Remove this verified disposable junction entry only.
+
+    def test_crlf_context_retains_universal_newline_fingerprint(self) -> None:
+        from core_check.context import build
+        from core_check.gate import consumer_tree_digest
+        relatives = ("PROJECT_RULES.md", "CURRENT.md", "AGENTS.md", "CLAUDE.md", "rules/project.md")
+        for relative in relatives:
+            path = self.consumer / relative
+            path.write_bytes(path.read_text(encoding="utf-8").encode("utf-8"))
+            self.assertNotIn(b"\r", path.read_bytes())
+        before = build(self.core, self.consumer, ["consumer:rules/project.md"])
+        before_bytes = consumer_tree_digest(self.core, self.consumer)
+        for relative in relatives:
+            path = self.consumer / relative
+            path.write_bytes(path.read_text(encoding="utf-8").replace("\n", "\r\n").encode("utf-8"))
+            unpaired = path.read_bytes().replace(b"\r\n", b"")
+            self.assertNotIn(b"\r", unpaired)
+            self.assertNotIn(b"\n", unpaired)
+        after = build(self.core, self.consumer, ["consumer:rules/project.md"])
+        self.assertEqual(before.digest, after.digest)
+        self.assertEqual(before.chars, after.chars)
+        self.assertNotEqual(before_bytes, consumer_tree_digest(self.core, self.consumer))
+
+    def test_actual_file_link_boundary(self) -> None:
+        from core_check.gate import consumer_tree_digest
+        alias = self.consumer / "rules/alias.md"
+        try:
+            alias.symlink_to(self.consumer / "rules/project.md")
+        except OSError as exc:
+            self.skipTest(f"OS symlink unavailable: {exc.winerror if hasattr(exc, 'winerror') else exc.errno}")
+        self.assertTrue(consumer_tree_digest(self.core, self.consumer))
+        alias.unlink()
+        alias.symlink_to(self.consumer / "private/secret.md")
+        with self.assertRaises(CheckError):
+            consumer_tree_digest(self.core, self.consumer)
 
 
 class ConsumerContractTest(unittest.TestCase):

@@ -15,6 +15,8 @@ import sys
 from .context import STARTUP_BUDGET_CHARS, build as build_context
 from .declarations import (
     consumer_contract,
+    consumer_contract_files,
+    consumer_read_bytes,
     consumer_policy_path,
     declared_compatibility,
     document_roles,
@@ -404,22 +406,12 @@ def consumer_tree_digest(
 ) -> str:
     """보호 경로와 Core subtree를 읽지 않고 계약 표면만 지문화한다."""
     contract = contract if contract is not None else consumer_contract(core_root, consumer_root)
-    paths = {
-        consumer_policy_path(core_root, consumer_root),
-        resolve_inside(consumer_root, contract["state"]),
-    }
-    for value in contract["entry_pointers"].values():
-        paths.add(resolve_inside(consumer_root, value))
-    for value in contract["rule_roots"]:
-        paths.update(resolve_inside(consumer_root, value).rglob("*.md"))
-    gitmodules = consumer_root / ".gitmodules"
-    if gitmodules.is_file():
-        paths.add(gitmodules)
+    paths = consumer_contract_files(core_root, consumer_root, contract)
     digest = hashlib.sha256()
     for path in sorted(paths):
         rel = path.relative_to(consumer_root)
         digest.update(rel.as_posix().encode("utf-8"))
-        digest.update(path.read_bytes())
+        digest.update(consumer_read_bytes(core_root, consumer_root, contract, path))
     return digest.hexdigest()
 
 

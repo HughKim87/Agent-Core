@@ -8,6 +8,8 @@ from pathlib import Path
 
 from .declarations import (
     consumer_contract,
+    consumer_contract_files,
+    consumer_read_text,
     consumer_policy_path,
     consumer_routed_rule_paths,
     core_policy_path,
@@ -61,16 +63,7 @@ def _ref(scope: str, root: Path, path: Path) -> ContextRef:
 
 def _consumer_markdown(core_root: Path, consumer_root: Path) -> list[Path]:
     contract = consumer_contract(core_root, consumer_root)
-    paths = {
-        consumer_policy_path(core_root, consumer_root),
-        resolve_inside(consumer_root, contract["state"]),
-    }
-    for value in contract["entry_pointers"].values():
-        paths.add(resolve_inside(consumer_root, value))
-    for value in contract["rule_roots"]:
-        root = resolve_inside(consumer_root, value)
-        paths.update(root.rglob("*.md"))
-    return sorted(path for path in paths if path.is_file())
+    return consumer_contract_files(core_root, consumer_root, contract, include_gitmodules=False)
 
 
 def build(
@@ -133,7 +126,10 @@ def build(
     texts: list[str] = []
     for ref in package.required + package.optional:
         root = core_root if ref.scope == "core" else consumer_root
-        texts.append(resolve_inside(root, ref.path).read_text(encoding="utf-8"))
+        if ref.scope == "consumer":
+            texts.append(consumer_read_text(core_root, consumer_root, contract, root / ref.path))
+        else:
+            texts.append(resolve_inside(root, ref.path).read_text(encoding="utf-8"))
     joined = "\n".join(texts)
     package.chars = len(joined)
     identifiers = "\n".join(ref.identifier for ref in package.required + package.optional)

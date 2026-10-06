@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 import json
+import os
 from pathlib import Path
 import re
+import stat
 
 from .primitives import CheckError, resolve_inside
 
@@ -182,18 +184,157 @@ def routed_rule_paths(core_root: Path) -> list[str]:
 def consumer_routed_rule_paths(core_root: Path, consumer_root: Path) -> list[str]:
     contract = consumer_contract(core_root, consumer_root)
     roots = tuple(f"{Path(value).as_posix().rstrip('/')}/" for value in contract["rule_roots"])
-    targets = _route_targets(consumer_policy_path(core_root, consumer_root))
+    policy = consumer_root / document_roles(core_root)["consumer_policy"]
+    text = consumer_read_text(core_root, consumer_root, contract, policy)
+    matches = list(RULE_ROUTES_BLOCK.finditer(text))
+    if len(matches) != 1:
+        raise CheckError("소비 정책의 규칙 route 선언 수가 다르다")
+    targets = MD_LINK.findall(matches[0].group(1))
     invalid = [target for target in targets if not target.startswith(roots)] if roots else targets
     if invalid:
         raise CheckError(f"소비 route가 선언된 rule_roots 밖을 가리킨다: {invalid}")
     return targets
 
 
+def consumer_owned_path(
+    core_root: Path, consumer_root: Path, contract: dict[str, object], value: str | Path,
+    *, kind: str | None = None, canonical: bool = False,
+) -> Path:
+    """계약 경계를 component마다 확인하고 lexical ID를 유지한다.
+
+    링크 target은 금지 경계의 metadata를 조회하기 전에 판정한다. Windows의
+    readlink 가능한 symlink/junction만 해석하며 알 수 없는 reparse는 거부한다.
+    이 검사는 적대적인 동시 교체에 대한 atomic open 보장이 아니다.
+    """
+    root = consumer_root.resolve()
+    core = core_root.resolve()
+    if not isinstance(value, (str, Path)) or not str(value):
+        raise CheckError("소비 파일 경로가 유효하지 않다")
+    raw = Path(value)
+    if ".." in raw.parts:
+        raise CheckError("소비 파일 경로가 유효하지 않다")
+    candidate = Path(os.path.abspath(root / raw))
+    protected = [root / path for path in contract["protected_paths"]]
+
+    def boundary(path: Path) -> None:
+        if root != path and root not in path.parents:
+            raise CheckError("소비 파일이 Consumer 밖을 가리킨다")
+        if path == core or core in path.parents:
+            raise CheckError("소비 파일이 Core 경계를 침범한다")
+        if any(path == base or base in path.parents for base in protected):
+            raise CheckError("소비 파일이 보호 경계를 침범한다")
+
+    boundary(candidate)
+    pending = list(candidate.relative_to(root).parts)
+    current = root
+    info = root.lstat()
+    links = 0
+    try:
+        while pending:
+            current = current / pending.pop(0)
+            boundary(current)
+            info = current.lstat()
+            reparse = bool(getattr(info, "st_file_attributes", 0) & 0x400)
+            if stat.S_ISLNK(info.st_mode) or reparse:
+                links += 1
+                if links > 40:
+                    raise CheckError("소비 파일 링크를 해석할 수 없다")
+                target = os.readlink(current)
+                # Windows readlink returns a substitution path for junctions.
+                if target.startswith("\\\\?\\UNC\\"):
+                    target = "\\\\" + target[8:]
+                elif target.startswith("\\\\?\\"):
+                    target = target[4:]
+                destination = Path(os.path.abspath(current.parent / target))
+                boundary(destination)
+                pending = list(destination.relative_to(root).parts) + pending
+                current = root
+        if kind == "file" and not stat.S_ISREG(info.st_mode):
+            raise CheckError("소비 계약 대상이 일반 파일이 아니다")
+        if kind == "dir" and not stat.S_ISDIR(info.st_mode):
+            raise CheckError("소비 계약 대상이 디렉터리가 아니다")
+    except (OSError, ValueError) as exc:
+        raise CheckError("소비 파일 경계·존재·유형을 확인할 수 없다") from exc
+    return current if canonical else candidate
+
+
+def consumer_read_bytes(
+    core_root: Path, consumer_root: Path, contract: dict[str, object], path: Path,
+) -> bytes:
+    """수집 때의 판정을 신뢰하지 않고 읽기 직전에 다시 확인한다."""
+    path = consumer_owned_path(core_root, consumer_root, contract, path, kind="file")
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise CheckError("소비 파일을 읽을 수 없다") from exc
+
+
+def consumer_read_text(
+    core_root: Path, consumer_root: Path, contract: dict[str, object], path: Path,
+) -> str:
+    """기존 read_text의 UTF-8·universal-newline 의미를 유지한다."""
+    text = consumer_read_bytes(core_root, consumer_root, contract, path).decode("utf-8")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def consumer_rule_files(
+    core_root: Path, consumer_root: Path, contract: dict[str, object],
+) -> list[Path]:
+    files: set[Path] = set()
+
+    def visit(path: Path, ancestors: frozenset[Path]) -> None:
+        checked = consumer_owned_path(core_root, consumer_root, contract, path, kind="dir")
+        actual = consumer_owned_path(core_root, consumer_root, contract, path, kind="dir", canonical=True)
+        if actual in ancestors:
+            raise CheckError("소비 규칙 디렉터리 링크가 순환한다")
+        try:
+            children = sorted(checked.iterdir())
+            for child in children:
+                # Validate before is_dir (which follows links) or enumeration.
+                consumer_owned_path(core_root, consumer_root, contract, child)
+                if child.is_dir():
+                    visit(child, ancestors | {actual})
+                elif child.suffix == ".md":
+                    files.add(consumer_owned_path(
+                        core_root, consumer_root, contract, child, kind="file"
+                    ))
+        except OSError as exc:
+            raise CheckError("소비 규칙 디렉터리를 수집할 수 없다") from exc
+
+    for value in contract["rule_roots"]:
+        visit(consumer_root / value, frozenset())
+    return sorted(files)
+
+
+def consumer_contract_files(
+    core_root: Path, consumer_root: Path, contract: dict[str, object],
+    *, include_gitmodules: bool = True,
+) -> list[Path]:
+    values = [document_roles(core_root)["consumer_policy"], contract["state"],
+              *contract["entry_pointers"].values()]
+    files = {consumer_owned_path(core_root, consumer_root, contract, value, kind="file", canonical=True)
+             for value in values}
+    files.update(consumer_rule_files(core_root, consumer_root, contract))
+    gitmodules = consumer_root / ".gitmodules"
+    if include_gitmodules:
+        # lexists observes only the directory entry, never a link target.
+        if any(gitmodules == consumer_root / value or consumer_root / value in gitmodules.parents
+               for value in contract["protected_paths"]):
+            raise CheckError("소비 계약 파일이 보호 경계를 침범한다")
+        if os.path.lexists(gitmodules):
+            files.add(consumer_owned_path(
+                core_root, consumer_root, contract, gitmodules, kind="file"
+            ))
+    return sorted(files)
+
+
 def consumer_contract(core_root: Path, consumer_root: Path) -> dict[str, object]:
     core_root = core_root.resolve()
     consumer_root = consumer_root.resolve()
-    policy = consumer_policy_path(core_root, consumer_root)
-    matches = list(CONSUMER_CONTRACT_BLOCK.finditer(policy.read_text(encoding="utf-8")))
+    policy = consumer_root / document_roles(core_root)["consumer_policy"]
+    bootstrap = {"protected_paths": []}
+    text = consumer_read_text(core_root, consumer_root, bootstrap, policy)
+    matches = list(CONSUMER_CONTRACT_BLOCK.finditer(text))
     if len(matches) != 1:
         raise CheckError(f"소비 계약 선언이 {len(matches)}개다: {policy}")
     contract = _json_object(matches[0].group(1), "소비 계약", policy)
@@ -209,23 +350,46 @@ def consumer_contract(core_root: Path, consumer_root: Path) -> dict[str, object]
     )
     if declared_core != core_root:
         raise CheckError("실행 Core와 소비 계약의 core_path가 다르다")
-    state = _relative_path(consumer_root, contract.get("state"), "state", must_exist="file")
+    protected = contract.get("protected_paths")
+    if not isinstance(protected, list) or not all(isinstance(p, str) and p for p in protected):
+        raise CheckError("protected_paths는 상대경로 배열이어야 한다")
+    for value in protected:
+        candidate = Path(value)
+        # Pure lexical containment: never resolve or query a protected target.
+        # Windows drive-relative/rooted paths need not be is_absolute().
+        if (candidate.is_absolute() or ".." in candidate.parts
+                or not (consumer_root / candidate).is_relative_to(consumer_root)):
+            raise CheckError("protected_paths는 소비 뿌리 안쪽 상대경로여야 한다")
+
+    def owned_declaration(value: object, label: str, kind: str) -> Path:
+        if not isinstance(value, str) or not value or Path(value).is_absolute() or ".." in Path(value).parts:
+            raise CheckError(f"{label}은 소비 뿌리 안쪽 상대경로여야 한다")
+        return consumer_owned_path(core_root, consumer_root, contract, value, kind=kind)
+
+    state = owned_declaration(contract.get("state"), "state", "file")
 
     pointers = contract.get("entry_pointers")
     if not isinstance(pointers, dict) or set(pointers) != {"codex", "claude"}:
         raise CheckError("entry_pointers는 codex와 claude 경로를 가져야 한다")
     pointer_paths = [
-        _relative_path(consumer_root, value, f"entry_pointers.{agent}", must_exist="file")
+        owned_declaration(value, f"entry_pointers.{agent}", "file")
         for agent, value in pointers.items()
     ]
 
     rule_roots = contract.get("rule_roots")
     if not isinstance(rule_roots, list) or not all(isinstance(p, str) and p for p in rule_roots):
         raise CheckError("rule_roots는 상대경로 배열이어야 한다")
-    rule_root_paths = [
-        _relative_path(consumer_root, value, "rule_roots", must_exist="dir")
-        for value in rule_roots
-    ]
+    rule_root_paths = []
+    for value in rule_roots:
+        if Path(value).is_absolute() or ".." in Path(value).parts:
+            raise CheckError("rule_roots는 소비 뿌리 안쪽 상대경로여야 한다")
+        lexical = consumer_root / value
+        if lexical == core_root or lexical in core_root.parents or core_root in lexical.parents:
+            raise CheckError("rule_roots는 Core와 겹칠 수 없다")
+        actual = consumer_owned_path(core_root, consumer_root, contract, value, kind="dir", canonical=True)
+        if actual == core_root or actual in core_root.parents or core_root in actual.parents:
+            raise CheckError("rule_roots는 Core와 겹칠 수 없다")
+        rule_root_paths.append(actual)
 
     required_capabilities = contract.get("required_core_capabilities", {})
     if not isinstance(required_capabilities, dict):
@@ -244,12 +408,7 @@ def consumer_contract(core_root: Path, consumer_root: Path) -> dict[str, object]
             raise CheckError(f"required_core_capabilities.{capability_id}는 양의 정수여야 한다")
     contract["required_core_capabilities"] = dict(required_capabilities)
 
-    protected = contract.get("protected_paths")
-    if not isinstance(protected, list) or not all(isinstance(p, str) and p for p in protected):
-        raise CheckError("protected_paths는 상대경로 배열이어야 한다")
-    protected_paths = [
-        _relative_path(consumer_root, value, "protected_paths") for value in protected
-    ]
+    protected_paths = [consumer_root / value for value in protected]
     contract_surface = [policy, declared_core, state, *pointer_paths, *rule_root_paths]
     for protected_path in protected_paths:
         if any(
@@ -261,6 +420,8 @@ def consumer_contract(core_root: Path, consumer_root: Path) -> dict[str, object]
             raise CheckError(
                 "protected_paths는 Core·정책·상태·진입 포인터·rule_roots와 겹칠 수 없다"
             )
+    consumer_owned_path(core_root, consumer_root, contract,
+                        document_roles(core_root)["consumer_policy"], kind="file")
     return contract
 
 
