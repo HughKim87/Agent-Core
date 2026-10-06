@@ -748,6 +748,63 @@
       ],
       "forbidden_owners": [],
       "reason": "무진전 재시도 판정에 실패 처리 owner가 새로 필요하다."
+    },
+    {
+      "id": "work-contract-two-writes-one-file",
+      "kind": "initial",
+      "utterance": "같은 코드 파일에서 두 함수의 동작을 각각 바꿔줘. 첫 함수는 정렬 순서를, 두 번째 함수는 빈 입력의 반환값을 바꿔.",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/work-contract.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "파일 하나라도 둘 이상의 변경 행동을 함께 시작하면 기존 상위 route에 해당한다."
+    },
+    {
+      "id": "work-contract-completion-keeps-read-history",
+      "kind": "mid-task",
+      "utterance": "여러 코드 파일을 수정한 작업의 구현과 검증을 마쳤어. 이제 최초 요청 조건과 결과를 대조하고 완료 응답만 작성해.",
+      "prior_owners": [
+        "rules/work-contract.md"
+      ],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/work-contract.md"
+      ],
+      "reason": "이미 읽은 작업 계약으로 완료 대조를 수행한다. 완료 보고는 새 읽기나 읽기 이력 초기화 trigger가 아니다."
+    },
+    {
+      "id": "work-contract-quick-completion-near-miss",
+      "kind": "near-miss",
+      "utterance": "quick 작업으로 단일 코드 파일의 주석 오탈자 하나를 고쳤어. 변경 없이 결과를 한 줄로 보고해.",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/work-contract.md"
+      ],
+      "reason": "명확한 단일 변경의 완료 응답만으로 작업 계약의 새 읽기를 요구하지 않는다."
+    },
+    {
+      "id": "work-contract-status-near-miss",
+      "kind": "near-miss",
+      "utterance": "지금 작업이 어디까지 끝났어? 새 변경이나 상태 파일 갱신 없이 현재 진행만 답해줘.",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/work-contract.md"
+      ],
+      "reason": "단순 상태 질문은 다중 변경 시작·범위 모호성·작업 교정이 아니다."
+    },
+    {
+      "id": "work-contract-analysis-report-near-miss",
+      "kind": "near-miss",
+      "utterance": "읽기 분석을 끝냈어. 수정이나 별도 문서 저장 없이 확인한 코드 구조를 대화로 설명해.",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/work-contract.md"
+      ],
+      "reason": "분석 결과의 대화 보고만으로 완료 보고 전 새 읽기 의무를 만들지 않는다."
     }
   ]
 }
