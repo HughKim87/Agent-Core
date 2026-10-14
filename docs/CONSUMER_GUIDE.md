@@ -35,6 +35,8 @@ Core SHA를 다른 문서나 선언에 다시 적지 않는다.
 
 최초 연결은 §7의 격리된 후보 Consumer에서 시작한다. 그 후보 root에서 원하는 상대경로를 정해 Core 저장소 전체를 submodule로 추가한다.
 
+Host가 SSH로 연결할 때는 최초 `submodule add` 전에 §8의 절차로 기존 read-only 인증을 선택한다. 아직 생성되지 않은 submodule에는 로컬 설정을 넣을 수 없으므로 최초 clone에 사용할 인증을 먼저 전달하고, 연결 후 해당 clone의 로컬 설정에 유지한다.
+
 ```powershell
 git submodule add <AGENT_CORE_REMOTE> <CORE_PATH>
 git submodule update --init --recursive
@@ -276,6 +278,37 @@ Host는 Core commit을 만들거나 Core 원격에 push하지 않으며 Core 안
 - 같은 PC에서도 각 clone의 로컬 `core.sshCommand`로 서로 다른 키를 선택할 수 있다.
 - 개인키, 토큰, `core.sshCommand`, 사용자별 키 경로는 저장소에 추적하지 않는다.
 - 정책은 보안 경계가 아니다. 실제 push 허용·거부는 원격 권한으로 검증한다.
+
+### 기존 read-only SSH 인증으로 최초 연결
+
+다음은 §3의 최초 연결 명령에 기존 SSH 인증을 전달하는 PowerShell 예시다. 후보 Consumer root에서 실행하며, placeholder는 승인된 기존 키 경로, SSH 원격, Core 상대경로로 대체한다. 키를 새로 만들거나 권한을 확대하는 예시가 아니다. HTTPS 등 다른 인증 방식을 쓰는 Consumer에 SSH를 강제하지 않는다.
+
+기존 키가 지정되었다면 사용자에게 경로를 다시 묻기 전에 승인 범위 안의 로컬 연결 설정과 키 이름을 확인할 수 있다. read-only 여부를 확인할 때는 개인 키 내용을 읽지 않고 승인된 공개키와 원격 권한 metadata를 대조한다. 로컬 파일 이름이나 SSH 연결 성공만으로 원격 쓰기 거부를 입증했다고 하지 않는다. 이 확인은 보호 데이터 접근이나 원격 변경에 대한 승인을 대신하지 않는다.
+
+```powershell
+$readOnlySshCommand = 'ssh -i "<READ_ONLY_KEY_PATH>" -o IdentitiesOnly=yes -o BatchMode=yes'
+$hadSshCommand = Test-Path Env:GIT_SSH_COMMAND
+$previousSshCommand = $env:GIT_SSH_COMMAND
+try {
+    $env:GIT_SSH_COMMAND = $readOnlySshCommand
+    git submodule add <AGENT_CORE_REMOTE> <CORE_PATH>
+    if ($LASTEXITCODE -ne 0) { throw 'Core submodule add failed' }
+    git submodule update --init --recursive
+    if ($LASTEXITCODE -ne 0) { throw 'Core submodule initialization failed' }
+    git -C <CORE_PATH> config --local core.sshCommand $readOnlySshCommand
+    if ($LASTEXITCODE -ne 0) { throw 'Core local SSH configuration failed' }
+}
+finally {
+    if ($hadSshCommand) {
+        $env:GIT_SSH_COMMAND = $previousSshCommand
+    }
+    else {
+        Remove-Item Env:GIT_SSH_COMMAND -ErrorAction SilentlyContinue
+    }
+}
+```
+
+호출 구간의 환경 설정은 성공·실패 모두에서 복원한다. 선택한 SSH 명령은 submodule의 로컬 Git 설정에만 남기며 `.gitmodules`, 정책, 상태, 보고서에는 실제 키 경로나 명령 값을 기록하지 않는다. 로컬 설정은 다른 clone으로 전달되지 않으므로 각 실행 환경에서 소비 검증 전에 별도로 제공한다. `GIT_SSH_COMMAND` 등 환경 override가 있으면 로컬 Git 설정보다 우선할 수 있으므로 실제 실행에서 선택되는 인증도 확인한다. 이 예시는 인증 선택만 다루며 후보 commit·gate·실제 반영은 §7을 그대로 따른다.
 
 ## 9. 실패와 복구
 
