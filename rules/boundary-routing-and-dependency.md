@@ -28,8 +28,8 @@
 
 - Core는 특정 Consumer의 코드·도메인·상태·보호 경로·저장 구조를 import하거나 소유하지 않는다.
 - Consumer는 공개된 Core 정책·계약, `verify`·`context`·`gate`, 호환성 정본에 등록된 선택 기능 진입점에만 의존한다.
-- Host 통합 경계의 구현과 cache·임시 작업 공간·로그·생성물·검증 결과는 모두 소비 root 안에서 Consumer가 소유한다. `core_path` 또는 그 하위 경로를 storage·작업 디렉터리·출력 경로로 사용할 수 없다.
-- Core 공개 인터페이스가 쓰기 경로를 요구하면 Consumer가 소유한 명시적 경로를 전달한다. 분리할 수 없는 도구는 Host가 Core에 실행하지 않는다. Consumer가 공개 계약과 호환되는 입력을 별도로 구현할 수는 있지만 Core 복사본·대체 배포물·Runtime 의존은 만들지 않는다.
+- Host 통합 경계의 구현과 보존하는 로그·생성물·검증 결과, 출력 위치를 선택할 수 있는 프로젝트 작업 공간은 Consumer가 소유하며 소비 root 내부를 기본으로 한다. 외부 보존·내보내기와 도구의 일시적 cache·lock·임시 파일은 상시 정책의 프로젝트 산출물 저장 경계를 따른다. `core_path` 또는 그 하위 경로를 storage·작업 디렉터리·출력·임시 경로로 사용할 수 없다.
+- Core 공개 인터페이스가 쓰기 경로를 요구하면 Consumer가 소유한 명시적 내부 경로를 전달한다. 공개 Runtime의 내부 storage 제약은 외부 내보내기·임시 자원 예외와 구분해 유지한다. 분리할 수 없는 도구는 Host가 Core에 실행하지 않는다. Consumer가 공개 계약과 호환되는 입력을 별도로 구현할 수는 있지만 Core 복사본·대체 배포물·Runtime 의존은 만들지 않는다.
 - Core 내부 Python 함수, 테스트 helper, 설명 문구, 우연한 파일 배치는 공개 호환성 계약이 아니다.
 - 양쪽에 필요한 도메인 데이터나 schema를 Core에 복사하지 않는다. 공통 보장에 필요한 도메인 중립 계약인지 먼저 판정하고, 아니면 Consumer가 소유한다.
 - Core와 Consumer 규칙 파일은 서로를 직접 route하지 않는다. 각 scope의 상위 정책이 자기 규칙을 선택한다.
@@ -42,7 +42,7 @@
 2. 참조 유형, 양쪽 owner, 허용 방향, 수명과 제거·이전 경로가 무엇인가.
 3. Core contract version이나 Consumer 이전이 필요한 비호환 변경인가.
 4. 프로젝트별 상태·데이터·자격 증명이 Core로 새지 않는가.
-5. Host의 모든 쓰기·cache·출력 경로가 소비 root 안에 있고 `core_path`와 겹치지 않는가.
+5. Host의 보존·작업 경로가 소비 root 내부 기본값 또는 상시 정책의 허용 예외를 따르고, 공개 Runtime의 쓰기 경로는 내부에 있으며, 어느 경로도 `core_path`와 겹치지 않는가.
 6. 반대쪽 orphan scan과 양쪽 관련 회귀를 어떻게 실행할 것인가.
 
 기존 공개 경계로 표현할 수 없으면 Consumer에서 Core 내부 구현을 우회 참조하지 않는다. 새 Core 계약이 필요하면 정확한 Core 변경 범위를 별도로 승인받는다.
@@ -62,7 +62,7 @@
 
 - 모든 경계 참조에 유형, owner, 방향, 공개 계약, 회귀 검사가 있는지 확인한다.
 - Core의 Consumer import와 Consumer의 비공개 Core import가 0인지 검사한다.
-- Host 저장·작업·cache·출력 경로가 소비 root 안에 있고 Core subtree와 겹치지 않는지 검사한다.
+- Host 저장·작업·출력 경로와 활성 참조가 소비 root 내부 기본값 또는 상시 정책의 허용 예외에 맞는지 확인한다. 도구의 일시적 자원과 보존 자료를 구분하고, 공개 Runtime의 내부 쓰기 제약 및 Core subtree 비중첩을 검사한다. 전달 경로 검사만으로 임의 자식 쓰기나 OS 권한 차단까지 검증했다고 주장하지 않는다.
 - Core·Consumer 문서와 규칙이 서로의 상위 router를 우회하지 않는지 확인한다.
 - 변경한 쪽의 direct reference scan과 반대쪽 orphan scan을 모두 실행한다.
 - 새 외부 도구 경로는 최소 호출의 대상·시점·version·결과를 확인하고 실패한 경로를 활성 경로로 남기지 않는다.

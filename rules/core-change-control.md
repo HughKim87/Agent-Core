@@ -49,7 +49,7 @@ Core 변경은 다음이 모두 충족될 때만 시작한다.
 ## 5. 조건과 행동
 
 - `host`가 Core를 소비하거나 완료 근거를 만들기 전에는 검증된 Core 기준 상태를 확인한다. 기준을 증명할 수 없으면 Core 기능과 소비 통합 실행을 시작하지 않는다. 오염 원인만 찾는 순수 read-only 진단과 역할·Consumer 입력·Runtime storage에 무관한 정적 metadata discovery는 예외지만, 쓰기 가능한 경로를 열지 않고 전후 불변을 증명하며 기능 소비·완료의 성공 근거로 사용하지 않는다.
-- Host 작업의 모든 쓰기 가능 경로와 가변 산출물은 Consumer 소유 경계 안에 있고 `core_path`와 겹치지 않아야 한다. Consumer는 wrapper·adapter·명시적 출력 경로·filesystem 격리 중 적절한 구현을 선택한다. 입력과 쓰기 경계를 분리할 수 없는 도구는 Core에 실행하지 않으며, Consumer가 호환 입력을 따로 구현하더라도 Core 복사본·대체 배포물·Runtime 의존으로 만들 수 없다.
+- Host 작업의 쓰기 경로와 가변 산출물은 상시 정책의 프로젝트 산출물 저장 경계에 따라 Consumer가 소유하며 `core_path`와 겹치지 않아야 한다. 승인된 외부 보존·내보내기와 도구 임시 자원도 Core 쓰기를 허용하지 않으며, 공개 Runtime의 Consumer 내부 쓰기 제약은 유지한다. Consumer는 wrapper·adapter·명시적 출력 경로·filesystem 격리 중 적절한 구현을 선택한다. 입력과 쓰기 경계를 분리할 수 없는 도구는 Core에 실행하지 않으며, Consumer가 호환 입력을 따로 구현하더라도 Core 복사본·대체 배포물·Runtime 의존으로 만들 수 없다.
 - `host`에서 변경 필요성을 발견하면 Core를 고치지 않고 정확한 근거와 diff 대상을 Maintainer로 이관한다.
 - 승인된 Maintainer 변경은 최소 범위만 수행한다.
 - 승인 범위를 벗어나는 파일이 필요하면 해당 파일 변경과 그에 의존하는 실행을 보류하고 새 승인을 받는다. 승인된 독립 조사·분석·검증은 계속할 수 있다.

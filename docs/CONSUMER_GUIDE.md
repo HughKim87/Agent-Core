@@ -192,7 +192,7 @@ python -B -m core_check --core-root <CORE_PATH> --consumer-root . context --rule
 
 ### Host의 Core 읽기 전용 실행
 
-`host`는 Core를 라이브러리 입력으로만 사용한다. Core 안에서 명령을 실행하거나 Core를 현재 작업 디렉터리, cache, 임시 경로, 로그 경로 또는 출력 경로로 사용하지 않는다. 모든 쓰기 가능 경로는 소비 root 안에 명시한다. 이 저장소의 Python 참조 구현은 bytecode cache를 막기 위해 `-B`를 사용하지만, 상위 불변식은 특정 실행기가 아니라 Core와 쓰기 경계의 완전한 분리다.
+`host`는 Core를 라이브러리 입력으로만 사용한다. Core 안에서 명령을 실행하거나 Core를 현재 작업 디렉터리, cache, 임시 경로, 로그 경로 또는 출력 경로로 사용하지 않는다. 프로젝트 보존·작업 경로는 상시 정책의 프로젝트 산출물 저장 경계를 따르고, 공개 Runtime에 전달하는 쓰기 경로는 소비 root 안에 명시한다. 승인된 외부 내보내기와 도구의 일시적 자원도 Core 경로를 사용할 수 없다. 이 저장소의 Python 참조 구현은 bytecode cache를 막기 위해 `-B`를 사용하지만, 상위 불변식은 특정 실행기가 아니라 Core와 쓰기 경계의 완전한 분리다.
 
 Consumer는 wrapper·adapter·명시적 출력 인자·read-only mount/ACL 중 자기 환경에 맞는 통합 경계를 선택한다. 예를 들어 `<HOST_WORK_ROOT>`를 소비 root 안에 두고 Core 공개 CLI에는 읽기 전용 `--core-root`를, 산출물에는 `<HOST_WORK_ROOT>` 아래 경로를 전달할 수 있다. 출력 경로를 분리할 수 없는 도구는 Core에 실행하지 않는다. 공개 계약과 호환되는 최소 Consumer 입력을 따로 만들더라도 이를 Core 복사본이나 대체 배포물로 사용하지 않는다.
 
