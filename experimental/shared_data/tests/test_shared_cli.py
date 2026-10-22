@@ -136,6 +136,26 @@ def configure_consumer(
 
 
 class PublicSharedDataCliTests(unittest.TestCase):
+    def test_local_source_public_arguments_become_observation_and_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            document = root / "docs" / "input.md"
+            document.parent.mkdir()
+            original = "# 공개 호출 근거\n".encode("utf-8")
+            document.write_bytes(original)
+            self.invoke(root, "initialize", {}, write=True)
+            source = self.invoke(root, "source.create", {
+                "source_kind": "local_document", "locator": "docs/input.md",
+                "evidence_role": "primary", "timestamp": "2026-10-23T00:00:00Z",
+            }, write=True)
+            self.assertEqual(source["created_at"], "2026-10-23T00:00:00Z")
+            self.assertEqual(source["payload"]["observed_at"], source["created_at"])
+            self.assertEqual(source["payload"]["verification_status"], "verified")
+            self.assertEqual(source["payload"]["version_or_hash"],
+                             "sha256:" + hashlib.sha256(original).hexdigest())
+            self.assertEqual(document.read_bytes(), original)
+            self.assertEqual(self.invoke(root, "source.get", {"record_id": source["id"]}), source)
+
     def test_reviewed_design_revision_through_public_cli(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)

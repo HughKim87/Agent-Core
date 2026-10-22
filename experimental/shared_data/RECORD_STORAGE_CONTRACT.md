@@ -10,7 +10,7 @@
 
 ## 1. 공개 상태와 소유권
 
-- 외부 소비자는 `optional_capabilities.shared_data` v1의 `info`·`invoke` 명령과 선언된 schema에만 의존한다. 내부 Python 모듈은 공개 API가 아니다.
+- 외부 소비자는 `optional_capabilities.shared_data` v1의 `info`·`invoke`, 선언된 schema와 아래 공개 호출 명세에 의존한다. 내부 Python 모듈은 공개 API가 아니다.
 - 실제 record·event·lock·임시 파일은 명시적으로 전달된 소비 root와 storage root가 소유한다.
 - Core 저장소 안에 Runtime 데이터를 만들지 않는다.
 - 저장 root와 보호 경로는 호출자가 소비 계약에서 주입하며 구현이 프로젝트 경로명을 하드코딩하지 않는다.
@@ -88,3 +88,27 @@
 - schema field와 Runtime field 집합을 대조한다.
 - Core 필수 패키지가 L7을 import하지 않고, 선언된 공개 entry module의 `info` 결과가 호환성 선언과 같은지 확인한다.
 - 지식 유형·수명주기는 [별도 L7 계약](KNOWLEDGE_LIFECYCLE_CONTRACT.md)이 이 저장 기반 위에서 소유한다. Evidence Context와 작업 상태 Runtime도 각 계약이 의미를 소유하며 `shared_data` v1 CLI가 전송 경계만 통합한다.
+
+## 8. 공개 호출 공통 명세
+
+공개 실행 준비와 Consumer 검증은 [소비 가이드 §6·6A](../../docs/CONSUMER_GUIDE.md#6-검증-명령)을 따른다. `invoke`에는 검증된 Consumer와 상대 `storage-root`가 필요하며, 변경 operation에는 추가로 `--write`와 현재 행동 승인이 필요하다. record·event 조회에는 초기화된 store가 필요하다. `info`는 정적 metadata discovery이며 operation 실행·저장 초기화가 아니다.
+
+stdin은 정확히 `{"operation":"initialize","arguments":{}}` 형태의 JSON object 하나다. 최대 1 MiB, strict UTF-8이며 BOM·NUL·중복 key·비유한 숫자를 거부한다. 아래 표의 필수 field 누락과 미지원 field는 오류다. 선택 field는 생략할 수 있으나 명시한 `null` 허용 여부는 각 field를 따른다.
+
+| 공통 표기 | 타입·의미 |
+|---|---|
+| ID | 소문자 canonical UUIDv4 문자열. `record_id`·`work_id` 생성 옵션은 생략/null이면 새 UUIDv4 |
+| hash | `sha256:<64 lowercase hex>` 문자열. expected hash는 마지막 조회의 해당 snapshot `content_hash` |
+| timestamp | 선택적 UTC 초 정밀도 문자열(예: `2026-10-23T00:00:00Z`), 생략/null이면 현재 UTC |
+| record / record[] | §2의 common-record object / 그 배열. payload는 해당 저장 schema를 따른다 |
+| 문자열 목록 | JSON array. 별도 명시가 없으면 비어 있지 않은 문자열을 중복 없이 나열하며 목록 자체의 비어 있음 허용 여부는 각 명세를 따른다 |
+
+| operation | 필수 arguments | 선택 arguments·기본값 | 쓰기 | 성공 result |
+|---|---|---|---|---|
+| `initialize` | 없음 | 없음 | 예 | `{"records":"<storage-root>/records","events":"<storage-root>/events"}`. 디렉터리 준비이며 기존 데이터를 초기화·삭제하지 않음 |
+
+성공 종료 `0`의 stdout은 `ok:true`, `capability:"shared_data"`, `capability_version:1`, `operation`, `result`를 가진 object다. 각 계약 표는 이 `result` 내부를 설명한다. 예상 계약·Runtime 오류는 종료 `1`이며 `ok:false`, 같은 capability 정보, `operation`(요청 판독 전이면 null), 문자열 `error`·`kind`, boolean `recoverable`을 반환한다. 예상 밖 예외는 종료 `2`이며 `recoverable` 대신 `unexpected:true`를 반환한다. CLI 인자 파싱 오류는 이 JSON envelope 이전에 발생할 수 있다.
+
+`recoverable:true`는 자동 재실행·복구 승인이나 미저장 보장이 아니다. §4의 교체 후 오류와 상위 계약의 event/projection pending을 먼저 구별한다. lifecycle·work의 재구축도 쓰기다.
+
+나머지 공개 operation의 입력·결과·승인 전제는 [지식·Lifecycle §7](KNOWLEDGE_LIFECYCLE_CONTRACT.md#7-공개-operation-명세), [Evidence Context §5](EVIDENCE_CONTEXT_CONTRACT.md#5-공개-operation-명세), [작업 상태 §6](WORK_STATE_CONTRACT.md#6-공개-operation-명세)이 나누어 소유한다. 요청·결과 schema는 envelope와 operation 열거를, payload schema는 저장 구조를 소유한다. operation별 arguments·기본값·반환 의미는 이 네 문서의 공개 호출 명세가 소유한다.

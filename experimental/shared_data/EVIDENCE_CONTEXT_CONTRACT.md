@@ -34,4 +34,29 @@
 
 - 실패 Markdown과 과거 failure record의 자동 검색은 포함하지 않는다. 예방 지식은 활성 규칙·회귀가 소유한다.
 - work-state 의미와 실행, 네트워크 전송, 모델 호출은 포함하지 않는다. `shared_data` CLI는 이 계약의 입력·출력을 전달할 뿐 새 의미를 소유하지 않는다.
-- L7 내부 Python 경로는 공개 API가 아니다. 외부 소비자는 `shared_data` v1의 `context.build`·`context.validate` operation과 선언된 schema만 사용한다.
+- L7 내부 Python 경로는 공개 API가 아니다. 외부 소비자는 `shared_data` v1의 `context.build`·`context.validate`, 선언된 schema와 §5의 호출 명세를 사용한다.
+
+## 5. 공개 operation 명세
+
+공통 envelope·오류·실행 경계는 [저장 계약 §8](RECORD_STORAGE_CONTRACT.md#8-공개-호출-공통-명세)을 따른다. 두 operation 모두 Runtime 쓰기를 하지 않는다.
+
+| operation | 필수 arguments | 선택 arguments·기본값 | 쓰기 | 성공 result |
+|---|---|---|---|---|
+| `context.build` | `purpose` (앞뒤 공백·NUL 없는 비어 있지 않은 문자열) | `documents:[]`, `record_ids:[]`, `candidate_documents:[]`, `search:null`, `filters:null`, `max_characters:12000` | 아니오 | context-package v1 object |
+| `context.validate` | `package` (context-package object) | 없음 | 아니오 | `{"valid":true}` |
+
+`documents`는 `{ref,data_key?}` object 배열이다. `ref`는 §1의 소비 상대 Markdown 경로 문자열, `data_key`는 생략/null이면 파일 전체, 문자열이면 해당 block을 선택한다. `record_ids`는 UUIDv4 문자열 배열이며 각 대상은 등록된 lifecycle이 필요하다. `candidate_documents`는 검색할 Markdown ref 문자열 배열이다. `search`는 생략/null 또는 앞뒤 공백 없는 비어 있지 않은 문자열이며 내용의 대소문자 무시 부분 일치다. `filters`는 생략/null 또는 object로 `kind`, `record_type`, `state`, `data_kind`, `status`, `scope`, `verification_status`, `evidence_role`만 허용하며 값은 앞뒤 공백 없는 비어 있지 않은 문자열이다. filter는 모두 정확히 일치해야 한다. `max_characters`는 boolean이 아닌 1 이상의 정수다.
+
+검색어나 비어 있지 않은 filter가 있을 때만 후보 탐색을 수행한다. 문서는 명시한 candidate 안의 current block, record는 current lifecycle 대상에서 선택한다. 직접 선택과 예산·제외 동작은 §2를 따른다. 누락 파일·잘못된 block·읽을 수 없는 record/lifecycle·직접 선택 예산 초과는 오류다. `context.validate`는 전달한 package의 구조·metrics 값의 비음수 정수 타입·fingerprint 일관성을 검사하며 원본 파일이나 현재 lifecycle을 다시 조회하지 않는다.
+
+반환 package의 `package_version`은 1, `purpose`는 요청 목적, `settings`는 정규화된 search·filters·max_characters·candidate_documents다. `selected`는 `kind`, `ref`, `reason`, `content`, `characters`를 가진 항목 배열이며 document_data는 `data_key`, `data_kind`, `status`, `source_refs`, `data`를, record는 `record_id`, `record_type`, `state`, `data`를 추가한다. `excluded`는 `kind`, `ref`, `reason` 등 제외 항목 배열이다. `metrics`는 `selected_items`, `selected_characters`, `excluded_items` 정수이고 `fingerprint`는 §3의 hash다. 전체 출력 구조는 [context-package schema](schemas/context-package-v1.schema.json)를 따른다.
+
+예를 들어 `{"operation":"context.build","arguments":{"purpose":"검토","documents":[{"ref":"docs/input.md","data_key":"sample"}],"max_characters":12000}}`은 다음 형식의 block을 명시적으로 선택한다. marker와 JSON의 kind/key가 같고 문서 안 key가 유일해야 한다. `source_refs`는 중복 없는 문자열 배열, `payload`는 object다.
+
+````markdown
+<!-- project-data:v1 kind=evidence key=sample -->
+```json
+{"key":"sample","kind":"evidence","status":"current","source_refs":[],"payload":{"statement":"검토 근거"}}
+```
+<!-- /project-data -->
+````

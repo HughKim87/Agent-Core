@@ -10,7 +10,7 @@
 
 ## 1. 격리와 저장 소유권
 
-- 외부 소비자는 `optional_capabilities.shared_data` v1의 `info`·`invoke` 명령과 선언된 schema에만 의존한다. 내부 Python 모듈은 공개 API가 아니다.
+- 외부 소비자는 `optional_capabilities.shared_data` v1의 `info`·`invoke`, 선언된 schema와 §7의 공개 호출 명세에 의존한다. 내부 Python 모듈은 공개 API가 아니다.
 - 호출자는 `RecordStore`의 소비 root·storage root·보호 경로·쓰기 활성화를 명시한다. Core 저장소에는 Runtime 데이터를 만들지 않는다.
 - `KnowledgeService`와 `LifecycleService`는 호출자가 구성한 같은 store를 사용한다. `create_knowledge_store`는 이 계약의 고정 type·stream allowlist만 편의상 구성한다.
 - 실제 회귀는 격리된 임시 소비 root에서만 수행한다. 보호 경로의 존재 확인·열거·읽기는 하지 않는다.
@@ -79,3 +79,49 @@ Schema는 payload의 저장 구조를, Python 검증기는 canonical UUIDv4·실
 - 실패 Markdown projection과 실패 전용 lifecycle은 흡수하지 않는다. 실패 경험은 활성 규칙·회귀와 원래 Git lineage가 소유한다.
 - Evidence Context package는 [Evidence Context 계약](EVIDENCE_CONTEXT_CONTRACT.md)이, 작업 상태 Runtime은 [작업 상태 계약](WORK_STATE_CONTRACT.md)이 소유한다. Maintainer의 기존 `file_data` 의존 전환은 이 계약에 포함하지 않는다.
 - 이 기능은 [호환성 선언](../../docs/COMPATIBILITY.md)의 `shared_data` v1에 등록된 `available` 선택 기능이다. 실제 소비는 선언된 공개 CLI와 Consumer 경계 검증을 사용하며 내부 모듈 import는 공개 계약이 아니다.
+
+## 7. 공개 operation 명세
+
+공통 타입·envelope·쓰기·오류 판정은 [저장 계약 §8](RECORD_STORAGE_CONTRACT.md#8-공개-호출-공통-명세)을 따른다. 이 절의 모든 ID는 UUIDv4 문자열이다. `actor`, `reason`, `locator`, `scope`, `verified_by`는 해당 의미의 비어 있지 않은 문자열이다. 선택 ID 참조는 생략/null이면 없음이며 ID 배열은 중복 없는 배열이다. 생성 결과는 lifecycle 자동 등록을 뜻하지 않는다.
+
+| operation | 필수 arguments | 선택 arguments·기본값 | 쓰기 | 성공 result |
+|---|---|---|---|---|
+| `source.create` | `source_kind`, `locator`, `evidence_role` | `verification_status`·`version_or_hash` 없음, `record_id`·`timestamp`는 공통 기본값 | 예 | source record |
+| `source.get` | `record_id` | `verify_local:false` (boolean) | 아니오 | source record |
+| `source.list` | 없음 | `verify_local:false` (boolean) | 아니오 | source record[] |
+| `source.verify` | `record_id` | 없음 | 아니오 | `{record_id,verification_status,version_or_hash,integrity}`; 로컬 integrity는 `match`, 비로컬은 `not_applicable` |
+| `knowledge.create` | `statement`, `classification`, `scope`, `source_ids`, `verification_status` | `verified_by:null`, `record_id`·`timestamp` 공통 기본값 | 예 | knowledge record |
+| `knowledge.get` | `record_id` | 없음 | 아니오 | knowledge record |
+| `knowledge.list` | 없음 | 없음 | 아니오 | knowledge record[] |
+| `decision.create` | `payload` (아래 decision object) | `record_id`·`timestamp` 공통 기본값 | 예 | decision record |
+| `decision.get` | `record_id` | 없음 | 아니오 | decision record |
+| `decision.list` | 없음 | 없음 | 아니오 | decision record[] |
+| `lifecycle.register` | `target_id`, `initial_state`, `actor`, `approval_kind`, `reason` | `source_ids:[]`, `decision_id:null`, `timestamp` 공통 기본값 | 예 | lifecycle_state record |
+| `lifecycle.transition` | `target_id`, `expected_state_hash`, `action`, `actor`, `approval_kind`, `reason` | `source_ids:[]`, `related_target_ids:[]`, `replacement_id:null`, `decision_id:null`, `timestamp` 공통 기본값 | 예 | 대상 lifecycle_state record |
+| `lifecycle.get` | `target_id` | 없음 | 아니오 | `{record:<원본 record>,lifecycle:<lifecycle_state record>}` |
+| `lifecycle.list` | 없음 | `state:null`, `target_type:null` (필터 없음) | 아니오 | lifecycle_state record[] |
+| `lifecycle.current` | 없음 | `target_type:null` (필터 없음) | 아니오 | current인 **원본** source·knowledge·decision record[] |
+| `lifecycle.history` | `target_id` | 없음 | 아니오 | 해당 대상에 적용되는 lifecycle_events record[]; related conflict도 포함 |
+| `lifecycle.rebuild` | `target_id` | `expected_last_event_id:null` | 예 | 재구축한 lifecycle_state record |
+| `lifecycle.register_existing` | `actor`, `approval_kind` | 없음 | 예 | 새로 등록한 lifecycle_state record[] |
+| `lifecycle.audit` | `actor` | 없음 | 예 | drift 발견 배열 `[{target_id,reason},…]` |
+
+Source 입력의 `source_kind`와 `evidence_role`은 각각 §2의 종류와 `primary|supporting|contextual`, `verification_status`는 `observed|verified|unavailable`이다. 비로컬 status는 생략/null이면 `observed`, `version_or_hash`는 생략/null 또는 비어 있지 않은 문자열이다. 로컬 source는 실제 파일의 SHA-256을 기록하고 status를 `verified`로 정한다. 제공한 hash가 다르면 실패한다. `timestamp`가 payload의 `observed_at`와 record 생성 시각이 된다. `observed_at`을 arguments로 직접 전달하지 않는다. `get/list`의 `verify_local:true`와 `source.verify`는 로컬 bytes를 재검사하고 drift 시 오류를 반환하며 record를 갱신하지 않는다.
+
+Knowledge는 §2의 분류와 `candidate|verified` status, source ID 1개 이상이 필요하다. candidate의 `verified_by`는 null, verified는 비어 있지 않은 문자열이어야 한다. 생성은 source 존재·종류·unavailable 여부와 로컬 hash를 확인한다. 지식·결정의 조회는 참조를 검증하지만 로컬 bytes를 자동 재검사하지 않는다.
+
+Decision의 `payload`는 다음 field를 모두 가진 object이며 추가 field는 허용하지 않는다. `problem`, `selected_option`, `rationale`, `approved_by`는 비어 있지 않은 문자열, `requirements`·`impacts`는 비어 있지 않은 문자열 배열, `source_ids`는 1개 이상의 source ID 배열이다. `options`는 정확히 `{label,impact}` 문자열 쌍인 object 2개 이상이며 label은 중복 없고 `selected_option`과 하나가 일치해야 한다. `requires_user_approval`은 boolean, `approval_kind`는 §3의 세 종류, `decided_at`은 UTC 초 정밀도 문자열이다. §2의 승인·시각·source 검사를 통과해야 한다. CLI에서는 이들을 arguments에 펼치지 않고 아래처럼 감싼다.
+
+```json
+{"operation":"decision.create","arguments":{"payload":{"problem":"방식 선택","requirements":["재현 가능"],"options":[{"label":"A","impact":"현재 유지"},{"label":"B","impact":"검증 추가"}],"selected_option":"B","rationale":"승인 범위 내 검증","impacts":["검증 시간 증가"],"source_ids":["11111111-1111-4111-8111-111111111111"],"requires_user_approval":false,"approval_kind":"agent_in_scope","approved_by":"maintainer","decided_at":"2026-10-23T00:00:00Z"},"timestamp":"2026-10-23T00:00:00Z"}}
+```
+
+예시 source ID는 먼저 생성한 실제 source ID로 대체한다. 다음 로컬 source 예시는 `docs/input.md`가 소비 root에 존재해야 하며, 반환 payload에 `observed_at`, 계산한 `version_or_hash`, `verification_status:"verified"`가 들어간다.
+
+```json
+{"operation":"source.create","arguments":{"source_kind":"local_document","locator":"docs/input.md","evidence_role":"primary","timestamp":"2026-10-23T00:00:00Z"}}
+```
+
+Lifecycle의 `target_type`은 `source|knowledge|decision`, `state`는 §3의 여섯 상태, `initial_state`는 `candidate|current`다. action·승인·replacement·conflict 조건은 §3 표가 정본이다. `expected_state_hash`는 원본이 아닌 lifecycle snapshot hash다. 선택 `source_ids`는 실제 source 참조, `decision_id`는 current decision 참조이며, `replacement_id`는 supersede 대상과 같은 유형의 current record여야 한다. `declare_conflict`에는 자신을 제외한 같은 유형의 등록된 `related_target_ids`가 1개 이상 필요하고 다른 action에서는 빈 배열이어야 한다. `replacement_id`는 `supersede`에 필수이며 다른 transition action에는 허용하지 않는다. `expected_last_event_id`를 주면 replay의 마지막 event ID와 일치해야 한다. pending이면 쓰기 승인 하에 rebuild 후 재조회한다.
+
+`register_existing`는 이미 등록된 대상을 중복 등록하지 않고 필요한 projection을 재구축할 수 있다. source·knowledge의 verified와 decision은 current로, 그 밖에는 candidate로 등록하므로 current 등록에 맞는 승인이 필요하다. 결과에는 이번에 새로 등록한 snapshot만 담는다. `audit`는 읽기 전용 검사가 아니다. §4의 drift 전이를 저장한다. 두 일괄 operation은 여러 대상 전체의 원자 transaction이 아니므로 중간 오류 전에 일부 event·snapshot이 반영됐을 수 있다. 실패 시 조회·history로 상태를 먼저 확인한다.

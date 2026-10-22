@@ -238,7 +238,7 @@ $request | python -B -I -c $bootstrap `
 - `--write`는 기술적 쓰기 잠금을 열 뿐 사용자 승인이나 원격 권한을 만들지 않는다.
 - storage root와 보호 경로는 소비 root 상대경로다. 보호 경로의 존재를 확인하거나 내용을 전달하지 않는다.
 - request는 BOM·NUL 없는 strict UTF-8 JSON이며 최대 1 MiB다. stdout은 result v1 JSON 하나이고 종료 코드는 성공 `0`, 계약·Runtime 거부 `1`, 실행 불가 `2`다.
-- 공개 operation과 payload 구조는 [호환성 선언](COMPATIBILITY.md)이 가리키는 schema가 정본이다. `experimental.shared_data.*` 내부 Python import에는 의존하지 않는다.
+- 공개 호출의 입력·결과·쓰기 전제는 [호환성 선언 §3A](COMPATIBILITY.md#3a-선택-runtime-공개-경계)가 연결한 네 계약 문서, envelope·저장 payload 구조는 선언된 schema가 정본이다. `experimental.shared_data.*` 내부 Python import에는 의존하지 않는다.
 
 ## 7. Core 버전 갱신
 

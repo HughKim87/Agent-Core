@@ -63,4 +63,37 @@ snapshot은 요청, 현재 상태, 중복 없는 완료 항목·관련 ID·근�
 
 - subprocess, 도메인 workflow, 모델·브라우저·네트워크 호출, 자동 승인·자동 재시도는 구현하지 않는다.
 - handoff 문서를 자동 편집하거나 완료 work를 시작 context에 자동 삽입하지 않는다.
-- 내부 Python 경로는 공개 API가 아니다. 외부 소비자는 `shared_data` v1의 `work.*`·`execution.fingerprint`·`request.compare` operation과 선언된 schema만 사용한다.
+- 내부 Python 경로는 공개 API가 아니다. 외부 소비자는 `shared_data` v1의 `work.*`·`execution.fingerprint`·`request.compare`, 선언된 schema와 §6의 호출 명세를 사용한다.
+
+## 6. 공개 operation 명세
+
+공통 타입·envelope·오류·쓰기 경계는 [저장 계약 §8](RECORD_STORAGE_CONTRACT.md#8-공개-호출-공통-명세)을 따른다. `actor`, `action`, `next_action`은 해당 의미의 비어 있지 않은 문자열이며 선택 `next_action`은 null도 허용한다. 진행 항목·blocker·근거는 중복 없는 문자열 배열이고 `related_record_ids`도 중복 없는 비어 있지 않은 문자열 배열이다.
+
+| operation | 필수 arguments | 선택 arguments·기본값 | 쓰기 | 성공 result |
+|---|---|---|---|---|
+| `work.create` | `request` (아래 object), `actor`, `next_action` | `work_id`·`timestamp` 공통 기본값 | 예 | requested 상태의 work_state record |
+| `work.get` | `work_id` | 없음 | 아니오 | work_state record |
+| `work.list` | 없음 | `status:null` (필터 없음) | 아니오 | work_state record[] |
+| `work.transition` | `work_id`, `expected_state_hash`, `actor`, `action`, `outcome`, `to_status` | `completed_items:[]`, `blockers:[]`, `related_record_ids:[]`, `evidence_refs:[]`, `next_action:null`, `timestamp` 공통 기본값 | 예 | 전이 후 work_state record |
+| `work.rebuild` | `work_id` | `expected_last_event_id:null` | 예 | 재구축한 work_state record |
+| `work.refresh_design` | `work_id`, `expected_state_hash`, `actor`, `reviewed_fingerprint`, `decisions_unchanged`, `evidence_refs` | `timestamp` 공통 기본값 | 예 | 설계 fingerprint를 갱신한 work_state record |
+| `execution.fingerprint` | `design_ref` (소비 상대 파일 경로 문자열) | 없음 | 아니오 | `{design_ref,fingerprint}`; 전달한 ref와 현재 bytes의 SHA-256 |
+| `request.compare` | `previous`, `current` (각각 아래 request object) | 없음 | 아니오 | `{invalidated,reapproval_required,design_review_required,changed_fields,previous_execution,current_execution}` |
+
+Request는 `desired_outcome` 문자열과 `authorized_actions`, `excluded_scope`, `input_refs`, `protection_boundaries`, `required_decisions`, `verification_levels` 문자열 배열이 모두 필수이며 추가 field는 선택 `execution`뿐이다. 배열은 비어 있을 수 있다. `execution`을 생략할 수 있으나 null을 넣지 않는다. 넣으면 `{tier,phase_id?,design_ref?,design_fingerprint?}` object이며 tier는 `quick|standard|controlled`다. quick/standard의 세 포인터는 생략/null, controlled는 모두 비어 있지 않아야 한다. fingerprint는 공통 hash 타입이다. 정규화 결과는 생략한 포인터를 null로 갖는다.
+
+`status` 필터와 `to_status`는 §3의 다섯 상태다. 일반 전이는 action `requested`·`refresh_design`을 거부한다. outcome은 `success|failure|blocked|rejected`로, in_progress/completed는 success, failed는 failure, blocked는 blocked와 짝을 이룬다. rejected일 때는 필수 `to_status:null`을 전달하고 진행 정보를 보존한다. 일반 전이의 빈 선택 목록·null next_action은 이전 blocker·다음 행동을 그대로 유지한다는 뜻이 아니므로 이번 상태에 필요한 값을 전달한다. 완료 항목·관련 ID·근거는 누적 중복 제거된다. §3의 전이·blocker·시각 조건을 함께 충족해야 한다.
+
+`expected_state_hash`는 현재 work snapshot의 `content_hash`, `expected_last_event_id`는 제공 시 해당 work의 마지막 event ID와 일치해야 한다. get/list도 event 정본과 snapshot 불일치를 오류로 반환한다. pending은 §4의 rebuild 후 재조회하며 실패 응답을 event 미저장으로 간주하지 않는다. work_state payload는 `work_id`, `request`, `status`, `completed_items`, `blockers`, `next_action`, `related_record_ids`, `evidence_refs`, `last_event_id`를 갖는다. [저장 schema](schemas/work-state-payload-v1.schema.json)가 각 field 구조를 소유한다.
+
+`work.refresh_design`에는 현재 파일 bytes와 같은 새 `reviewed_fingerprint`, 정확히 boolean true인 `decisions_unchanged`, 검토 근거 1개 이상의 `evidence_refs`가 필요하다. 기존 fingerprint와 같거나 완료·비controlled 작업이면 거부한다. 실제 의미 검토·승인은 호출자의 책임이다. 예시 ID·hash·근거는 실제 조회·검토 결과로 대체한다.
+
+```json
+{"operation":"work.refresh_design","arguments":{"work_id":"11111111-1111-4111-8111-111111111111","expected_state_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","actor":"maintainer","reviewed_fingerprint":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","decisions_unchanged":true,"evidence_refs":["docs/review.md#설계-검토"]}}
+```
+
+`request.compare`의 세 판정은 boolean, `changed_fields`는 바뀐 request field 이름 배열, 두 execution 값은 정규화 object 또는 실행 지정이 없으면 null이다. 설계 hash만 바뀌었는지와 요청 의미 field가 바뀌었는지는 §2 기준으로 구분한다. 다음은 쓰기나 설계 파일 읽기를 하지 않는 비교이며 세 판정은 모두 false, `changed_fields`는 빈 배열이다. 실제 재승인 필요 여부를 호출 자체가 승인하지 않는다.
+
+```json
+{"operation":"request.compare","arguments":{"previous":{"desired_outcome":"문서 검토","authorized_actions":["읽기"],"excluded_scope":[],"input_refs":[],"protection_boundaries":[],"required_decisions":[],"verification_levels":["정적 검사"]},"current":{"desired_outcome":"문서 검토","authorized_actions":["읽기"],"excluded_scope":[],"input_refs":[],"protection_boundaries":[],"required_decisions":[],"verification_levels":["정적 검사"]}}}
+```

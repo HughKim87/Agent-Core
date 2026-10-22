@@ -75,7 +75,7 @@
 - 실제 Runtime 데이터와 결과는 소비 저장소가 소유하며 Core 저장소에 쓰지 않는다.
 - 선택 기능이 없으면 필수 gate는 `not_applicable`로 처리하고 계속 성립해야 한다.
 
-`shared_data` v1은 격리 모드(`python -B -I`)에서 실행 중인 Core root와 `src`만 module 검색 경로 맨 앞에 넣고 선언된 `experimental.shared_data` entry의 `info|invoke`를 실행하는 bootstrap만 공개한다. `invoke`는 JSON request v1을 stdin으로 하나 받아 JSON result v1을 stdout으로 하나 반환한다. 세부 operation과 데이터 구조는 선언된 schema가 소유한다. bare module 실행과 `experimental.shared_data` 아래 구현 모듈의 직접 import는 공개 계약이 아니다.
+`shared_data` v1은 격리 모드(`python -B -I`)에서 실행 중인 Core root와 `src`만 module 검색 경로 맨 앞에 넣고 선언된 `experimental.shared_data` entry의 `info|invoke`를 실행하는 bootstrap만 공개한다. `invoke`는 JSON request v1을 stdin으로 하나 받아 JSON result v1을 stdout으로 하나 반환한다. 요청·결과 schema는 envelope와 operation 열거를, payload schema는 저장 구조를 소유한다. operation별 arguments·기본값·성공 결과·쓰기와 승인 전제는 [저장 공통 명세](../experimental/shared_data/RECORD_STORAGE_CONTRACT.md#8-공개-호출-공통-명세), [지식·Lifecycle 명세](../experimental/shared_data/KNOWLEDGE_LIFECYCLE_CONTRACT.md#7-공개-operation-명세), [Evidence Context 명세](../experimental/shared_data/EVIDENCE_CONTEXT_CONTRACT.md#5-공개-operation-명세), [작업 상태 명세](../experimental/shared_data/WORK_STATE_CONTRACT.md#6-공개-operation-명세)가 소유한다. bare module 실행과 `experimental.shared_data` 아래 구현 모듈의 직접 import는 공개 계약이 아니다.
 
 `info`는 역할·Consumer 입력·Runtime storage와 무관하고 쓰기 가능 경로를 열지 않는 정적 discovery다. Core tree·Git 의미 상태의 전후 불변을 정상·예외 경로 모두에서 증명하며 dirty Core에서도 실행할 수 있지만 기능 소비·가용성·완료 성공 근거가 아니다. Git 기준선을 증명할 수 없으면 fail-closed한다.
 
