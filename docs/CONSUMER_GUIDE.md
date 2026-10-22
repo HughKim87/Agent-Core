@@ -244,6 +244,8 @@ $request | python -B -I -c $bootstrap `
 
 ### 후보와 실제 소비 반영
 
+이 절의 fetch·checkout은 사용자가 승인한 소비 배포이며, [Core 정책 §8](../PROJECT_RULES.md#8-core-불변)과 [변경 통제 §3](../rules/core-change-control.md#3-core-변경의-정의)의 범위에서 수행한다. Core 소비·검증 실행을 멈춘 상태에서 revision을 맞춘 뒤 새 기준선으로 소비 gate를 확인한다. Core 파일을 직접 편집하거나 가변 산출물을 만드는 일반 Host 작업과 구별한다.
+
 Host 소비 완료에는 부모 HEAD·index gitlink와 실행 Core HEAD의 일치가 필요하다. 따라서 실제 소비 저장소에서 새 Core를 checkout한 뒤 부모 commit 전에 gate를 통과시키려는 순서는 성립하지 않는다. stage만 추가해도 부모 HEAD와 index가 달라 실패한다. 아래 절차는 검증 대상인 후보 부모 snapshot을 먼저 만들며, 기존 gate의 결속 조건을 유지한다.
 
 1. Maintainer에서 검증된 Core revision과 호환성을 확인하고, 반영할 소비 입력·Git 쓰기·임시 자원의 범위를 정한다. 실제 소비 저장소는 마지막 검증 상태에 둔다. 무관한 변경을 임의로 삭제하거나 commit하지 않는다.
@@ -269,7 +271,7 @@ git -C <CANDIDATE_ROOT> commit -m "Validate Core update candidate"
 
 후보 clone은 연결·갱신을 위한 한시 검증 자원이며 Core 배포 사본이나 상시 Runtime으로 유지하지 않는다. 종료 시 승인된 정확한 임시 대상만 정리한다. 일반 작업에 후보 clone을 요구하지 않는다. 실제 filesystem read-only 강제와 import 이전 경계의 한계는 §6을 따른다.
 
-Host는 Core commit을 만들거나 Core 원격에 push하지 않으며 Core 안의 어떤 로컬 파일도 만들거나 바꾸지 않는다. Maintainer의 push에는 별도 사용자 승인과 해당 후보에 선택된 필수 검증의 통과가 필요하다. 전체 회귀·commit snapshot clean clone은 release·packaging·재현성 등 실제 주장에 따라 [검증 계약](VERIFICATION.md#5-위험별-최소-수준)에서 선택한다.
+Host의 Core 파일 교체는 위의 승인된 revision 배포에 한정한다. 일반 소비·검증 실행에서는 Core에 직접·간접 쓰기를 하지 않으며, Core 내용의 임의 편집·새 Core commit·Core 원격 push는 허용하지 않는다. Maintainer의 push에는 별도 사용자 승인과 해당 후보에 선택된 필수 검증의 통과가 필요하다. 전체 회귀·commit snapshot clean clone은 release·packaging·재현성 등 실제 주장에 따라 [검증 계약](VERIFICATION.md#5-위험별-최소-수준)에서 선택한다.
 
 ## 8. 원격 권한과 자격 증명
 

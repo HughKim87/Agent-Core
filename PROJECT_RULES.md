@@ -116,7 +116,7 @@ Core 저장소 자체에는 자동 진입 파일과 현재 상태를 두지 않�
 ## 8. Core 불변
 
 - 소비 계약의 `core_path` 전체가 Core다.
-- `host` 역할에서는 `core_path`를 읽기 전용 라이브러리로 취급하며 추적 여부와 파일 종류를 불문하고 Core에 직접·간접 쓰기를 할 수 없다.
+- `host` 역할에서는 `core_path`를 읽기 전용 라이브러리로 취급하며 추적 여부와 파일 종류를 불문하고 Core에 직접·간접 쓰기를 할 수 없다. 예외는 사용자가 승인한 연결·갱신·복구에서 검증된 Core commit을 선택하고 부모 gitlink와 전체 submodule checkout을 그 revision에 맞추는 소비 배포 작업뿐이다. 이 배포는 Core 소비·검증 실행과 분리하며, Core 내용의 임의 편집·새 commit·push나 기존 로컬 변경의 무단 폐기를 허용하지 않는다.
 - Host에서 생기는 모든 가변 상태·작업 경로·cache·출력은 Consumer가 소유하고 `core_path`와 겹치지 않아야 한다. wrapper·adapter·명시적 출력 경로·filesystem 격리 중 어떤 구현을 쓸지는 Consumer가 정하되, 입력과 쓰기 경계를 분리할 수 없으면 Core를 대상으로 실행하지 않는다.
 - Core를 소비하거나 완료 근거를 만드는 Host 실행은 시작 전 읽기 전용 기준과 실행 후 불변을 모두 증명해야 한다. 오염 상태의 원인만 찾는 순수 read-only 진단은 시작 전 청결을 요구하지 않을 수 있지만, 쓰기 가능한 기능을 실행하지 않고 실행 전후 불변을 증명해야 하며 소비·완료의 성공 근거가 될 수 없다. 역할·Consumer 입력·Runtime storage와 무관한 정적 metadata discovery도 같은 전후 불변을 증명하고 쓰기 가능 경로를 열지 않을 때만 이 near-miss에 속하며, 기능 소비나 완료 근거가 아니다.
 - `host`에서 Core 변경 필요성을 발견하면 Core를 건드리지 않고 정확한 근거와 변경 제안을 Maintainer로 이관한다.

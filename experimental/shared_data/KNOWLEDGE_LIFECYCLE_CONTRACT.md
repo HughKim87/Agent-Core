@@ -25,7 +25,7 @@
 
 Source 종류는 `local_document`, `local_data`, `command_result`, `web_page`, `user_statement`다. 로컬 source는 저장 root·선언된 보호 경계와 겹치지 않는 정규화된 소비 root 상대경로만 허용하고 실제 bytes의 SHA-256을 저장한다. `web_page`는 HTTP(S) locator만 기록하며 외부 fetch를 하지 않는다. `user_statement`는 원문 대신 승인된 `request://` 참조만 기록한다.
 
-Knowledge 분류는 `fact`, `inference`, `procedure`, `constraint`, 상태는 `candidate`, `verified`다. `statement`는 줄바꿈 없는 500자 이하 주장 하나다. 조회는 당시 record와 참조 존재를 보존하고, 현재 로컬 bytes 일치는 `verify_source`에서만 다시 검사한다.
+Knowledge 분류는 `fact`, `inference`, `procedure`, `constraint`, 상태는 `candidate`, `verified`다. `statement`는 줄바꿈 없는 500자 이하 주장 하나다. 지식·결정의 조회는 당시 record와 source 참조를 검증하지만 로컬 bytes를 자동 재검사하지 않는다. 로컬 source의 현재 bytes 검사는 §7의 `source.verify` 또는 `source.get/list`의 `verify_local:true`로 요청할 수 있다.
 
 Decision 승인 종류는 `user`, `standing_policy`, `agent_in_scope`다. `requires_user_approval=true`이면 앞의 두 사용자 계열 승인만 가능하고, 결정 시각은 record 생성 시각보다 미래일 수 없다.
 
@@ -38,7 +38,7 @@ Decision 승인 종류는 `user`, `standing_policy`, `agent_in_scope`다. `requi
 | `review_required` | source drift·충돌·검증 사건으로 재검토 필요 |
 | `superseded` | 같은 유형의 current replacement가 대체한 과거 record |
 | `rejected` | 승인 검토 후 채택하지 않은 record |
-| `retired` | 한때 current였으나 더 이상 사용하지 않는 record |
+| `retired` | 승인된 사용 중단 상태. 과거 current 이력을 보장하지 않음 |
 
 `superseded`, `rejected`, `retired`는 terminal이다. 원본을 되살리거나 덮어쓰지 않고 새 record와 새 lifecycle을 만든다.
 
