@@ -269,7 +269,7 @@ git -C <CANDIDATE_ROOT> commit -m "Validate Core update candidate"
 
 후보 clone은 연결·갱신을 위한 한시 검증 자원이며 Core 배포 사본이나 상시 Runtime으로 유지하지 않는다. 종료 시 승인된 정확한 임시 대상만 정리한다. 일반 작업에 후보 clone을 요구하지 않는다. 실제 filesystem read-only 강제와 import 이전 경계의 한계는 §6을 따른다.
 
-Host는 Core commit을 만들거나 Core 원격에 push하지 않으며 Core 안의 어떤 로컬 파일도 만들거나 바꾸지 않는다. Maintainer도 사용자 승인과 전체 게이트 없이 push하지 않는다.
+Host는 Core commit을 만들거나 Core 원격에 push하지 않으며 Core 안의 어떤 로컬 파일도 만들거나 바꾸지 않는다. Maintainer의 push에는 별도 사용자 승인과 해당 후보에 선택된 필수 검증의 통과가 필요하다. 전체 회귀·commit snapshot clean clone은 release·packaging·재현성 등 실제 주장에 따라 [검증 계약](VERIFICATION.md#5-위험별-최소-수준)에서 선택한다.
 
 ## 8. 원격 권한과 자격 증명
 

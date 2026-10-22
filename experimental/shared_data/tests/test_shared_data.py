@@ -454,6 +454,132 @@ class RecordStoreTests(unittest.TestCase):
             self.assertEqual(list(target.parent.glob("*.tmp")), [])
             self.assertEqual(list(target.parent.glob("*.lock")), [])
 
+    def test_record_post_replace_read_failure_leaves_new_bytes(self) -> None:
+        for operation in ("create", "update"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as raw:
+                root = Path(raw)
+                store = writable_store(root)
+                unrelated = root / "untouched.txt"
+                unrelated.write_bytes(b"preserve unrelated data")
+                original = (store.create_record("example", {"revision": 1}, record_id=FIRST_ID)
+                            if operation == "update" else None)
+                target = root / STORAGE_ROOT / "records" / f"{FIRST_ID}.json"
+                real_replace, real_read = os.replace, Path.read_bytes
+                replaced = False
+
+                def replace_then_mark(source, destination):
+                    nonlocal replaced
+                    real_replace(source, destination)
+                    if Path(destination) == target:
+                        replaced = True
+
+                def fail_target_read(path):
+                    if path == target and replaced:
+                        raise OSError("post-replace target read failed")
+                    return real_read(path)
+
+                with patch("experimental.shared_data.store.os.replace", replace_then_mark), \
+                        patch.object(Path, "read_bytes", fail_target_read):
+                    with self.assertRaisesRegex(OSError, "post-replace target read failed"):
+                        if operation == "create":
+                            store.create_record("example", {"revision": 2}, record_id=FIRST_ID)
+                        else:
+                            store.update_record(FIRST_ID, {"revision": 2},
+                                                expected_content_hash=original["content_hash"])
+                self.assertTrue(replaced)
+                stored = json.loads(target.read_bytes())
+                self.assertEqual(stored["id"], FIRST_ID)
+                self.assertEqual(stored["payload"], {"revision": 2})
+                self.assertEqual(store.get_record(FIRST_ID), stored)
+                self.assertEqual(unrelated.read_bytes(), b"preserve unrelated data")
+                self.assertEqual(list(target.parent.glob("*.tmp")), [])
+                self.assertEqual(list(target.parent.glob("*.lock")), [])
+
+    def test_stream_post_replace_read_failure_leaves_appended_event(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            store = writable_store(root)
+            unrelated = store.create_record("example", {"keep": True}, record_id=FIRST_ID)
+            first = store.append_event("example_events", {"sequence": 1}, event_id=FIRST_ID)
+            target = root / STORAGE_ROOT / "events" / "example_events.jsonl"
+            before = target.read_bytes()
+            real_replace, real_read = os.replace, Path.read_bytes
+            replaced = False
+
+            def replace_then_mark(source, destination):
+                nonlocal replaced
+                real_replace(source, destination)
+                if Path(destination) == target:
+                    replaced = True
+
+            def fail_target_read(path):
+                if path == target and replaced:
+                    raise OSError("post-replace stream read failed")
+                return real_read(path)
+
+            with patch("experimental.shared_data.store.os.replace", replace_then_mark), \
+                    patch.object(Path, "read_bytes", fail_target_read):
+                with self.assertRaisesRegex(OSError, "post-replace stream read failed"):
+                    store.append_event("example_events", {"sequence": 2}, event_id=SECOND_ID,
+                                       expected_stream_hash=first["stream_hash"])
+            self.assertTrue(replaced)
+            after = target.read_bytes()
+            self.assertTrue(after.startswith(before))
+            rows = [json.loads(line) for line in after.splitlines()]
+            self.assertEqual([row["id"] for row in rows], [FIRST_ID, SECOND_ID])
+            self.assertEqual([row["payload"]["sequence"] for row in rows], [1, 2])
+            self.assertEqual(store.list_events("example_events")[0], rows)
+            self.assertEqual(store.get_record(FIRST_ID), unrelated)
+            self.assertEqual(list(target.parent.glob("*.tmp")), [])
+            self.assertEqual(list(target.parent.glob("*.lock")), [])
+
+    def test_owned_lock_cleanup_failure_is_distinct_from_data_commit(self) -> None:
+        for operation in ("create", "update", "append"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as raw:
+                root = Path(raw)
+                store = writable_store(root)
+                unrelated = store.create_record("example", {"keep": True}, record_id=SECOND_ID)
+                original = (store.create_record("example", {"revision": 1}, record_id=FIRST_ID)
+                            if operation == "update" else None)
+                if operation == "append":
+                    store.append_event("example_events", {"sequence": 1}, event_id=FIRST_ID)
+                    target = root / STORAGE_ROOT / "events" / "example_events.jsonl"
+                else:
+                    target = root / STORAGE_ROOT / "records" / f"{FIRST_ID}.json"
+                owned_lock = target.parent / f".{target.name}.lock"
+                real_unlink = Path.unlink
+
+                def fail_owned_lock(path, *args, **kwargs):
+                    if path == owned_lock:
+                        raise OSError("owned lock cleanup failed")
+                    return real_unlink(path, *args, **kwargs)
+
+                with patch.object(Path, "unlink", fail_owned_lock):
+                    with self.assertRaisesRegex(OSError, "owned lock cleanup failed"):
+                        if operation == "create":
+                            store.create_record("example", {"revision": 2}, record_id=FIRST_ID)
+                        elif operation == "update":
+                            store.update_record(FIRST_ID, {"revision": 2},
+                                                expected_content_hash=original["content_hash"])
+                        else:
+                            store.append_event("example_events", {"sequence": 2}, event_id=SECOND_ID)
+                self.assertTrue(owned_lock.is_file())
+                if operation == "append":
+                    rows = [json.loads(line) for line in target.read_bytes().splitlines()]
+                    self.assertEqual([row["id"] for row in rows], [FIRST_ID, SECOND_ID])
+                    self.assertEqual([row["payload"]["sequence"] for row in rows], [1, 2])
+                    self.assertEqual(store.list_events("example_events")[0], rows)
+                else:
+                    stored = json.loads(target.read_bytes())
+                    self.assertEqual(stored["id"], FIRST_ID)
+                    self.assertEqual(stored["payload"], {"revision": 2})
+                    self.assertEqual(store.get_record(FIRST_ID), stored)
+                self.assertEqual(store.get_record(SECOND_ID), unrelated)
+                self.assertEqual(list(target.parent.glob("*.tmp")), [])
+                self.assertEqual(list(target.parent.glob("*.lock")), [owned_lock])
+                owned_lock.unlink()
+                self.assertFalse(owned_lock.exists())
+
     def test_delete_and_move_are_not_part_of_the_surface(self) -> None:
         with tempfile.TemporaryDirectory(prefix="shared-surface-") as raw_root:
             store = writable_store(Path(raw_root))

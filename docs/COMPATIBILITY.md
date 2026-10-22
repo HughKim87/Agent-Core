@@ -133,6 +133,6 @@ Codex 템플릿 옆의 `agents/openai.yaml`도 배포 자산이며 `allow_implic
 ## 7. 복구
 
 - Core revision은 submodule gitlink가 소유한다.
-- 검증 실패 시 부모 gitlink를 마지막 검증 commit으로 되돌린다.
+- 복구는 [소비 안내](CONSUMER_GUIDE.md#9-실패와-복구)를 따른다. 후보 gate 실패에서는 실제 Consumer를 유지한다. 실제 반영 후 실패에서는 소비·게시를 중단하고 사용자 변경을 보존하며, 정확한 복구가 승인된 경우에만 마지막 검증된 부모 gitlink·소비 입력과 Core checkout을 함께 복원한다.
 - 저장소 안에 백업 사본이나 SHA 복제 문서를 만들지 않는다.
 - `--root` alias 제거는 다음 계약 세대의 별도 비호환 변경이다.
