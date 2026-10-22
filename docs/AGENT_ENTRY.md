@@ -41,3 +41,9 @@ Codex와 Claude는 하위 디렉터리 지침을 발견·활성화하는 시점�
 - 실제 에이전트 동등성은 소비 저장소의 새 비영속 세션에서 별도로 검증한다.
 
 합성 포인터 구조 통과는 실제 에이전트 검증을 대신하지 않는다.
+
+## 5. 스킬 discovery 진입
+
+프로젝트 정책 진입과 스킬 discovery는 별도 계약이다. [공개 스킬 계약](COMPATIBILITY.md#3b-공통-workflow-진입-계약)의 native 포인터는 Consumer가 소유하며 Core 내부에는 `.agents/skills/`, `.claude/skills/`를 두지 않는다. 기존 루트 `AGENTS.md`·`CLAUDE.md`의 세 문서 순서와 내용은 스킬 설치로 바꾸지 않는다.
+
+Codex는 Consumer의 `.agents/skills/<name>/SKILL.md`와 같은 폴더의 `agents/openai.yaml`을 사용하고, Claude Code는 `.claude/skills/<name>/SKILL.md`를 사용한다. 두 파일 모두 선택한 Consumer 계약의 실제 `core_path` 아래 같은 공통 workflow로 연결한다. 스킬 이름이 같아도 실제 선택된 출처가 다르면 동등 진입의 근거가 아니다. 연결과 이전은 [소비 안내](CONSUMER_GUIDE.md#10-공통-스킬-진입-구성)를 따른다.

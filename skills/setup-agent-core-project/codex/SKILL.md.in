@@ -1,0 +1,8 @@
+---
+name: setup-agent-core-project
+description: "명시적으로 호출했을 때만 프로젝트 이름을 바탕으로 독립 Private GitHub 저장소를 만들고, 읽기 전용 SSH 인증으로 Agent Core를 연결·검증하여 초기 구성을 게시한다. 일반적인 프로젝트 생성 요청으로 자동 실행하지 않는다."
+---
+
+Core workflow entry v1.
+
+[공통 진입]({{WORKFLOW_LINK}})을 끝까지 읽고 연결된 실행 정본을 적용한다. 이 도구의 명시적 스킬 호출은 실행 정본의 직접 호출 조건을 충족한다. 실행 정본에 도달할 수 없으면 그 사실을 보고하고 과거 절차로 대신하지 않는다.

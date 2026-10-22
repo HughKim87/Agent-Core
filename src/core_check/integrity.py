@@ -693,9 +693,79 @@ def check_python_ast(root: Path) -> Iterable[Finding]:
             yield Finding("python-ast", _rel(root, path), f"구문 오류: {exc}")
 
 
+def _preserved_skill_sources(root: Path) -> tuple[set[str], list[Finding]]:
+    """Identify byte-preserved data, never promote its content to Core policy."""
+    verified: set[str] = set()
+    findings: list[Finding] = []
+    base = root.resolve()
+    manifest = base / "skills" / "SOURCES.json"
+    if not (base / "skills").exists():
+        return verified, findings
+
+    def unique_object(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("원본 식별에 중복 key가 있다")
+            value[key] = item
+        return value
+
+    try:
+        if manifest.resolve() != manifest:
+            raise ValueError("원본 식별 파일이 정규 위치에 있지 않다")
+        data = json.loads(manifest.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+        if (
+            not isinstance(data, dict)
+            or set(data) != {"format_version", "files"}
+            or type(data["format_version"]) is not int
+            or data["format_version"] != 1
+            or not isinstance(data["files"], dict)
+            or not data["files"]
+        ):
+            raise ValueError("원본 식별 형식이 다르다")
+    except (OSError, UnicodeError, ValueError):
+        return verified, [Finding("skill-source-integrity", "skills/SOURCES.json", "원본 식별을 읽거나 검증할 수 없다")]
+
+    for relative, digest in data["files"].items():
+        parts = PurePosixPath(relative).parts
+        if (
+            len(parts) < 4
+            or parts[0] != "skills"
+            or not re.fullmatch(r"[a-z][a-z0-9-]*", parts[1])
+            or parts[2] != "source"
+            or any(part in {".", ".."} for part in parts)
+            or "\\" in relative
+            or ":" in relative
+            or PurePosixPath(relative).as_posix() != relative
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        ):
+            findings.append(Finding("skill-source-integrity", "skills/SOURCES.json", "원본 경로 또는 SHA-256 형식이 다르다"))
+            continue
+        target = base.joinpath(*parts)
+        try:
+            if target.resolve() != target or not target.is_file():
+                raise ValueError("원본 파일 위치·유형이 다르다")
+            if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+                raise ValueError("원본 bytes가 식별값과 다르다")
+        except (OSError, ValueError):
+            findings.append(Finding("skill-source-integrity", relative, "원본 파일이 없거나 위치·유형·bytes가 식별값과 다르다"))
+            continue
+        verified.add(relative)
+    return verified, findings
+
+
+@register("skill-source-integrity")
+def check_skill_source_integrity(root: Path) -> Iterable[Finding]:
+    yield from _preserved_skill_sources(root)[1]
+
+
 @register("document-headers")
 def check_document_headers(root: Path) -> Iterable[Finding]:
+    preserved, _ = _preserved_skill_sources(root)
     for path in _walk(root, ".md"):
+        if _rel(root, path) in preserved:
+            continue
         text = path.read_text(encoding="utf-8")
         missing = [header for header in DOC_HEADERS if header not in text]
         if missing:

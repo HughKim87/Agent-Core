@@ -1,0 +1,9 @@
+---
+name: handoff-manager
+description: "사용자가 핸드오프 작성 스킬을 선택하거나 $handoff-manager로 명시적으로 호출할 때만 인수인계 문서를 작성·갱신·점검·정리한다. 일반적인 인수인계·다음 세션 준비 요청이나 관련 단어만으로 자동 실행하지 않는다."
+disable-model-invocation: true
+---
+
+Core workflow entry v1.
+
+[원본 진입]({{WORKFLOW_LINK}})을 끝까지 읽고 연결된 원본 스킬을 적용한다. 이 도구의 명시적 스킬 호출은 원본의 직접 호출 조건을 충족한다. 원본에 도달할 수 없으면 그 사실을 보고하고 과거 절차로 대신하지 않는다.

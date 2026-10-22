@@ -1,0 +1,6 @@
+interface:
+  display_name: "세션 종료"
+  short_description: "직접 호출한 세션의 Core·extension 개선을 승인받고 검증·커밋·보고"
+  default_prompt: "$session-close로 현재 세션을 검토하고 승인된 개선과 종료 보고를 진행해줘."
+policy:
+  allow_implicit_invocation: false

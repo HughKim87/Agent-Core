@@ -29,6 +29,8 @@
 | L6 | 경로 안전, 오류 유형, fingerprint | 순수 함수와 예외 타입 |
 | L7 | 선택적 공통 데이터 Runtime과 호환 adapter | 호환성 선언에 등록된 versioned CLI·schema만 외부 공개 |
 
+`skills/`는 스킬 원본과 승인 개정을 보관·배포하는 자산 영역이다. 원본의 업무 절차를 L2 공통 규칙으로 승격하거나 기존 Core 기본값으로 재작성하지 않는다. `source/`는 보존 원본, `session-close/current/`와 `setup-agent-core-project/current/`는 각 스킬의 승인 개정 정본이며 `WORKFLOW.md`가 실행 본문 하나를 선택한다. WORKFLOW와 도구별 템플릿은 navigation만 소유한다. Core는 보존·참조·진입을, 스킬은 자기 작업의 고유 절차를, Consumer는 실제 설치·상태·결과를 소유한다. Kernel은 스킬을 Runtime 의존으로 import하지 않는다.
+
 ## 3. 의존 방향
 
 - L1은 Core 규칙의 유일한 Core router다. 소비 정책은 자기 scope의 도메인 route만 소유한다.
@@ -108,7 +110,10 @@ L7이 없어도 Core import, Core 자체 `verify`, Core 자체 `gate`가 성립�
 - [정보 소유 구조](INFORMATION_ARCHITECTURE.md)의 선언
 - [호환성 선언](COMPATIBILITY.md)
 - `core_check`의 `verify`, `context`, `gate` 명령·종료 상태·결과 구조
+- [공개 스킬 계약](COMPATIBILITY.md#3b-공통-workflow-진입-계약)의 공통 workflow 경로와 최소 진입 템플릿
 
 선택 기능은 [호환성 선언](COMPATIBILITY.md)의 `optional_capabilities`에 명령·schema와 버전이 등록된 경우에만 공개 인터페이스다. 흡수가 승인됐다는 사실, L7 내부 Python 함수와 실험 경로는 공개 호환성 계약이 아니다.
+
+위 `optional_capabilities` 경계는 선택 Runtime에 적용한다. 공통 workflow는 별도 텍스트 진입 계약을 사용하며 Runtime 명령·schema로 등록하지 않는다. 스킬 발견·선택은 Core의 정책 rule router를 대체하지 않고 시작 context에도 자동 추가하지 않는다.
 
 내부 Python 함수, 문서 배치의 설명 문구, 테스트 helper는 공개 호환성 계약이 아니다.

@@ -35,6 +35,8 @@
 |---|---|
 | 공통 최소 정책·Core route | `PROJECT_RULES.md` |
 | 공통 조건부 규칙 | `rules/` |
+| 보존된 스킬 원본·자료·도구별 진입 | `skills/` |
+| 스킬 원본 파일 식별 | `skills/SOURCES.json` |
 | 목적·보장 | `docs/CHARTER.md` |
 | 계층·scope 경계 | `docs/ARCHITECTURE.md` |
 | 정보 소유와 선언 | 이 문서 |
@@ -53,6 +55,7 @@ Core 저장소에는 자동 진입 파일, 현재 상태, 특정 Maintainer·Hos
 |---|---|
 | Codex·Claude 진입 | 소비 root의 `AGENTS.md`, `CLAUDE.md` |
 | 프로젝트 정책·도메인 route·소비 계약 | 소비 root의 `PROJECT_RULES.md` |
+| 설치한 스킬 discovery 포인터 | 소비 root의 `.agents/skills/`, `.claude/skills/` |
 | 현재 상태 | 소비 계약의 `state` 경로 |
 | 도메인 규칙 | 소비 계약의 `rule_roots` |
 | 보호 경로 | 소비 계약의 `protected_paths` |
@@ -73,6 +76,7 @@ Core 저장소에는 자동 진입 파일, 현재 상태, 특정 Maintainer·Hos
 ├─ docs/
 ├─ experimental/
 ├─ rules/
+├─ skills/
 ├─ src/
 └─ tests/
 ```

@@ -66,7 +66,7 @@
 - `verify`, `context`, `gate` 명령과 종료 상태 0·1·2를 제공한다.
 - v2 동안 `--root`는 `--core-root`의 deprecated alias다.
 
-## 3A. 선택 기능 공개 경계
+## 3A. 선택 Runtime 공개 경계
 
 - `optional_capabilities`에 없는 기능은 흡수가 승인됐더라도 아직 공개 기능이 아니다.
 - 선택 기능은 기본 비활성이며 명시적 호출만 허용한다.
@@ -80,6 +80,26 @@
 `info`는 역할·Consumer 입력·Runtime storage와 무관하고 쓰기 가능 경로를 열지 않는 정적 discovery다. Core tree·Git 의미 상태의 전후 불변을 정상·예외 경로 모두에서 증명하며 dirty Core에서도 실행할 수 있지만 기능 소비·가용성·완료 성공 근거가 아니다. Git 기준선을 증명할 수 없으면 fail-closed한다.
 
 `shared_data invoke`는 verified Consumer 계약, Core와 정확히 같은 `contract_version`, Consumer의 `required_core_capabilities.shared_data` 최소 버전 선언을 요구한다. Runtime storage가 계약의 `core_path`와 겹치거나 Consumer 밖이면 dispatch 전에 실패한다. 통과한 storage는 Consumer 상대 canonical 경로로 dispatch되고 `core_path`는 내부 보호 경로에 합산되어 각 storage 해석 때 다시 검사된다. Host 역할에서는 계약 해석 전 소비 정책·부모 gitlink·Core 관찰, 부모 HEAD·index gitlink와 Core HEAD 일치, 기능 실행 전 clean, 실행 후 결속 불변을 함께 요구한다. 순수 `verify`는 불일치 gitlink를 실행 허가로 쓰지 않고 finding으로 진단한다. 다만 Core 내부 entry import 전에 일어나는 revision 교체는 Consumer 소유 외부 launcher 또는 immutable checkout이 별도로 닫아야 한다.
+
+## 3B. 공통 workflow 진입 계약
+
+Core workflow entry v1은 아래 공통 진입과 도구별 discovery 템플릿의 계약이다. 세 스킬의 원본과 참고 자료는 각 `source/` 트리에 그대로 보존한다. `WORKFLOW.md`는 실행 본문 하나를 연결한다. 별도 승인 개정이 없는 스킬은 보존 원본을 읽고, `session-close`와 `setup-agent-core-project`는 각 사용자 승인 개정을 담은 `current/SKILL.md`와 그 상대 참고자료를 읽는다. 이때 source는 비활성 보존 자료이며 current와 동시에 적용하지 않는다. 원본을 공통 규칙으로 승격하거나 일반 Core 절차에 맞춰 수정하지 않는다. 배포 자산은 필수 제공하고 실행·Consumer 설치는 선택이다. 신규 setup의 도구 선택 기본값은 그 스킬이 소유하며 Core 공통 기본값이 아니다. 기존 갱신은 Consumer가 위임한 등록 범위·도구 선택·명시적 제외를 따른다. 자동 선택 표시는 스킬 발견/선택 정책이며 기존 사용자 승인·실행기 권한을 바꾸지 않는다.
+
+<!-- core-workflow-entries:v1 -->
+| 스킬 | 공통 본문 | Codex 템플릿 | Claude Code 템플릿 | 자동 선택 |
+|---|---|---|---|---|
+| `handoff-manager` | `skills/handoff-manager/WORKFLOW.md` | `skills/handoff-manager/codex/SKILL.md.in` | `skills/handoff-manager/claude/SKILL.md.in` | 직접 호출 |
+| `setup-agent-core-project` | `skills/setup-agent-core-project/WORKFLOW.md` | `skills/setup-agent-core-project/codex/SKILL.md.in` | `skills/setup-agent-core-project/claude/SKILL.md.in` | 직접 호출 |
+| `session-close` | `skills/session-close/WORKFLOW.md` | `skills/session-close/codex/SKILL.md.in` | `skills/session-close/claude/SKILL.md.in` | 직접 호출 |
+<!-- /core-workflow-entries -->
+
+Codex 템플릿 옆의 `agents/openai.yaml`도 배포 자산이며 `allow_implicit_invocation`을 소유한다. Claude Code 템플릿은 `disable-model-invocation`을 소유한다. 양쪽은 같은 공통 본문을 읽으며 공통 절차를 native 진입에 복제하지 않는다. 이 계약은 기존 `optional_capabilities` JSON·Runtime API·schema와 분리하며 새 기계 판독 필드를 요구하지 않는다.
+
+지원 템플릿은 단순 YAML frontmatter와 Markdown 포인터를 사용한다. scalar는 JSON 호환 double-quoted 문자열, 단순 이름, `true`/`false`만 사용하고 Codex 메타데이터는 `interface`와 `policy` 두 단계 mapping으로 제한한다. `SKILL.md.in`의 유일한 치환 항목은 `{{WORKFLOW_LINK}}`다. 실제 설치·치환·호환 검사 절차는 [소비 안내](CONSUMER_GUIDE.md#10-공통-스킬-진입-구성)가 소유한다.
+
+이 진입 형식의 제한은 Core가 생성하는 어댑터에만 적용한다. 보존된 원본 frontmatter·본문·고유 절차에 이 subset이나 Core 문서 형식을 강제하지 않는다. `skills/SOURCES.json` format_version 1의 `files`는 `skills/<name>/source/<원본 상대경로>`별 SHA-256이다. 확인된 source 파일만 일반 문서 헤더 검사와 구분하고 원본 bytes·누락·경로 이상은 별도 무결성 검사로 보고한다. source 영역의 Git `-text` 속성으로 줄바꿈 bytes도 보존한다.
+
+원본 보관은 원본의 도구·서비스·환경 값을 Core 전역 기본값으로 채택하는 일이 아니다. Core 내부 native 발견 경로나 별도 Runtime 의존도 만들지 않는다. 스킬 문제를 분석·보고할 수 있으나 단순한 Core 기본 절차와의 차이를 수정·차단 사유로 삼지 않는다. 어댑터 구조·원본 bytes 검사는 실제 두 도구의 parser·발견·읽기·행동을 증명하지 않는다. 원본이나 진입 경로·호출 의미를 바꾸려면 현재 사용자 범위와 §4의 호환성·이전을 대조한다.
 
 ## 4. 호환·비호환
 
@@ -107,7 +127,7 @@
 - Host clean 증명은 검사 중 content 변환을 실행하지 않는다. tracked 경로에 `filter`, `working-tree-encoding` 또는 `ident` attribute가 필요하면 해당 checkout은 Host gate에서 지원하지 않고 fail-closed한다.
 - Host clean 증명의 tracked 일반 파일 내용은 Git 줄바꿈 정규화 전의 실제 worktree bytes로 HEAD blob과 대조한다. 따라서 `git status`가 clean이어도 checkout bytes가 다르면 실패한다.
 - 선택 기능이 없어도 필수 검증이 통과해야 한다.
-- 추적 텍스트 표준은 UTF-8과 LF다.
+- Core 유지 문서와 생성한 진입 텍스트 표준은 UTF-8과 LF다. 보존된 스킬 원본은 §3B의 식별 bytes와 Git `-text` 속성을 따라 줄바꿈도 원본 그대로 유지한다.
 - LF와 CRLF는 정상 줄 종료로 해석하고 실제 후행 공백·탭만 위반으로 판정한다.
 
 ## 7. 복구

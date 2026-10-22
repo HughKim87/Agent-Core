@@ -1,0 +1,4 @@
+interface:
+  display_name: "핸드오프 작성"
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,9 @@
+---
+name: session-close
+description: "사용자가 $session-close 또는 스킬 선택 UI로 직접 호출할 때만 현재 세션을 검토하고 Agent Core와 extension 개선을 승인·설계·검증·커밋한 뒤 종료 보고를 수행한다. 일반적인 종료 발언이나 작업 완료만으로 호출하지 않는다."
+disable-model-invocation: true
+---
+
+Core workflow entry v1.
+
+[공통 진입]({{WORKFLOW_LINK}})을 끝까지 읽고 연결된 실행 정본을 적용한다. 이 도구의 명시적 스킬 호출은 실행 정본의 직접 호출 조건을 충족한다. 실행 정본에 도달할 수 없으면 그 사실을 보고하고 과거 절차로 대신하지 않는다.
