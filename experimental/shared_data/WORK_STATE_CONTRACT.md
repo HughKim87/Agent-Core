@@ -12,7 +12,7 @@
 
 - 프로젝트 전체 현재 단계와 첫 다음 행동의 정본은 소비 저장소의 활성 handoff다. Work Runtime은 여러 세션에서 구조화 재개가 필요한 개별 작업에만 사용한다.
 - `work_events` JSONL stream이 추가 전용 정본이고 같은 work ID의 `work_state`는 event replay로 재구축 가능한 bounded projection이다.
-- 호출자가 소비 root·storage root·보호 경계와 `write_enabled=true`를 명시해야만 초기화·event·snapshot 쓰기가 가능하다. Core에는 Runtime 데이터를 저장하지 않는다.
+- 공통 실행·Consumer 저장·보호·명시 쓰기 경계는 [저장 계약 §8](RECORD_STORAGE_CONTRACT.md#8-공개-호출-공통-명세)을 따른다. Work 쓰기도 기본 비활성이며 Core에는 Runtime 데이터를 저장하지 않는다.
 - 보호 데이터 원문, 전체 명령 출력, 채팅 전문과 동적 Git 상태를 저장하지 않고 승인된 참조만 기록한다.
 
 ## 2. 불변 요청과 실행 포인터

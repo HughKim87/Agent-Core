@@ -22,7 +22,7 @@
 
 ## 2. 승격 조건
 
-실험 기능을 필수 Kernel로 올리려면 다음을 **모두** 만족해야 한다.
+실험 기능을 필수 Kernel로 올리려면 [헌장 §7](CHARTER.md#7-포함-판정)의 포함 조건과 [Kernel §7](KERNEL_SCOPE.md#7-재검토-조건)의 재검토 조건에 더해 다음을 **모두** 만족해야 한다. 이 절은 승격 시의 증거 조건을 소유한다.
 
 1. Kernel 밖에 실제 소비자가 있다. 자기 테스트는 소비자가 아니다.
 2. 헌장의 보장 G1~G6 중 최소 하나를 관측 가능하게 개선한다.
@@ -46,18 +46,9 @@
 
 ## 4. 현재 기능과 승인된 흡수 후보
 
-`shared_data` v1은 [호환성 선언](COMPATIBILITY.md)에 등록된 선택 Runtime이다. 설치된 경우 공통 record·원자적 저장, 지식 유형·승인 기반 lifecycle, Evidence Context package, 작업 상태·실행 호환 Runtime을 하나의 versioned JSON CLI·schema 경계로 제공한다. 완전히 부재하면 필수 Core 실패가 아니며, 일부 파일만 남은 부분 설치는 계약 실패다.
+승인된 공통 데이터 기능의 범위는 [Kernel §4.2](KERNEL_SCOPE.md#42-승인된-공통-데이터-흡수-범위), 현재 공개 기능 ID·버전·entry·명세는 [호환성 §3A](COMPATIBILITY.md#3a-선택-runtime-공개-경계)가 소유한다. 흡수 승인은 필수 Kernel 승격이 아니며 현재 제공 상태를 이 문서에 별도로 나열하지 않는다.
 
-다음 도메인 중립 기능은 사용자의 명시적 승인에 따라 흡수와 공개 경계 등록을 완료했다.
-
-- 공통 record·원자적 저장 — `available`, `shared_data` v1
-- source·knowledge·decision·수명주기 — `available`, `shared_data` v1
-- 문서·`data_key` 기반 evidence context package — `available`, `shared_data` v1
-- 작업 상태·실행 계약의 비활성 호환 Runtime — `available`, `shared_data` v1
-
-외부 소비자는 [호환성 선언](COMPATIBILITY.md)의 entry module·명령·schema만 사용할 수 있다. 구현 모듈과 테스트 helper는 계속 비공개다.
-
-과거 완료 snapshot에서 실험 기능이 없는 상태로 통합 게이트가 통과한 결과가 §1의 격리 구조에 대한 역사적 증거다. 현재 작업의 최신 게이트는 각 소비 저장소의 선언된 상태와 Git 이력이 소유하며, 실험 기능을 나중에 추가해도 이 성질을 다시 검증해야 한다.
+완전 부재와 부분 설치의 판정은 §1을 따른다. 실제 최신 검증 결과는 소비 저장소의 상태와 Git 이력이 소유하고, 기능 추가 시에도 격리 성질을 다시 검증한다.
 
 ## 5. 후보 Runtime 판정과 재검토에 사용하는 비교 기준
 
@@ -89,4 +80,4 @@
 | `내부 구현` | 구현·회귀는 존재하지만 공개 계약에 등록하지 않아 소비자가 의존할 수 없다 |
 | `제외` | 이 저장소에 옮기지 않는다 |
 
-과거 후보 Runtime의 `제외` 판정은 최신 사용자의 공통 데이터 보존 요구와 흡수 승인으로 대체됐다. 이 변경은 L7 흡수만 허용하며 필수 Kernel 승격을 뜻하지 않는다. 승격은 §2의 기준으로 별도 판정한다.
+판정은 승인된 기능 범위를 따르며 현재 범위는 [Kernel §4.2](KERNEL_SCOPE.md#42-승인된-공통-데이터-흡수-범위)에서 확인한다. 필수 Kernel 승격은 §2로 별도 판정한다.

@@ -200,7 +200,7 @@ Host의 `context`, `gate`와 기능 사용은 계약 해석 전 소비 정책·�
 
 관찰 중 확인한 정책·gitlink·Core 변경이나 시작한 관찰의 불변성을 끝까지 확인하지 못한 오류는 후속 Maintainer 역할로 무시하지 않는다. 처음부터 Host 관찰을 시작할 수 없는 정상 Maintainer 경로와 이 실패를 구분한다.
 
-현재 Git 기반 참조 검사는 HEAD와 index의 직접 일치, index 우회 flag, 실제 worktree bytes와 HEAD blob의 일치, tracked entry type·mode·symlink target, untracked·ignored 항목과 빈 directory를 확인한다. 따라서 Git의 줄바꿈 정규화로 `git status`가 clean이어도 실제 bytes가 다르면 실패한다. `filter`·`working-tree-encoding`·`ident` content 변환 attribute가 필요한 checkout은 hashing 전에 fail-closed한다. nested gitlink는 같은 기준으로 재귀 검사한다. 실행 뒤에는 실제 Git metadata directory만 제외한 tree의 내용·구조·지속 mtime과 HEAD·index·local config 지문을 대조한다. Git 기준이나 사후 불변을 증명할 수 없으면 검증은 실패다.
+검사 대상과 세부 판정은 [검증 계약 §4](VERIFICATION.md#4-소비-통합-gate)를 따른다. `git status`의 clean만으로 원시 bytes 일치를 증명할 수 없으며, Git 기준이나 실행 후 불변을 증명하지 못하면 실패다.
 
 정책과 gate는 위반을 중단·탐지한다. 실제 쓰기 syscall 자체를 차단해야 하는 Host 실행 환경은 `core_path`를 read-only mount 또는 동등한 filesystem ACL로 제공해야 하며, 그 강제가 없으면 “물리적으로 쓰기 불가”라고 주장할 수 없다.
 
@@ -218,11 +218,11 @@ $bootstrap = "import runpy,sys;sys.path[:0]=[$coreJson,$srcJson];runpy.run_modul
 python -B -I -c $bootstrap info
 ```
 
-`info`는 기능 버전, 공개 명령, operation과 request/result schema 경로만 반환하는 역할 비의존 정적 discovery다. 정상·예외 경로 모두에서 Core tree·Git 의미 상태의 전후 불변을 증명하고 쓰기 경로를 열지 않으므로 dirty Core에서도 실행할 수 있지만, 기능 소비·가용성·완료의 성공 근거는 아니다. Git 기준선을 증명할 수 없으면 실패한다. 실제 호출은 소비 root·Runtime storage root·보호 경계를 명시하고 request v1 JSON 하나를 stdin으로 보낸다.
+`info`의 정적 discovery 조건은 [호환성 §3A](COMPATIBILITY.md#3a-선택-runtime-공개-경계)를 따른다. dirty Core에서도 조회할 수 있지만 기능 소비·가용성·완료의 성공 근거는 아니다. 실제 호출은 소비 root·Runtime storage root·보호 경계를 명시하고 request v1 JSON 하나를 stdin으로 보낸다.
 
 따라서 Host gate가 `info` 선언 일치를 확인해도 `optional-features`는 `not_applicable`로 기록한다. Consumer 계약 검사는 요구 기능의 설치 구조·최소 버전을 별도로 확인하고, 실제 기능 완료 근거가 필요하면 아래 verified `invoke` 결과를 사용한다.
 
-`invoke`는 계약 해석 전 소비 정책·부모 gitlink·Core 상태를 관찰하고 실행 중인 Core와 `--consumer-root`의 소비 계약을 대조한다. 계약 버전은 Core와 정확히 같아야 하고, Consumer가 `required_core_capabilities.shared_data`에 호출할 최소 버전을 선언해야 한다. storage root가 계약의 `core_path`와 겹치거나 Consumer 밖이면 `--write` 여부와 관계없이 Dispatcher 생성 전에 거부한다. 통과한 storage는 Consumer 상대 canonical 경로로만 Dispatcher에 전달하고, 계약의 `core_path`를 내부 보호 경로에 자동 합산해 각 storage 경로 해석 때 다시 검사한다. 계약에 선언된 보호 경로와 호출 보호 경로도 함께 합산되며, Host 역할은 부모 HEAD·index gitlink와 Core HEAD 일치, Core clean, 소비 정책·gitlink·Core의 전후 불변까지 통과해야 한다.
+`invoke` 전에 소비 계약 버전과 `required_core_capabilities.shared_data` 최소 버전을 맞추고 [호환성 §3A](COMPATIBILITY.md#3a-선택-runtime-공개-경계)의 verified Consumer 조건을 충족한다. storage는 Consumer 내부이며 Core·보호 경로와 겹치지 않아야 한다. 계약과 호출의 보호 경로는 함께 적용된다. Host는 §6의 clean·gitlink 결속·실행 전후 불변 조건도 충족해야 한다.
 
 ```powershell
 $request = '{"operation":"source.list","arguments":{}}'
@@ -346,7 +346,7 @@ finally {
 
 `{{WORKFLOW_LINK}}`만 native `SKILL.md`의 부모에서 **선택한 Core의 해당 공통 본문**까지 가는 상대경로로 치환한다. 경로 구분자는 `/`로 표현하고 공백·괄호·비ASCII 등 URI 특수 문자는 percent-encoding한다. 개인 절대경로나 고정 `core/` 이름을 삽입하지 않는다. `../`는 여기서 navigation 링크의 일부이며 소비 계약의 root 내부 상대경로 선언과 다른 유형이다. 해석한 링크의 최종 파일은 계약의 Core root와 정확한 workflow owner 안에 있어야 한다.
 
-native 파일에는 discovery 메타데이터와 공통 진입 포인터만 남긴다. `WORKFLOW.md`가 선택한 실행 본문과 그 상대 참고 자료로 이어지는 경로를 확인한다. 현재 `session-close`와 `setup-agent-core-project`는 각 `current/SKILL.md`, `handoff-manager`는 `source/SKILL.md`를 사용한다. 보존 원본 트리·내용·줄바꿈은 SOURCES.json 식별과 동일하게 유지하고, native 어댑터만 UTF-8/LF로 구체화한다. 사용자 승인 개정을 Core 일반 기본값에 맞춘 임의 수정과 혼동하지 않으며 보존 원본을 개정 본문과 동시에 적용하지 않는다. 각 제품의 명시적 native 호출을 실행 본문의 해당 스킬 직접 호출로 연결한다. Core revision은 부모 gitlink가 소유하며 치환되지 않은 토큰이나 잘못된 경로는 연결 성공이 아니다.
+native 파일에는 discovery 메타데이터와 공통 진입 포인터만 남긴다. `WORKFLOW.md`가 선택한 실행 본문과 그 상대 참고 자료로 이어지는 경로를 확인한다. 실제 실행 본문 위치는 선택한 revision의 각 `WORKFLOW.md`에서 확인한다. 보존 원본 트리·내용·줄바꿈은 SOURCES.json 식별과 동일하게 유지하고, native 어댑터만 UTF-8/LF로 구체화한다. 사용자 승인 개정을 Core 일반 기본값에 맞춘 임의 수정과 혼동하지 않으며 보존 원본을 개정 본문과 동시에 적용하지 않는다. 각 제품의 명시적 native 호출을 실행 본문의 해당 스킬 직접 호출로 연결한다. Core revision은 부모 gitlink가 소유하며 치환되지 않은 토큰이나 잘못된 경로는 연결 성공이 아니다.
 
 ### 10.3 연결·이전 검증
 

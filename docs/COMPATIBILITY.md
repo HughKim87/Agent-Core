@@ -79,11 +79,11 @@
 
 `info`는 역할·Consumer 입력·Runtime storage와 무관하고 쓰기 가능 경로를 열지 않는 정적 discovery다. Core tree·Git 의미 상태의 전후 불변을 정상·예외 경로 모두에서 증명하며 dirty Core에서도 실행할 수 있지만 기능 소비·가용성·완료 성공 근거가 아니다. Git 기준선을 증명할 수 없으면 fail-closed한다.
 
-`shared_data invoke`는 verified Consumer 계약, Core와 정확히 같은 `contract_version`, Consumer의 `required_core_capabilities.shared_data` 최소 버전 선언을 요구한다. Runtime storage가 계약의 `core_path`와 겹치거나 Consumer 밖이면 dispatch 전에 실패한다. 통과한 storage는 Consumer 상대 canonical 경로로 dispatch되고 `core_path`는 내부 보호 경로에 합산되어 각 storage 해석 때 다시 검사된다. Host 역할에서는 계약 해석 전 소비 정책·부모 gitlink·Core 관찰, 부모 HEAD·index gitlink와 Core HEAD 일치, 기능 실행 전 clean, 실행 후 결속 불변을 함께 요구한다. 순수 `verify`는 불일치 gitlink를 실행 허가로 쓰지 않고 finding으로 진단한다. 다만 Core 내부 entry import 전에 일어나는 revision 교체는 Consumer 소유 외부 launcher 또는 immutable checkout이 별도로 닫아야 한다.
+`shared_data invoke`는 verified Consumer 계약, Core와 정확히 같은 `contract_version`, Consumer의 `required_core_capabilities.shared_data` 최소 버전 선언을 요구한다. Runtime storage가 계약의 `core_path`와 겹치거나 Consumer 밖이면 dispatch 전에 실패한다. 통과한 storage는 Consumer 상대 canonical 경로로 dispatch되고 `core_path`는 내부 보호 경로에 합산되어 각 storage 해석 때 다시 검사된다. Host는 clean Core, 부모 HEAD·index gitlink와 실행 Core HEAD 일치, 계약 해석 전 관찰과 실행 후 결속 불변을 요구한다. 원시 bytes·Git 검사 세부사항과 순수 `verify` 진단의 예외는 [검증 계약 §4](VERIFICATION.md#4-소비-통합-gate)가 소유하며 진단을 실행 허가·소비 완료로 해석하지 않는다. 다만 Core 내부 entry import 전에 일어나는 revision 교체는 Consumer 소유 외부 launcher 또는 immutable checkout이 별도로 닫아야 한다.
 
 ## 3B. 공통 workflow 진입 계약
 
-Core workflow entry v1은 아래 공통 진입과 도구별 discovery 템플릿의 계약이다. 세 스킬의 원본과 참고 자료는 각 `source/` 트리에 그대로 보존한다. `WORKFLOW.md`는 실행 본문 하나를 연결한다. 별도 승인 개정이 없는 스킬은 보존 원본을 읽고, `session-close`와 `setup-agent-core-project`는 각 사용자 승인 개정을 담은 `current/SKILL.md`와 그 상대 참고자료를 읽는다. 이때 source는 비활성 보존 자료이며 current와 동시에 적용하지 않는다. 원본을 공통 규칙으로 승격하거나 일반 Core 절차에 맞춰 수정하지 않는다. 배포 자산은 필수 제공하고 실행·Consumer 설치는 선택이다. 신규 setup의 도구 선택 기본값은 그 스킬이 소유하며 Core 공통 기본값이 아니다. 기존 갱신은 Consumer가 위임한 등록 범위·도구 선택·명시적 제외를 따른다. 자동 선택 표시는 스킬 발견/선택 정책이며 기존 사용자 승인·실행기 권한을 바꾸지 않는다.
+Core workflow entry v1은 아래 공통 진입과 도구별 discovery 템플릿의 계약이다. 세 스킬의 원본과 참고 자료는 각 `source/` 트리에 그대로 보존한다. `WORKFLOW.md`는 실행 본문 하나를 연결한다. 선택된 본문 기준의 상대 참고자료를 읽고, 승인 개정이 선택되면 source는 비활성 보존 자료로 유지하며 동시에 적용하지 않는다. 원본을 공통 규칙으로 승격하거나 일반 Core 절차에 맞춰 수정하지 않는다. 배포 자산은 필수 제공하고 실행·Consumer 설치는 선택이다. 신규 setup의 도구 선택 기본값은 그 스킬이 소유하며 Core 공통 기본값이 아니다. 기존 갱신은 Consumer가 위임한 등록 범위·도구 선택·명시적 제외를 따른다. 자동 선택 표시는 스킬 발견/선택 정책이며 기존 사용자 승인·실행기 권한을 바꾸지 않는다.
 
 <!-- core-workflow-entries:v1 -->
 | 스킬 | 공통 본문 | Codex 템플릿 | Claude Code 템플릿 | 자동 선택 |

@@ -10,10 +10,9 @@
 
 ## 1. 격리와 저장 소유권
 
-- 외부 소비자는 `optional_capabilities.shared_data` v1의 `info`·`invoke`, 선언된 schema와 §7의 공개 호출 명세에 의존한다. 내부 Python 모듈은 공개 API가 아니다.
-- 호출자는 `RecordStore`의 소비 root·storage root·보호 경로·쓰기 활성화를 명시한다. Core 저장소에는 Runtime 데이터를 만들지 않는다.
+- 공개 실행·저장·보호·쓰기 경계는 [저장 계약 §1·3·8](RECORD_STORAGE_CONTRACT.md#8-공개-호출-공통-명세), 기능별 호출은 §7을 따른다. 내부 Python 모듈은 공개 API가 아니다.
 - `KnowledgeService`와 `LifecycleService`는 호출자가 구성한 같은 store를 사용한다. `create_knowledge_store`는 이 계약의 고정 type·stream allowlist만 편의상 구성한다.
-- 실제 회귀는 격리된 임시 소비 root에서만 수행한다. 보호 경로의 존재 확인·열거·읽기는 하지 않는다.
+- 회귀의 격리·저장 실패 검증은 [저장 계약 §7](RECORD_STORAGE_CONTRACT.md#7-검증과-후속-경계)을 따른다.
 - 저장 record를 삭제·이동하거나 기존 source·knowledge·decision payload를 update하는 API는 제공하지 않는다.
 
 ## 2. 불변 지식 유형

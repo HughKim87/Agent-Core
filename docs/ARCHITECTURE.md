@@ -29,7 +29,7 @@
 | L6 | 경로 안전, 오류 유형, fingerprint | 순수 함수와 예외 타입 |
 | L7 | 선택적 공통 데이터 Runtime과 호환 adapter | 호환성 선언에 등록된 versioned CLI·schema만 외부 공개 |
 
-`skills/`는 스킬 원본과 승인 개정을 보관·배포하는 자산 영역이다. 원본의 업무 절차를 L2 공통 규칙으로 승격하거나 기존 Core 기본값으로 재작성하지 않는다. `source/`는 보존 원본, `session-close/current/`와 `setup-agent-core-project/current/`는 각 스킬의 승인 개정 정본이며 `WORKFLOW.md`가 실행 본문 하나를 선택한다. WORKFLOW와 도구별 템플릿은 navigation만 소유한다. Core는 보존·참조·진입을, 스킬은 자기 작업의 고유 절차를, Consumer는 실제 설치·상태·결과를 소유한다. Kernel은 스킬을 Runtime 의존으로 import하지 않는다.
+`skills/`는 스킬 원본과 승인 개정을 보관·배포하는 자산 영역이다. 원본의 업무 절차를 L2 공통 규칙으로 승격하거나 기존 Core 기본값으로 재작성하지 않는다. `source/`는 보존 원본이며 각 `WORKFLOW.md`가 원본 또는 승인 개정 중 실행 본문 하나를 선택한다. 실행 본문 위치의 정본은 각 WORKFLOW다. WORKFLOW와 도구별 템플릿은 navigation만 소유한다. Core는 보존·참조·진입을, 스킬은 자기 작업의 고유 절차를, Consumer는 실제 설치·상태·결과를 소유한다. Kernel은 스킬을 Runtime 의존으로 import하지 않는다.
 
 ## 3. 의존 방향
 
@@ -44,7 +44,7 @@
 
 ## 4. 실험 격리
 
-L7이 없어도 Core import, Core 자체 `verify`, Core 자체 `gate`가 성립해야 한다. 선택 기능은 기본 비활성이며 소비자가 공개 계약으로 명시적으로 호출할 때만 실행한다. 선택 기능 부재는 `not_applicable`이며 필수 실패가 아니다. L7 전체를 제거했을 때 Core 필수 보장이 줄어들면 그 기능은 격리되지 않은 것이다.
+L7이 없어도 Core import, Core 자체 `verify`, Core 자체 `gate`가 성립해야 한다. 선택 기능의 업무 실행은 기본 비활성이며 소비자가 공개 계약으로 명시적으로 호출한다. gate의 정적 discovery와 역할별 회귀는 업무 실행과 구별하며 [검증 계약 §4](VERIFICATION.md#4-소비-통합-gate)를 따른다. 선택 기능 부재는 `not_applicable`이며 필수 실패가 아니다. L7 전체를 제거했을 때 Core 필수 보장이 줄어들면 그 기능은 격리되지 않은 것이다.
 
 승인만 받고 아직 구현되지 않은 선택 기능은 모듈 배정과 호환성 선언에 추가하지 않는다. 구현·회귀 검증·공개 인터페이스 등록이 같은 후보 snapshot에서 완료돼야 `available`로 판정한다.
 
