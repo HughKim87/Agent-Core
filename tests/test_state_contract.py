@@ -412,9 +412,40 @@ class StateContractTest(unittest.TestCase):
                 )
                 self.assertEqual(self._findings(text), [])
 
-    def test_size_budget_is_enforced(self) -> None:
+    def test_length_review_does_not_turn_required_state_into_contract_failure(self) -> None:
         findings = self._findings(VALID_STATE + ("x" * 3_000))
-        self.assertTrue(any("예산" in finding.message for finding in findings))
+        self.assertTrue(any("길이 검토" in finding.message for finding in findings))
+        self.assertTrue(all(finding.severity == "warning" for finding in findings))
+
+    def test_natural_language_diagnostics_require_review_not_automatic_rejection(self) -> None:
+        cases = (
+            VALID_STATE + "\n## 완료 기준\n\n- 현재 작업의 성공 조건이다.\n",
+            VALID_STATE.replace("- 없음", "- 파일 8개", 1),
+            VALID_STATE.replace("- 없음", "- failure_count: 2", 1),
+            VALID_STATE.replace(
+                "1. `PROJECT_RULES.md`의 선언을 파싱한다.",
+                "1. Parse the consumer declaration in `PROJECT_RULES.md` and report missing fields.",
+            ),
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                findings = self._findings(text)
+                self.assertTrue(findings)
+                self.assertTrue(all(f.severity == "warning" for f in findings), findings)
+
+    def test_structural_state_defects_remain_errors_among_diagnostics(self) -> None:
+        cases = (
+            VALID_STATE.replace("## 차단", "## 다른 절"),
+            VALID_STATE + "\n## 차단\n",
+            VALID_STATE.replace("- 결과: `pass`", "- 대기"),
+            VALID_STATE.replace("- 결과: `pass`", "- 결과: `pass` / `fail`"),
+            VALID_STATE.replace("1. `PROJECT_RULES.md`의 선언을 파싱한다.", "번호 행동 없음"),
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                findings = self._findings(text + "x" * 3_000)
+                self.assertTrue(any(f.severity == "error" for f in findings), findings)
+                self.assertTrue(any(f.severity == "warning" for f in findings), findings)
 
     def test_judgment_diagnostics_report_original_lines_after_ignored_examples(self) -> None:
         block = (

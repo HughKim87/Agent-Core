@@ -427,7 +427,15 @@ class PublicSharedDataCliTests(unittest.TestCase):
 
     def test_info_fails_when_git_baseline_cannot_be_proved(self) -> None:
         with tempfile.TemporaryDirectory(prefix="shared-cli-info-no-git-") as raw_root:
-            completed = self.run_cli(Path(raw_root), info=True)
+            root = Path(raw_root)
+            configure_consumer(root)
+            # A project-owned temp directory may inherit an ancestor Git repo.
+            # Bind this fixture to an explicitly unavailable Git directory so
+            # the negative precondition is independent of the temp location.
+            (root / "core" / ".git").write_text(
+                "gitdir: unavailable-git-metadata\n", encoding="utf-8"
+            )
+            completed = self.run_cli(root, info=True)
             payload = json.loads(completed.stdout)
             self.assertEqual(completed.returncode, 1, payload)
             self.assertIn("기준선을 증명할 수 없다", payload["error"])

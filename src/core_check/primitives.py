@@ -21,7 +21,7 @@ class UnsafePathError(CheckError):
 
 @dataclass(frozen=True)
 class Finding:
-    """하나의 위반 사실."""
+    """하나의 확정 오류 또는 검토 진단."""
 
     check: str
     path: str
@@ -55,6 +55,10 @@ class Report:
             "ran": sorted(self.ran),
             "skipped": dict(sorted(self.skipped.items())),
             "findings": [f.as_dict() for f in self.findings],
+            "error_count": sum(f.severity == "error" for f in self.findings),
+            "warning_count": sum(f.severity == "warning" for f in self.findings),
+            "assessment_scope": "structure-and-diagnostics",
+            "semantic_review": "not_assessed",
         }
 
 

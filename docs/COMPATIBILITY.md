@@ -63,7 +63,9 @@
 - 소비 계약의 선택 필드 `required_core_capabilities`는 기능 ID별 최소 양의 정수 버전을 선언한다. key가 없거나 빈 객체인 기존 Host는 선택 기능 요구가 없고 정적 discovery 외의 선택 기능을 호출할 권한도 없다.
 - CLI는 `--core-root`와 `--consumer-root`를 구분한다.
 - `context` 문서 경로는 `scope`와 `path` 객체로 반환한다.
-- `verify`, `context`, `gate` 명령과 종료 상태 0·1·2를 제공한다.
+- `verify`, `context`, `gate` 명령과 종료 상태 0·1·2를 제공한다. 경고만 있으면 성공 상태 0을 유지한다. 성공 0, 검사 finding·gate 미충족 1, 잘못된 호출·사용 불가 또는 검사·문맥 구성 오류 2라는 기존 구분을 유지한다.
+- 길이·표현 휴리스틱 진단은 오류와 구분한 경고로 반환하고 성공 결과에서도 보존한다. 경고 필드는 추가 정보이며 구조 통과·경고 부재가 의미 통과를 뜻하지 않는다.
+- `context`와 `gate`의 기본 시작 문맥 20,000자는 진단 기준이다. `--budget`으로 양의 문자 한도를 명시하면 초과 시 절단 없이 실패하며, 명시하지 않은 한도를 hard cap으로 해석하지 않는다.
 - v2 동안 `--root`는 `--core-root`의 deprecated alias다.
 
 ## 3A. 선택 Runtime 공개 경계
@@ -130,6 +132,8 @@ Codex 템플릿 옆의 `agents/openai.yaml`도 배포 자산이며 `allow_implic
 
 비호환 변경은 `contract_version` 상승과 이전 절차 없이는 수용하지 않는다.
 
+문서의 충분한 의미를 길이·문체·고정 표제와 혼동한 오탐 정정, 경고 필드 추가와 `gate --budget` 선택 옵션 추가는 기존 필드·명령·종료 상태의 의미를 유지하는 호환 변경이다. `context --budget`의 명시 한도는 계속 강제하고, 기본값의 길이 진단과 확정 위반을 구분한다. 보호·경로·역할·공개 계약의 필수 경계를 경고로 낮추는 근거가 아니며 contract 2를 유지한다.
+
 고정 재시도 수치·명령 창·일률 직렬 실행처럼 특정 Consumer의 운영 기본값은 Core 공통 보장의 정본이 아니다. 그 제한을 사용하던 Consumer는 자기 정책과 합성 검사에 같은 기본값을 명시해 유지한다. Core의 명시 예산 준수·무진전 중단·불명확한 외부 결과 확인·취소·승인 경계는 계속 적용된다. 이 소유권 정정은 route trigger나 CLI·schema 세대를 축소·변경하지 않는다.
 
 ## 5. v1에서 v2 이전
@@ -155,5 +159,5 @@ Codex 템플릿 옆의 `agents/openai.yaml`도 배포 자산이며 `allow_implic
 
 - Core revision은 submodule gitlink가 소유한다.
 - 복구는 [소비 안내](CONSUMER_GUIDE.md#9-실패와-복구)를 따른다. 후보 gate 실패에서는 실제 Consumer를 유지한다. 실제 반영 후 실패에서는 소비·게시를 중단하고 사용자 변경을 보존하며, 정확한 복구가 승인된 경우에만 마지막 검증된 부모 gitlink·소비 입력과 Core checkout을 함께 복원한다.
-- 저장소 안에 백업 사본이나 SHA 복제 문서를 만들지 않는다.
+- 저장소 안에 복구용 백업 사본이나 현재 revision의 병렬 정본을 만들지 않는다. 검증 대상의 revision·hash를 보존하는 증거는 [정보 소유 구조](INFORMATION_ARCHITECTURE.md#6-복제-금지)에 따라 현재 선택값과 구분한다.
 - `--root` alias 제거는 다음 계약 세대의 별도 비호환 변경이다.

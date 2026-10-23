@@ -460,11 +460,15 @@ class FaultInjectionTest(unittest.TestCase):
 
     def test_detects_missing_document_headers(self) -> None:
         (self.root / "rules" / "sample.md").write_text("# 헤더 없음\n\n본문만 있다.\n" * 40, encoding="utf-8")
-        self.assertTrue(findings_for(self.root, "document-headers"))
+        findings = list(integrity_module.check_document_headers(self.root))
+        self.assertTrue(findings)
+        self.assertTrue(all(f.severity == "error" for f in findings))
 
     def test_detects_missing_headers_on_short_root_document(self) -> None:
         (self.root / "README.md").write_text("# 짧은 개요\n", encoding="utf-8")
-        self.assertTrue(findings_for(self.root, "document-headers"))
+        findings = list(integrity_module.check_document_headers(self.root))
+        self.assertTrue(findings)
+        self.assertTrue(all(f.severity == "warning" for f in findings))
 
     def test_clean_core_documents_have_required_headers(self) -> None:
         self.assertEqual(findings_for(self.root, "document-headers"), [])
@@ -880,7 +884,7 @@ class ContextTest(unittest.TestCase):
         )
 
     def test_budget_rejects_non_positive_or_non_integer(self) -> None:
-        for value in (0, -1, True, 1.5, "20000", None):
+        for value in (0, -1, True, 1.5, "20000"):
             with self.subTest(value=value), self.assertRaises(self.context.ContextBudgetError):
                 self.context.build(self.core, self.consumer, budget=value)
 
@@ -1647,7 +1651,10 @@ class PublicInterfaceTest(unittest.TestCase):
         self.assertEqual(code, self.cli.EXIT_OK)
         code, exact = self._run(*args, "--budget", str(default["chars"]))
         self.assertEqual(code, self.cli.EXIT_OK)
-        self.assertEqual(default, exact)
+        self.assertIsNone(default["budget"])
+        self.assertEqual(exact["budget"], default["chars"])
+        self.assertEqual({k: v for k, v in default.items() if k != "budget"},
+                         {k: v for k, v in exact.items() if k != "budget"})
         for budget in (default["chars"] - 1, 0, -1):
             code, rejected = self._run(*args, "--budget", str(budget))
             self.assertEqual(code, self.cli.EXIT_UNUSABLE)
@@ -1671,7 +1678,9 @@ class PublicInterfaceTest(unittest.TestCase):
         self.assertEqual(len(package["optional"]), len(rules))
         code, exact = self._run(*args, "--budget", str(package["chars"]))
         self.assertEqual(code, self.cli.EXIT_OK)
-        self.assertEqual(package, exact)
+        self.assertEqual(exact["budget"], package["chars"])
+        self.assertEqual({k: v for k, v in package.items() if k != "budget"},
+                         {k: v for k, v in exact.items() if k != "budget"})
         code, rejected = self._run(*args, "--budget", str(package["chars"] - 1))
         self.assertEqual(code, self.cli.EXIT_UNUSABLE)
         self.assertEqual(rejected["kind"], "ContextBudgetError")

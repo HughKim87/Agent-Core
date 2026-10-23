@@ -42,7 +42,7 @@ STATE_SECTIONS = (
     "## 알려진 위험",
     "## 첫 다음 행동",
 )
-STATE_BUDGET_CHARS = 3_000
+STATE_REVIEW_CHARS = 3_000
 DYNAMIC_NUMBERS = re.compile(
     r"(추적 파일\s*\d+|untracked\s*\d+|ignored\s*\d+|커밋\s*\d+\s*개|"
     r"파일\s*\d+\s*개\s*추적|blob\s*\d+)"
@@ -769,8 +769,12 @@ def check_document_headers(root: Path) -> Iterable[Finding]:
         text = path.read_text(encoding="utf-8")
         missing = [header for header in DOC_HEADERS if header not in text]
         if missing:
+            is_rule = path.parent == root / "rules"
             yield Finding(
-                "document-headers", _rel(root, path), f"최소 설명 누락: {' '.join(missing)}"
+                "document-headers", _rel(root, path),
+                f"최소 설명 표기 미발견: {' '.join(missing)}. "
+                "동등한 설명의 충분성은 문서 소유자가 검토한다",
+                severity="error" if is_rule else "warning",
             )
 
 
@@ -801,7 +805,10 @@ def check_rule_cross_routing(root: Path) -> Iterable[Finding]:
         for target in MD_LINK.findall(path.read_text(encoding="utf-8")):
             if target.endswith(".md") and "/" not in target and target != path.name:
                 yield Finding(
-                    "rule-cross-routing", _rel(root, path), f"다른 규칙을 직접 라우팅한다: {target}"
+                    "rule-cross-routing", _rel(root, path),
+                    f"다른 규칙 링크를 발견했다: {target}. "
+                    "참고 링크인지 상위 라우터를 우회하는 실행 지시인지 검토한다",
+                    severity="warning",
                 )
 
 
@@ -1180,15 +1187,26 @@ def _state_findings(consumer_root: Path, state: Path, *, text: str | None = None
                 "consumer-state", rel,
                 f"완료 상세 절의 제목 패턴에 일치한다: {heading} ({lines}행). "
                 "실제 내용을 검토해 현재 상태와 완료 이력을 구분한다",
+                severity="warning",
             )
-    if len(text) > STATE_BUDGET_CHARS:
-        yield Finding("consumer-state", rel, f"{len(text)}자가 예산 {STATE_BUDGET_CHARS}자를 넘었다")
+    if len(text) > STATE_REVIEW_CHARS:
+        yield Finding(
+            "consumer-state", rel,
+            f"{len(text)}자가 길이 검토 기준 {STATE_REVIEW_CHARS}자를 넘었다. "
+            "필요한 승인·차단·재개 정보를 유지하고 중복·불필요한 상세를 검토한다",
+            severity="warning",
+        )
     if DYNAMIC_NUMBERS.search(text):
-        yield Finding("consumer-state", rel, "동적 Git 수치가 문서에 고정되어 있다")
+        yield Finding("consumer-state", rel, "동적 Git 수치 패턴을 발견했다. 현재 재개에 필요한 근거인지 검토한다", severity="warning")
     if STATE_FILE_COUNTS.search(text):
-        yield Finding("consumer-state", rel, "파일 개수가 문서에 고정되어 있다")
+        yield Finding("consumer-state", rel, "파일 개수 패턴을 발견했다. 현재 판단에 필요한 정보인지 검토한다", severity="warning")
     if _has_ephemeral_failure_state(text):
-        yield Finding("consumer-state", rel, "임시 실패 상태가 문서에 고정되어 있다")
+        yield Finding(
+            "consumer-state", rel,
+            "임시 실패 상태의 표기 패턴을 발견했다. 실행 구간의 임시 이력인지 "
+            "재개에 필요한 원인·명시적으로 지속되는 예산인지 소유자 정책과 대조한다",
+            severity="warning",
+        )
     if "## 첫 다음 행동" in sections:
         tail = sections["## 첫 다음 행동"][0]
         actions: list[tuple[str, int]] = []
@@ -1212,8 +1230,9 @@ def _state_findings(consumer_root: Path, state: Path, *, text: str | None = None
             ):
                 yield Finding(
                     "consumer-state", rel,
-                    f"첫 다음 행동이 모호하다: {action} ({line_number}행). "
-                    "대상 파일·명령·판정 조건을 구체화한다",
+                    f"첫 다음 행동이 모호할 수 있는 표현 패턴에 일치한다: {action} ({line_number}행). "
+                    "표현 패턴 진단이므로 실제 대상·실행·판정 조건의 충분성을 검토한다",
+                    severity="warning",
                 )
     if "## 직전 게이트" in sections:
         gates = sections["## 직전 게이트"][0]
@@ -1352,7 +1371,12 @@ def consumer_findings(
         if path.suffix == ".md" and rel not in pointers:
             missing = [header for header in DOC_HEADERS if header not in text]
             if missing:
-                yield Finding("consumer-document-headers", rel, f"최소 설명 누락: {' '.join(missing)}")
+                yield Finding(
+                    "consumer-document-headers", rel,
+                    f"최소 설명 표기 미발견: {' '.join(missing)}. "
+                    "동등한 설명의 충분성은 문서 소유자가 검토한다",
+                    severity="error" if rel in active else "warning",
+                )
         if path.suffix == ".md":
             for target in MD_LINK.findall(text):
                 if target.startswith(("http://", "https://", "#", "mailto:")):

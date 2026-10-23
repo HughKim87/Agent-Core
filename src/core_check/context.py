@@ -16,7 +16,7 @@ from .declarations import (
     routed_rule_paths,
     walk_markdown,
 )
-from .primitives import CheckError, fingerprint, resolve_inside
+from .primitives import CheckError, Finding, fingerprint, resolve_inside
 
 STARTUP_BUDGET_CHARS = 20_000
 
@@ -45,6 +45,8 @@ class ContextPackage:
     excluded: dict[str, str] = field(default_factory=dict)
     chars: int = 0
     digest: str = ""
+    budget: int | None = None
+    diagnostics: list[Finding] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -54,6 +56,11 @@ class ContextPackage:
             "excluded": dict(sorted(self.excluded.items())),
             "chars": self.chars,
             "digest": self.digest,
+            "budget": self.budget,
+            "review_threshold": STARTUP_BUDGET_CHARS,
+            "warning_count": len(self.diagnostics),
+            "diagnostics": [finding.as_dict() for finding in self.diagnostics],
+            "assessment_scope": "context-selection-and-size",
         }
 
 
@@ -71,15 +78,15 @@ def build(
     consumer_root: Path,
     matched: Iterable[str] = (),
     *,
-    budget: int = STARTUP_BUDGET_CHARS,
+    budget: int | None = None,
 ) -> ContextPackage:
     """필수 세 문서와 현재 행동에 일치한 scoped 규칙만 선택한다."""
-    if type(budget) is not int or budget <= 0:
+    if budget is not None and (type(budget) is not int or budget <= 0):
         raise ContextBudgetError("시작 컨텍스트 예산은 양의 정수여야 한다")
     core_root = core_root.resolve()
     consumer_root = consumer_root.resolve()
     contract = consumer_contract(core_root, consumer_root)
-    package = ContextPackage()
+    package = ContextPackage(budget=budget)
 
     package.required = [
         _ref("core", core_root, core_policy_path(core_root)),
@@ -135,8 +142,16 @@ def build(
     identifiers = "\n".join(ref.identifier for ref in package.required + package.optional)
     package.digest = fingerprint(f"{identifiers}\n{joined}")
 
-    if package.chars > budget:
+    if budget is not None and package.chars > budget:
         raise ContextBudgetError(
             f"시작 컨텍스트 {package.chars}자가 예산 {budget}자를 넘었다. 절단하지 않고 실패한다"
         )
+    if package.chars > STARTUP_BUDGET_CHARS:
+        package.diagnostics.append(Finding(
+            "startup-context", "-",
+            f"시작 컨텍스트 {package.chars}자가 길이 검토 기준 {STARTUP_BUDGET_CHARS}자를 넘었다. "
+            "필요한 정책·재개 정보의 누락 없이 중복과 라우팅 범위를 검토한다. "
+            "내용의 충분성과 실제 실행 환경의 용량은 별도로 확인한다",
+            severity="warning",
+        ))
     return package

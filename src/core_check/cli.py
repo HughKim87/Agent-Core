@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 import sys
 
-from .context import STARTUP_BUDGET_CHARS, build as build_context
+from .context import build as build_context
 from .declarations import consumer_contract, declared_compatibility
 from .gate import (
     HostConsumerBaseline,
@@ -146,7 +146,7 @@ def cmd_verify(core_root: Path, consumer_root: Path | None = None) -> int:
 
 def cmd_context(
     core_root: Path, consumer_root: Path, matched: list[str],
-    budget: int = STARTUP_BUDGET_CHARS,
+    budget: int | None = None,
 ) -> int:
     """소비자: scope가 있는 시작 문맥을 구성하고 재현성 지문을 반환한다."""
     baseline = _host_core_baseline(core_root, consumer_root, require_clean=True)
@@ -161,9 +161,9 @@ def cmd_context(
     return EXIT_OK
 
 
-def cmd_gate(core_root: Path, consumer_root: Path | None = None) -> int:
+def cmd_gate(core_root: Path, consumer_root: Path | None = None, budget: int | None = None) -> int:
     """소비자: Core 변경 또는 소비 연결의 통합 검증 관문을 실행한다."""
-    result = run_gate(core_root, consumer_root)
+    result = run_gate(core_root, consumer_root, budget=budget)
     _emit(result.as_dict())
     return EXIT_OK if result.ok else EXIT_FINDINGS
 
@@ -175,13 +175,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--root", dest="legacy_root", help="deprecated: --core-root의 v2 별칭")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("verify", help="지정된 범위의 무결성을 검사한다")
-    sub.add_parser("gate", help="통합 검증 게이트를 실행한다")
+    gate = sub.add_parser("gate", help="통합 검증 게이트를 실행한다")
+    gate.add_argument("--budget", type=int, default=None,
+                      help="소비 시작 문맥의 명시적 양의 정수 문자 한도 (생략 시 길이 진단만)")
     context = sub.add_parser("context", help="소비 저장소 시작 컨텍스트를 구성한다")
     context.add_argument(
         "--rule", action="append", default=[], help="core: 또는 consumer: scope가 있는 규칙 ID"
     )
-    context.add_argument("--budget", type=int, default=STARTUP_BUDGET_CHARS,
-                         help="시작 문맥의 양의 정수 문자 예산 (기본 20000)")
+    context.add_argument("--budget", type=int, default=None,
+                         help="시작 문맥의 명시적 양의 정수 문자 한도 (생략 시 길이 진단만)")
     return parser
 
 
@@ -208,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "verify":
             return cmd_verify(core_root, consumer_root)
         if args.command == "gate":
-            return cmd_gate(core_root, consumer_root)
+            return cmd_gate(core_root, consumer_root, args.budget)
         if args.command == "context":
             if consumer_root is None:
                 raise CheckError("context 명령에는 --consumer-root가 필요하다")

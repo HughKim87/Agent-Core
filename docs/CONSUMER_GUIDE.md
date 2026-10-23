@@ -29,7 +29,7 @@ Host에서 Core 변경 필요성을 발견하면 submodule을 수정하지 말�
 - `.gitmodules`: Core 원격과 submodule 경로
 - submodule gitlink: 고정한 Core commit SHA의 유일한 정본
 
-Core SHA를 다른 문서나 선언에 다시 적지 않는다.
+현재 배포 Core revision의 별도 정본을 문서·선언에 만들지 않는다. 특정 검증 snapshot의 revision·hash는 [정보 소유 구조](INFORMATION_ARCHITECTURE.md#6-복제-금지)에 따라 검증 대상 식별 근거로 보존할 수 있다.
 
 ## 3. Core 연결
 
@@ -133,11 +133,11 @@ python -B -m core_check --core-root <CORE_PATH> --consumer-root . gate
 | `1` | 계약 또는 무결성 위반 발견 |
 | `2` | 경로·선언·파싱 문제로 검사 수행 불가 |
 
-`not_run`이 있는 결과는 성공이 아니다.
+선택된 필수 검사가 `not_run`이면 그 완료 수준의 성공이 아니다. 길이·표현의 검토 경고만 있으면 성공 코드 `0`일 수 있으며 결과의 경고와 미평가 의미 범위를 함께 확인한다. 구조 통과가 내용의 충분성이나 실제 Agent 업무 성공을 뜻하지 않는다.
 
 새 revision을 checkout하거나 gitlink만 stage한 상태의 Host gate는 revision 불일치로 실패한다. `verify`는 그 원인을 finding으로 보여줄 수 있지만 종료 코드 `1`을 후보 통과로 해석하지 않는다. 갱신 절차와 각 gate의 검증 대상은 §7을 따른다.
 
-`context --rule`은 반복 지정할 수 있다. 여러 규칙을 조합해 기본 20,000자 예산을 넘으면 `--budget 40000`처럼 필요한 양의 정수 문자 예산을 명시한다. 예산 초과는 내용을 절단하지 않고 `ContextBudgetError`로 거부한다. 동일 입력·선택에서 충분한 예산만 달라지면 내용·scope·fingerprint는 같다.
+`context --rule`은 반복 지정할 수 있다. 기본 20,000자는 길이 검토 기준이며 초과만으로 실패하지 않는다. 실제 실행 환경·작업의 문자 한도를 정하려면 `context --budget 40000` 또는 `gate --budget 40000`처럼 양의 정수 예산을 명시한다. 명시 한도 초과는 절단 없이 거부한다. `context`의 문맥 구성 오류는 종료 코드 `2`, gate의 시작 문맥 단계 실패는 `1`이다. 동일 입력·선택에서 충분한 예산만 달라지면 내용·scope·fingerprint는 같다.
 
 ```powershell
 python -B -m core_check --core-root <CORE_PATH> --consumer-root . context --rule core:rules/work-contract.md --rule core:rules/staged-work-design.md --budget 40000
@@ -146,7 +146,7 @@ python -B -m core_check --core-root <CORE_PATH> --consumer-root . context --rule
 
 ### 상태 검사 진단
 
-상태의 의미·필수 절·재개 원칙은 [현재 상태와 세션 인수인계](../rules/handoff.md)가 소유한다. `verify`의 `consumer-state` finding은 소비 상대 파일 경로와 위반 조건을 제공한다. 제목·판정·첫 행동의 실제 위치를 확인할 수 있으면 메시지에 원문 행 번호를 표시한다. 누락된 절에는 존재하지 않는 행 번호를 붙이지 않는다.
+상태의 의미·필수 절·재개 원칙은 [현재 상태와 세션 인수인계](../rules/handoff.md)가 소유한다. `verify`의 `consumer-state` finding은 소비 상대 파일 경로와 확정 오류 또는 검토 경고의 조건을 제공한다. 제목·판정·첫 행동의 실제 위치를 확인할 수 있으면 메시지에 원문 행 번호를 표시한다. 누락된 절에는 존재하지 않는 행 번호를 붙이지 않는다.
 
 `직전 게이트`는 바로 앞 판정 하나를 담는다. 이 절에 단위 검사 `pass`와 실제 사용 `not_run`을 함께 적으면 두 판정으로 인식한다. 실제 직전 판정은 그대로 두고, 별도 미검증은 `알려진 위험`에서 설명한다. 아직 검사하지 않았다면 직전 판정으로 `not_run`을 쓸 수 있으며 통과를 위해 `pass`로 바꾸지 않는다.
 
@@ -188,7 +188,7 @@ python -B -m core_check --core-root <CORE_PATH> --consumer-root . context --rule
 1. 소비 정책의 승인 범위와 실제 사용 검증의 대상·판정 조건을 확인한다.
 ```
 
-현재 기계 검사는 필수 절의 누락·중복, 상태 크기 예산, 완료 상세 제목 패턴, 판정 개수와 구체적인 번호 행동 등을 확인한다. 코드 fence·들여쓰기 예제·주석은 실제 제목·판정·행동 선언을 대신하지 않는다. 제목 패턴 일치나 형식 통과는 자연어 의미·Git 사실·실제 재개 가능성의 판정이 아니다. finding의 조건과 원문을 대조해 수정하고, 공개 `verify`로 진단한 뒤 작업에 선택된 최종 gate를 실행한다. 메시지 문구는 내부 함수나 별도 상태 API의 공개 근거가 아니다.
+현재 기계 검사는 필수 절의 누락·중복, 판정 개수와 번호 행동 누락 같은 구조 오류를 확인한다. 상태 길이·제목·수치·행동 표현의 패턴은 문맥 검토 경고로 제공한다. 코드 fence·들여쓰기 예제·주석은 실제 제목·판정·행동 선언을 대신하지 않는다. 제목 패턴 일치나 형식 통과만으로 자연어 의미·Git 사실·실제 재개 가능성을 판정하지 않는다. 오류·경고를 보존한 공개 `verify` 결과를 원문에 대조하고 선택한 최종 gate를 실행한다. 메시지 문구는 내부 함수나 별도 상태 API의 공개 근거가 아니다.
 
 ### Host의 Core 읽기 전용 실행
 

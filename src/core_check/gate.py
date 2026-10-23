@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import sys
 
-from .context import STARTUP_BUDGET_CHARS, build as build_context
+from .context import ContextBudgetError, build as build_context
 from .declarations import (
     consumer_contract,
     consumer_contract_files,
@@ -30,7 +30,7 @@ from .integrity import (
     run_all,
     run_consumer,
 )
-from .primitives import CheckError, resolve_inside
+from .primitives import CheckError, Report, resolve_inside
 
 FALLBACK_MIN_PYTHON = (3, 10)
 
@@ -82,6 +82,7 @@ class GateResult:
             "contract_version": self.contract_version,
             "failed_step": self.failed_step,
             "steps": [step.as_dict() for step in self.steps],
+            "warning_count": sum(int(step.evidence.get("warning_count", 0)) for step in self.steps),
         }
 
 
@@ -451,20 +452,24 @@ def _preflight(core_root: Path) -> Iterable[StepResult]:
     yield StepResult("preflight-layout", "pass")
 
 
+def _integrity_result(name: str, report: Report) -> StepResult:
+    evidence = report.as_dict()
+    errors = evidence["error_count"]
+    warnings = evidence["warning_count"]
+    return StepResult(
+        name, "pass" if report.ok else "fail",
+        f"구조 검사 {len(report.ran)}종, 오류 {errors}건, 검토 경고 {warnings}건. "
+        "내용·의미의 충분성은 별도 검토한다",
+        evidence=evidence,
+    )
+
+
 def _integrity(core_root: Path) -> StepResult:
-    report = run_all(core_root)
-    if report.ok:
-        return StepResult("core-integrity", "pass", f"검사 {len(report.ran)}종, 위반 0")
-    messages = "; ".join(f"{finding.check}:{finding.path}" for finding in report.findings[:5])
-    return StepResult("core-integrity", "fail", f"위반 {len(report.findings)}건 — {messages}")
+    return _integrity_result("core-integrity", run_all(core_root))
 
 
 def _consumer_integrity(core_root: Path, consumer_root: Path) -> StepResult:
-    report = run_consumer(core_root, consumer_root)
-    if report.ok:
-        return StepResult("consumer-integrity", "pass", f"검사 {len(report.ran)}종, 위반 0")
-    messages = "; ".join(f"{finding.check}:{finding.path}" for finding in report.findings[:5])
-    return StepResult("consumer-integrity", "fail", f"위반 {len(report.findings)}건 — {messages}")
+    return _integrity_result("consumer-integrity", run_consumer(core_root, consumer_root))
 
 
 def _host_core_read_only_preflight(
@@ -552,13 +557,16 @@ def _host_core_read_only_preflight(
     )
 
 
-def _startup_context(core_root: Path, consumer_root: Path) -> StepResult:
+def _startup_context(core_root: Path, consumer_root: Path, budget: int | None = None) -> StepResult:
     try:
-        package = build_context(core_root, consumer_root)
+        package = build_context(core_root, consumer_root, budget=budget)
     except CheckError as exc:
         return StepResult("startup-context", "fail", str(exc))
     return StepResult(
-        "startup-context", "pass", f"{package.chars}자 / 예산 {STARTUP_BUDGET_CHARS}자"
+        "startup-context", "pass",
+        f"{package.chars}자 / " + (f"명시 예산 {budget}자" if budget is not None else "명시 예산 없음")
+        + f" / 검토 경고 {len(package.diagnostics)}건. 문맥 선택·크기만 검사했다",
+        evidence=package.as_dict(),
     )
 
 
@@ -799,6 +807,7 @@ def _run_once(
     before_core: str,
     before_consumer: str | None,
     host_preflight: StepResult | None,
+    budget: int | None = None,
 ) -> GateResult:
     try:
         version = declared_compatibility(core_root).get("contract_version")
@@ -846,7 +855,7 @@ def _run_once(
         consumer_step = _consumer_integrity(core_root, consumer_root)
         result.steps.append(consumer_step)
         if consumer_step.status == "pass":
-            result.steps.append(_startup_context(core_root, consumer_root))
+            result.steps.append(_startup_context(core_root, consumer_root, budget))
         else:
             result.steps.append(
                 StepResult("startup-context", "not_run", "소비 계약 실패로 실행하지 않았다")
@@ -878,8 +887,13 @@ def _run_once(
     return result
 
 
-def run(core_root: Path, consumer_root: Path | None = None) -> GateResult:
+def run(core_root: Path, consumer_root: Path | None = None, *, budget: int | None = None) -> GateResult:
     """계약을 한 번 해석하고 예외·조기 반환에서도 무부작용을 판정한다."""
+    if budget is not None:
+        if type(budget) is not int or budget <= 0:
+            raise ContextBudgetError("시작 컨텍스트 예산은 양의 정수여야 한다")
+        if consumer_root is None:
+            raise CheckError("gate --budget에는 --consumer-root가 필요하다")
     core_root = core_root.resolve()
     consumer_root = consumer_root.resolve() if consumer_root is not None else None
     entry_core_digest = tree_digest(core_root)
@@ -1000,6 +1014,7 @@ def run(core_root: Path, consumer_root: Path | None = None) -> GateResult:
             before_core=before_core,
             before_consumer=before_consumer,
             host_preflight=host_preflight,
+            budget=budget,
         )
     except Exception as exc:
         unchanged = tree_digest(core_root) == before_core
