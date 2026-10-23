@@ -16,7 +16,7 @@ from .declarations import (
     routed_rule_paths,
     walk_markdown,
 )
-from .primitives import CheckError, Finding, fingerprint, resolve_inside
+from .primitives import CheckError, Finding, WARNING_REVIEW_GUIDANCE, fingerprint, resolve_inside
 
 STARTUP_BUDGET_CHARS = 20_000
 
@@ -61,6 +61,7 @@ class ContextPackage:
             "warning_count": len(self.diagnostics),
             "diagnostics": [finding.as_dict() for finding in self.diagnostics],
             "assessment_scope": "context-selection-and-size",
+            "review_guidance": WARNING_REVIEW_GUIDANCE if self.diagnostics else None,
         }
 
 

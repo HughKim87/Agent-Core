@@ -54,12 +54,15 @@ class AutonomyChecksTest(unittest.TestCase):
         self.assertEqual(verified["error_count"], 0)
         self.assertGreaterEqual(verified["warning_count"], 3)
         self.assertEqual(verified["semantic_review"], "not_assessed")
+        self.assertIsInstance(verified["review_guidance"], str)
+        self.assertTrue(verified["review_guidance"])
         self.assertTrue(all(f["severity"] == "warning" for f in verified["findings"]))
 
         code, checked = self._run("gate")
         self.assertEqual(code, cli.EXIT_OK, checked)
         consumer = next(s for s in checked["steps"] if s["name"] == "consumer-integrity")
         self.assertEqual(consumer["evidence"]["findings"], verified["findings"])
+        self.assertEqual(consumer["evidence"]["review_guidance"], verified["review_guidance"])
         self.assertIn("검토 경고", consumer["detail"])
         self.assertNotIn("위반 0", consumer["detail"])
         self.assertEqual(consumer["evidence"]["assessment_scope"], "structure-and-diagnostics")
@@ -67,6 +70,7 @@ class AutonomyChecksTest(unittest.TestCase):
         self.assertEqual(context["status"], "pass")
         self.assertGreater(context["evidence"]["chars"], 20_000)
         self.assertTrue(context["evidence"]["diagnostics"])
+        self.assertTrue(context["evidence"]["review_guidance"])
         self.assertGreater(checked["warning_count"], verified["warning_count"])
 
     def test_context_and_gate_only_enforce_explicit_budget_and_do_not_truncate(self) -> None:
@@ -76,6 +80,7 @@ class AutonomyChecksTest(unittest.TestCase):
         self.assertIsNone(package["budget"])
         self.assertGreater(package["chars"], package["review_threshold"])
         self.assertEqual(package["warning_count"], len(package["diagnostics"]))
+        self.assertTrue(package["review_guidance"])
         code, exact = self._run("context", "--budget", str(package["chars"]))
         self.assertEqual(code, cli.EXIT_OK, exact)
         self.assertEqual((package["chars"], package["digest"], package["required"]),
@@ -126,9 +131,12 @@ class AutonomyChecksTest(unittest.TestCase):
         self.assertEqual(code, cli.EXIT_FINDINGS, verified)
         self.assertGreater(verified["error_count"], 0)
         self.assertGreater(verified["warning_count"], 0)
+        self.assertTrue(verified["review_guidance"])
         code, checked = self._run("gate")
         self.assertEqual(code, cli.EXIT_FINDINGS, checked)
         self.assertEqual(checked["failed_step"], "consumer-integrity")
+        consumer = next(s for s in checked["steps"] if s["name"] == "consumer-integrity")
+        self.assertTrue(consumer["evidence"]["review_guidance"])
         self.assertEqual(next(s for s in checked["steps"] if s["name"] == "startup-context")["status"], "not_run")
         policy = self.consumer / "PROJECT_RULES.md"
         policy.write_text(policy.read_text(encoding="utf-8").replace(
@@ -150,6 +158,51 @@ class AutonomyChecksTest(unittest.TestCase):
         payload = json.loads(completed.stdout)
         self.assertGreater(payload["warning_count"], 0)
         self.assertEqual(payload["error_count"], 0)
+        self.assertTrue(payload["review_guidance"])
+
+    def test_sufficient_expression_is_not_rewritten_to_clear_a_warning(self) -> None:
+        state = self.consumer / "CURRENT.md"
+        state.write_text(state.read_text(encoding="utf-8").replace(
+            "1. `CURRENT.md`의 현재 단계 절을 파싱한다.",
+            "1. Parse the consumer contract in PROJECT_RULES.md and report missing fields.",
+        ), encoding="utf-8")
+        original = state.read_bytes()
+        code, result = self._run("verify")
+        self.assertEqual(code, cli.EXIT_OK, result)
+        self.assertGreater(result["warning_count"], 0)
+        self.assertTrue(result["review_guidance"])
+        self.assertEqual(result["semantic_review"], "not_assessed")
+        self.assertEqual(state.read_bytes(), original)
+
+    def test_actual_quality_repair_clears_diagnostics_without_changing_checker_policy(self) -> None:
+        # This test supplies the semantic repair; the checker does not act as an AI.
+        state = self.consumer / "CURRENT.md"
+        policy = self.consumer / "PROJECT_RULES.md"
+        original_state = state.read_text(encoding="utf-8")
+        original_policy = policy.read_text(encoding="utf-8")
+        state.write_text(original_state.replace(
+            "1. `CURRENT.md`의 현재 단계 절을 파싱한다.", "1. 계속 진행한다.",
+        ), encoding="utf-8")
+        policy.write_text(original_policy.replace("- 목적: 결함 주입용 표본.\n", ""), encoding="utf-8")
+        before_state, before_policy = state.read_bytes(), policy.read_bytes()
+        code, before = self._run("verify")
+        self.assertEqual(code, cli.EXIT_OK, before)
+        self.assertEqual({f["check"] for f in before["findings"]},
+                         {"consumer-state", "consumer-document-headers"})
+        self.assertTrue(before["review_guidance"])
+        self.assertEqual((state.read_bytes(), policy.read_bytes()), (before_state, before_policy))
+        # Restore the required purpose and an executable, targeted next action.
+        state.write_text(original_state, encoding="utf-8")
+        policy.write_text(original_policy, encoding="utf-8")
+        code, after = self._run("verify")
+        self.assertEqual(code, cli.EXIT_OK, after)
+        self.assertEqual(after["findings"], [])
+        self.assertIsNone(after["review_guidance"])
+        self.assertEqual(after["semantic_review"], "not_assessed")
+        code, context = self._run("context")
+        self.assertEqual(code, cli.EXIT_OK, context)
+        self.assertEqual(context["diagnostics"], [])
+        self.assertIsNone(context["review_guidance"])
 
 
 if __name__ == "__main__":

@@ -11,6 +11,14 @@ import hashlib
 from pathlib import Path
 
 
+WARNING_REVIEW_GUIDANCE = (
+    "경고의 원문을 요청 조건·승인·제약과 대조한다. 충분한 내용은 유지하고 진행하며, "
+    "실제 결함은 기존 승인 안에서 보완한 뒤 영향받은 내용·검사를 재확인한다. "
+    "경고 자체로 재승인·전체 중단을 요구하지 않고, 승인 경계나 중요한 불확실성이 "
+    "남은 행동·완료 주장만 보류한다. 이 안내는 의미 검토의 실행·통과 증거가 아니다."
+)
+
+
 class CheckError(Exception):
     """검사 수행 자체가 불가능한 상태."""
 
@@ -59,6 +67,9 @@ class Report:
             "warning_count": sum(f.severity == "warning" for f in self.findings),
             "assessment_scope": "structure-and-diagnostics",
             "semantic_review": "not_assessed",
+            "review_guidance": WARNING_REVIEW_GUIDANCE if any(
+                f.severity == "warning" for f in self.findings
+            ) else None,
         }
 
 
