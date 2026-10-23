@@ -2,19 +2,55 @@
   "format_version": 1,
   "provider": "agent-core",
   "skills": {
-    "handoff-manager": {"scope": "project"},
-    "setup-agent-core-project": {"scope": "project"},
-    "session-close": {"scope": "project"},
-    "install-common-skills": {"scope": "project"},
-    "review-chat-session": {
+    "handoff-manager": {
       "scope": "common",
       "version": "1.0.0",
+      "files": {
+        "references/procedure.md": "skills/handoff-manager/current/SKILL.md"
+      },
+      "agent_files": {
+        "codex": {
+          "SKILL.md": "skills/handoff-manager/codex/PERSONAL_SKILL.md.in",
+          "agents/openai.yaml": "skills/handoff-manager/codex/agents/openai.yaml"
+        },
+        "claude": {
+          "SKILL.md": "skills/handoff-manager/claude/PERSONAL_SKILL.md.in"
+        }
+      }
+    },
+    "setup-agent-core-project": {
+      "scope": "common",
+      "version": "1.0.0",
+      "files": {
+        "references/procedure.md": "skills/setup-agent-core-project/current/SKILL.md"
+      },
+      "agent_files": {
+        "codex": {
+          "SKILL.md": "skills/setup-agent-core-project/codex/PERSONAL_SKILL.md.in",
+          "agents/openai.yaml": "skills/setup-agent-core-project/codex/agents/openai.yaml"
+        },
+        "claude": {
+          "SKILL.md": "skills/setup-agent-core-project/claude/PERSONAL_SKILL.md.in"
+        }
+      }
+    },
+    "session-close": {
+      "scope": "project"
+    },
+    "install-common-skills": {
+      "scope": "project"
+    },
+    "review-chat-session": {
+      "scope": "common",
+      "version": "1.1.0",
       "files": {
         "SKILL.md": "skills/review-chat-session/current/SKILL.md",
         "references/report.md": "skills/review-chat-session/current/references/report.md"
       },
       "agent_files": {
-        "codex": {"agents/openai.yaml": "skills/review-chat-session/codex/agents/openai.yaml"},
+        "codex": {
+          "agents/openai.yaml": "skills/review-chat-session/codex/agents/openai.yaml"
+        },
         "claude": {}
       }
     }

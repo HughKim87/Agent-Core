@@ -1,0 +1,15 @@
+---
+name: setup-agent-core-project
+description: "명시적으로 호출했을 때 새 Private GitHub 프로젝트를 만들고 선택한 Agent Core를 연결·검증·게시한다. 기존 프로젝트나 Core 설치 없이 시작하며 일반 생성 요청으로 자동 실행하지 않는다."
+disable-model-invocation: true
+---
+
+# setup-agent-core-project
+
+- 목적: Core 연결 없이 개인 설치본에서 실행 본문에 진입한다.
+- 읽는 시점: 사용자가 이 스킬을 명시적으로 호출했을 때만.
+- 책임: 사용자가 대상과 범위를 정하고 스킬이 고유 절차를 소유한다.
+- 상태: PC 공통 설치용 진입. 직접 호출 전용.
+- 관련 권위: 현재 사용자 요청과 대상에 적용되는 기존 정책.
+
+[실행 본문](references/procedure.md)을 끝까지 읽고 그 절차와 승인 경계를 적용한다. 이 스킬의 수정·점검 요청은 업무 실행 호출이 아니다.

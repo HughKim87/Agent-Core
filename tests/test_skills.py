@@ -213,7 +213,7 @@ class SkillAssetsTest(unittest.TestCase):
             "unknown-field": ("skills/session-close/codex/SKILL.md.in", ("name: session-close", "name: session-close\nallowed-tools: shell")),
             "unknown-yaml": ("skills/handoff-manager/codex/agents/openai.yaml", ("policy:", "dependencies:")),
             "duplicate-field": ("skills/session-close/claude/SKILL.md.in", ("name: session-close", "name: session-close\nname: session-close")),
-            "broken-reference": ("skills/handoff-manager/WORKFLOW.md", ("source/SKILL.md", "source/absent.md")),
+            "broken-reference": ("skills/handoff-manager/WORKFLOW.md", ("current/SKILL.md", "current/absent.md")),
             "foreign-owner": ("docs/COMPATIBILITY.md", ("skills/handoff-manager/WORKFLOW.md", "skills/session-close/WORKFLOW.md")),
             "invalid-encoding": ("skills/handoff-manager/codex/SKILL.md.in", b"\xff"),
             "bad-template-eol": ("skills/handoff-manager/claude/SKILL.md.in", ("---\n", "---\r\n")),

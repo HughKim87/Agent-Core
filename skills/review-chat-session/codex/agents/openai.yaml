@@ -1,6 +1,6 @@
 interface:
   display_name: "채팅 세션 분석"
-  short_description: "프로젝트 없는 채팅에서 Core 검토용 개선 근거와 인계 문서를 작성합니다."
-  default_prompt: "$review-chat-session로 프로젝트 없는 현재 채팅을 분석해 Core 검토용 후보 보고서를 작성해줘."
+  short_description: "Core 없는 프로젝트 또는 프로젝트 없는 채팅에서 Core 검토용 개선 근거와 인계 문서를 작성합니다."
+  default_prompt: "$review-chat-session로 Core 없는 프로젝트 또는 프로젝트 없는 현재 채팅을 분석해 Core 검토용 후보 보고서를 작성해줘."
 policy:
   allow_implicit_invocation: true

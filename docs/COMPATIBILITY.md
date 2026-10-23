@@ -109,15 +109,15 @@ Codex 템플릿 옆의 `agents/openai.yaml`도 배포 자산이며 `allow_implic
 
 | scope | 정의 | 설치 선택 |
 |---|---|---|
-| `common` | 프로젝트·Git·Core 연결 없이 작업 목적을 완성하는 개인용 스킬 | PC 사용자 범위에 필요한 본문·자료를 포함한 독립 패키지 설치. 프로젝트 native 등록 제외 |
-| `project` | 프로젝트를 생성·운영·검증·인계하거나 Core 연결을 전제로 하는 스킬 | Consumer의 native 진입으로만 등록. 개인용 공통 설치 제외 |
+| `common` | Core 연결 없이 작업 목적을 완성하는 개인용 스킬. Core 없는 프로젝트와 프로젝트 없는 채팅을 포함 | PC 사용자 범위에 필요한 본문·자료를 포함한 독립 패키지 설치. 프로젝트 native 등록 제외 |
+| `project` | 연결된 Core의 계약·규칙·extension을 실행 전제로 하는 스킬 | Consumer의 native 진입으로만 등록. 개인용 공통 설치 제외 |
 | `internal` | 독립 호출 대상이 아닌 보조 자료 | native 진입과 공통 설치 모두 제외. 참조하는 패키지의 필요한 자료로만 포함 가능 |
 
-원본 보관 위치, 설치 scope, 실행에 필요한 역할·환경은 서로 다른 정보다. 여러 프로젝트에서 재사용된다는 사실만으로 `common`이 되지 않는다. 프로젝트 생성은 기존 프로젝트 없이 시작할 수 있어도 목적이 프로젝트 구성이므로 `project`다. Core 연결·Maintainer 역할 등 실행 전제는 해당 스킬 본문이 소유한다. 내부 자료는 파일 확장자나 폴더 이름으로 개별 스킬로 승격하지 않는다.
+원본 보관 위치, 설치 scope, 실행에 필요한 역할·환경은 서로 다른 정보다. 여러 프로젝트에서 재사용된다는 사실만으로 `common`이 되지 않는다. 프로젝트가 필요하다는 이유만으로 `project`가 되지 않는다. `handoff-manager`는 대상 프로젝트가 필요한 common, `setup-agent-core-project`는 새 프로젝트 구성용 common, `review-chat-session`은 Core 없는 프로젝트·채팅 분석용 common이다. `session-close`와 `install-common-skills`는 연결된 Core를 요구하는 project다. Core 연결·Maintainer 역할 등 실행 전제는 해당 스킬 본문이 소유한다. 내부 자료는 파일 확장자나 폴더 이름으로 개별 스킬로 승격하지 않는다.
 
-설치 목록은 `format_version`, `provider`, `skills`를 갖는다. `skills`의 key는 공개 이름이며 각 항목의 `scope`는 위 세 값 중 하나다. `project`·`internal` 항목은 scope만 선언한다. `common` 항목은 안정 버전 `MAJOR.MINOR.PATCH`인 `version`, 설치 상대경로→Core 원본 상대경로의 `files`, `codex`·`claude`별 추가 파일인 `agent_files`를 선언한다. source는 같은 스킬 owner 안의 명시 파일만 허용하며 재귀 폴더 복사는 하지 않는다. 설치 `SKILL.md`와 상대 참고자료는 설치본 내부에서 완결돼야 한다. 새 common 패키지는 내용·호출 정책·파일 구성이 바뀔 때 스킬 버전을 올린다. 이 버전은 Core 저장소 release 버전과 별개이며 Core revision의 정본을 복제하지 않는다.
+설치 목록은 `format_version`, `provider`, `skills`를 갖는다. `skills`의 key는 공개 이름이며 각 항목의 `scope`는 위 세 값 중 하나다. `project`·`internal` 항목은 scope만 선언한다. `common` 항목은 안정 버전 `MAJOR.MINOR.PATCH`인 `version`, 설치 상대경로→Core 원본 상대경로의 `files`, `codex`·`claude`별 추가 파일인 `agent_files`를 선언한다. source는 같은 스킬 owner 안의 명시 파일만 허용하며 재귀 폴더 복사는 하지 않는다. 각 도구의 `files`와 `agent_files`를 합친 목적지에는 반드시 `SKILL.md`가 있어야 하며 중복 목적지는 허용하지 않는다. 도구별 호출 정책이 다르면 개인용 진입을 `agent_files`에 두고 공유 실행 본문을 `files`의 참고자료로 배포한다. 설치 `SKILL.md`와 상대 참고자료는 설치본 내부에서 완결돼야 한다. 새 common 패키지는 내용·호출 정책·파일 구성이 바뀔 때 스킬 버전을 올린다. 이 버전은 Core 저장소 release 버전과 별개이며 Core revision의 정본을 복제하지 않는다.
 
-설치 영수증 `.agent-core-install.json` format 1은 사용자 설치 폴더 안에 `provider`, `name`, `agent`, 스킬 `version`, 설치 파일별 SHA-256인 `files`를 보존한다. 로컬 관리 식별이며 신뢰·권한의 증명은 아니다. 비교·교체·보존 절차는 [소비 안내 §11](CONSUMER_GUIDE.md#11-pc-공통-스킬-설치)가 소유한다. 분류 변경은 설치 위치의 자동 이동·삭제 승인이 아니며, 기존 설치·발견 출처와 고유 내용을 확인한 명시적 이전이 필요하다.
+설치 영수증 `.agent-core-install.json` format 1은 사용자 설치 폴더 안에 `provider`, `name`, `agent`, 스킬 `version`, 설치 파일별 SHA-256인 `files`를 보존한다. 로컬 관리 식별이며 신뢰·권한의 증명은 아니다. 비교·교체·보존 절차는 [소비 안내 §11](CONSUMER_GUIDE.md#11-pc-공통-스킬-설치)가 소유한다. 분류 변경은 설치 위치의 자동 이동·삭제 승인이 아니며, 기존 설치·발견 출처와 고유 내용을 확인한 명시적 이전이 필요하다. project에서 common으로 전환할 때 개인 설치본의 본문·호출 정책·제품 발견을 먼저 검증한다. 이전이 위임된 Consumer의 기존 native 등록만 템플릿 일치와 복구 가능성을 확인해 제거하고 수동 수정·다른 공급자는 보존한다. 다른 Consumer의 등록은 자동 제거하지 않는다.
 
 ## 4. 호환·비호환
 

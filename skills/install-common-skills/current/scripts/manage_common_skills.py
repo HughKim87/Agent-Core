@@ -132,13 +132,16 @@ def load_packages(core, agent):
         if set(spec) != {"scope", "version", "files", "agent_files"}:
             raise ValueError("invalid common entry")
         version(spec["version"])
-        if (not isinstance(spec["files"], dict) or "SKILL.md" not in spec["files"]
+        if (not isinstance(spec["files"], dict)
                 or not isinstance(spec["agent_files"], dict)
                 or set(spec["agent_files"]) != {"codex", "claude"}):
             raise ValueError("missing common package entrypoint or agent map")
+        for native in spec["agent_files"].values():
+            if not isinstance(native, dict) or set(native) & set(spec["files"]):
+                raise ValueError("duplicate package destinations")
+            if "SKILL.md" not in (set(spec["files"]) | set(native)):
+                raise ValueError("missing common package entrypoint")
         extra = spec["agent_files"][agent]
-        if not isinstance(extra, dict) or set(extra) & set(spec["files"]):
-            raise ValueError("duplicate package destinations")
         payload = {}
         for destination, source in {**spec["files"], **extra}.items():
             relative(destination)

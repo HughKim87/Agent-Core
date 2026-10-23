@@ -29,6 +29,11 @@ class CommonSkillInstallationTest(unittest.TestCase):
         self.core = self.base / "core source"
         shutil.copytree(ROOT / "skills", self.core / "skills")
         self.target = self.base / "personal skills"
+        # Deployment failure fixtures intentionally isolate one synthetic package.
+        self.catalog(lambda data: data["skills"].update({
+            "handoff-manager": {"scope": "project"},
+            "setup-agent-core-project": {"scope": "project"}}))
+        self.catalog(lambda data: data["skills"][NAME].update(version="1.0.0"))
 
     def catalog(self, mutate):
         path = self.core / "skills/INSTALLATION.json"
@@ -49,32 +54,63 @@ class CommonSkillInstallationTest(unittest.TestCase):
         data = json.loads((ROOT / "skills/INSTALLATION.json").read_text(encoding="utf-8"))
         public = {row[0] for row in entries(ROOT)}
         self.assertEqual(set(data["skills"]), public)
-        self.assertEqual({name for name, spec in data["skills"].items() if spec["scope"] == "common"}, {NAME})
-        for name in public - {NAME}:
+        common = {NAME, "handoff-manager", "setup-agent-core-project"}
+        self.assertEqual({name for name, spec in data["skills"].items() if spec["scope"] == "common"}, common)
+        for name in public - common:
             self.assertEqual(data["skills"][name], {"scope": "project"})
+        self.catalog(lambda fixture: fixture.update(data))
+        from test_skills import LINK, frontmatter, openai_fields
         for agent in ("codex", "claude"):
             target = self.base / agent
             before = self.bytes_at(self.core)
             value, _ = plan(self.core, target, agent)
             self.assertFalse(target.exists())
-            self.assertEqual([row["name"] for row in value["skills"]], [NAME])
+            self.assertEqual({row["name"] for row in value["skills"]}, common)
             result = apply(self.core, target, agent, value["plan_id"])
             self.assertFalse(result["blocked"])
-            installed = target / NAME
-            # All runtime references remain available after removing the input Core.
-            self.assertTrue((installed / "SKILL.md").is_file())
-            self.assertTrue((installed / "references/report.md").is_file())
-            self.assertEqual((installed / "agents/openai.yaml").exists(), agent == "codex")
+            for name in common:
+                installed = target / name
+                fields, _ = frontmatter((installed / "SKILL.md").read_text(encoding="utf-8"))
+                self.assertEqual(fields["name"], name)
+                self.assertEqual((installed / "agents/openai.yaml").exists(), agent == "codex")
+                if name != NAME:
+                    if agent == "claude":
+                        self.assertTrue(fields["disable-model-invocation"])
+                    else:
+                        metadata = openai_fields((installed / "agents/openai.yaml").read_text(encoding="utf-8"))
+                        self.assertFalse(metadata["policy"]["allow_implicit_invocation"])
+                for document in installed.rglob("*.md"):
+                    for link in LINK.findall(document.read_text(encoding="utf-8")):
+                        self.assertFalse(link.startswith(("http:", "https:")))
+                        resolved = (document.parent / link).resolve()
+                        resolved.relative_to(installed.resolve())
+                        self.assertTrue(resolved.is_file())
             self.assertEqual(before, self.bytes_at(self.core))
-            from test_skills import LINK
-            for document in installed.rglob("*.md"):
-                for link in LINK.findall(document.read_text(encoding="utf-8")):
-                    self.assertFalse(link.startswith(("http:", "https:")))
-                    resolved = (document.parent / link).resolve()
-                    resolved.relative_to(installed.resolve())
-                    self.assertTrue(resolved.is_file())
+            unchanged = self.bytes_at(target)
+            self.assertTrue(all(row["action"] == "current" for row in plan(self.core, target, agent)[0]["skills"]))
+            apply(self.core, target, agent, plan(self.core, target, agent)[0]["plan_id"])
+            self.assertEqual(unchanged, self.bytes_at(target))
         shutil.rmtree(self.core)
-        self.assertTrue((self.base / "codex" / NAME / "references/report.md").is_file())
+        for agent in ("codex", "claude"):
+            for name in common:
+                self.assertTrue((self.base / agent / name / "SKILL.md").is_file())
+
+    def test_each_agent_requires_entrypoint_and_unique_destinations(self):
+        data = json.loads((ROOT / "skills/INSTALLATION.json").read_text(encoding="utf-8"))
+        for fault in ("missing", "duplicate", "invalid-map"):
+            with self.subTest(fault=fault):
+                self.catalog(lambda fixture: fixture.update(json.loads(json.dumps(data))))
+                if fault == "missing":
+                    self.catalog(lambda fixture: fixture["skills"]["handoff-manager"]["agent_files"]["claude"].pop("SKILL.md"))
+                elif fault == "duplicate":
+                    self.catalog(lambda fixture: fixture["skills"]["handoff-manager"]["agent_files"]["claude"].update({
+                        "references/procedure.md": "skills/handoff-manager/current/SKILL.md"}))
+                else:
+                    self.catalog(lambda fixture: fixture["skills"]["handoff-manager"]["agent_files"].update(claude=[]))
+                # An invalid other-agent map also blocks a selected-agent plan.
+                with self.assertRaises(ValueError):
+                    plan(self.core, self.target, "codex")
+                self.assertFalse(self.target.exists())
 
     def test_authored_entrypoints_and_invocation_metadata(self):
         from test_skills import frontmatter, openai_fields
