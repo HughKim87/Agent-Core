@@ -57,6 +57,12 @@ Core revision을 연결·갱신하는 소비 작업에서는 선택한 revision�
 - 승인 범위를 벗어나는 파일이 필요하면 해당 파일 변경과 그에 의존하는 실행을 보류하고 새 승인을 받는다. 승인된 독립 조사·분석·검증은 계속할 수 있다.
 - 무인·예약 작업은 Core 변경을 추론하거나 승인을 대기하지 않고 비성공으로 종료한다.
 
+### 기존 Consumer의 Core 최신화
+
+기존 Consumer의 Core 최신화는 각 실제 `core_path` 저장소의 `main`에서 승인된 `origin`의 `main`을 fast-forward pull한다. 시작 전에 원격 대상과 Core의 로컬 변경·현재 브랜치·`main` 및 upstream을 확인한다. 미커밋 변경·로컬 고유 commit·다른 upstream·인증 실패·분기 이력 때문에 안전하게 진행할 수 없으면 해당 갱신을 보류하고 상태를 보고하며 reset·강제 checkout·로컬 대체 원본으로 우회하지 않는다. 실제 프로젝트를 detached HEAD로 남긴 채 최신화 완료로 처리하지 않는다.
+
+격리된 일회성 후보의 고정 revision 검증은 detached checkout을 사용할 수 있다. 일반 clone·고정 revision 재현·명시적 복구는 최신화와 구분한다. 제한은 브랜치가 과거 revision에 남거나 원격 최신성 확인 없이 완료되는 일을 예방한다. commit SHA 일치나 기존 소비 gate 통과만으로 `main`/upstream/pull 성공을 대신할 수 없다. 완료 시 `main` 연결, `origin/main` 추적, HEAD·`main`·pull로 확인한 `origin/main`·검증한 revision·부모 HEAD/index gitlink 일치와 실제 Host gate 통과를 함께 확인한다. `main` 부재 시 확인된 `origin/main`에서 tracking `main`을 구성할 수 있으나 기존 이력·원격/인증 설정을 임의 변경하지 않는다.
+
 ## 6. 변경 후 검증
 
 - 실제 Git 변경 경로를 승인 목록과 대조한다.

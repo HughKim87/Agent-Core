@@ -248,14 +248,14 @@ $request | python -B -I -c $bootstrap `
 
 Host 소비 완료에는 부모 HEAD·index gitlink와 실행 Core HEAD의 일치가 필요하다. 따라서 실제 소비 저장소에서 새 Core를 checkout한 뒤 부모 commit 전에 gate를 통과시키려는 순서는 성립하지 않는다. stage만 추가해도 부모 HEAD와 index가 달라 실패한다. 아래 절차는 검증 대상인 후보 부모 snapshot을 먼저 만들며, 기존 gate의 결속 조건을 유지한다.
 
-1. Maintainer에서 검증된 Core revision과 호환성을 확인하고, 반영할 소비 입력·Git 쓰기·임시 자원의 범위를 정한다. 실제 소비 저장소는 마지막 검증 상태에 둔다. 무관한 변경을 임의로 삭제하거나 commit하지 않는다.
+1. 각 실제 Core의 승인된 `origin/main`에서 조회·fetch한 객체를 후보 revision으로 고정하고, Maintainer의 검증 근거와 호환성을 확인한다. 로컬 Maintainer에만 있는 commit을 최신 원격 대신 사용하지 않는다. 반영할 소비 입력·Git 쓰기·임시 자원의 범위를 정하고 실제 소비 저장소는 마지막 검증 상태에 둔다. 무관한 변경을 임의로 삭제하거나 commit하지 않는다.
 2. 승인된 임시 공간에 고정한 소비 부모 snapshot의 별도 clone과 전체 Core submodule을 준비한다. 최초 연결이면 §3~5의 승인된 입력을 이 후보에서 구성한다. 미커밋 소비 입력을 반영하기로 했다면 정확한 경로와 bytes를 후보에 포함한다. 보호 자료를 읽거나 복제할 권한은 이 절차에서 생기지 않는다.
 3. 후보 Core에서 검증된 revision을 fetch·checkout한다. §10의 공개 스킬 목록·native 등록 대조로 신규 진입과 필요한 이전 파일을 판정한다. 후보 부모에서 변경된 gitlink·소비 계약·승인된 native 진입 파일만 검토·commit한다. 이 commit은 검사할 입력의 고정점이며 소비 완료나 배포 승인 근거가 아니다. 새 Core commit을 Host에서 만드는 절차도 아니다.
 4. 후보의 부모 HEAD·index·Core가 모두 새 revision을 가리키는 상태에서 §6의 Host 소비 gate를 실행한다. 후보의 정책·진입·상태·route·기능 요구는 실제 반영할 입력과 같아야 한다. 유효한 가짜 상태로 바꾸어 통과시키지 않는다. 실패하면 실제 소비 저장소는 이전 상태에 유지하고 후보 원인을 해결한다.
-5. 통과한 후보와 실제 반영할 입력을 다시 대조한다. 실제 부모·입력이 준비 이후 달라졌으면 영향받은 후보 근거를 다시 검증한다. 승인된 소비 작업에서 해당 gitlink와 소비 파일만 실제 부모 commit에 반영하고 Core checkout을 맞춘다. 후보 commit을 그대로 반영할지 동일 변경을 별도 commit으로 만들지는 Consumer가 정한다.
-6. 실제 반영된 소비 저장소에서 부모 HEAD·index·Core의 일치와 §6의 소비 gate를 확인한 뒤 그 범위의 소비 완료를 보고한다. 후보 gate 통과만으로 실제 환경의 결과를 대신하지 않는다. 실패 시 사용·게시를 중단하고 §9의 승인된 복구 경로를 따른다.
+5. 통과한 후보와 실제 반영할 입력을 다시 대조한다. 실제 부모·입력이 준비 이후 달라졌으면 영향받은 후보 근거를 다시 검증한다. 각 실제 `core_path` 저장소의 `main`에서 `origin main`을 fast-forward pull한다. pull 뒤 revision이 후보와 달라지면 부모 gitlink 갱신과 소비 실행을 보류하고 바뀐 revision의 후보를 다시 검증한다. 실제 Core를 후보의 detached 상태 그대로 복제해 종료하지 않는다. 승인된 소비 작업에서 검증한 gitlink와 소비 파일만 실제 부모 commit에 반영한다. 후보 commit을 그대로 반영할지 동일 변경을 별도 commit으로 만들지는 Consumer가 정한다.
+6. 실제 Core의 브랜치가 `main`이고 upstream이 `origin/main`인지 확인한다. HEAD·`main`·pull로 확인한 `origin/main`·검증한 revision·부모 HEAD/index gitlink의 일치, Core 청결과 §6의 실제 Host gate를 모두 확인한 뒤 소비 완료를 보고한다. `status --short --branch`, pull 결과와 검증한 revision을 완료 근거에 포함한다. 후보 gate 통과만으로 실제 환경의 결과를 대신하지 않는다. 실패 시 사용·게시를 중단하고 §9의 승인된 복구 경로를 따른다.
 
-기존 연결을 갱신하는 후보에서는 다음 명령 순서를 사용할 수 있다. `CONSUMER_SNAPSHOT`과 `VERIFIED_CORE_COMMIT`은 사전에 확인한 고정 객체이며, 경로·Git 쓰기·정리 범위는 소비 작업에서 정한다. 아래 `git add` 예시는 스킬 목록 대조 후 gitlink만 바뀌는 경우다. 계약 이전이나 신규 스킬 등록이 필요하면 승인된 소비 파일·native 진입도 명시적으로 포함한다.
+기존 연결을 갱신하는 격리된 일회성 후보에서만 다음 detached checkout 순서를 사용할 수 있다. `CONSUMER_SNAPSHOT`과 `VERIFIED_CORE_COMMIT`은 사전에 확인한 고정 객체이며, 후자는 실제 Core의 승인된 `origin/main`에서 받은 객체여야 한다. 경로·Git 쓰기·정리 범위는 소비 작업에서 정한다. 아래 `git add` 예시는 스킬 목록 대조 후 gitlink만 바뀌는 경우다. 계약 이전이나 신규 스킬 등록이 필요하면 승인된 소비 파일·native 진입도 명시적으로 포함한다.
 
 ```powershell
 git clone --no-checkout <CONSUMER_SOURCE> <CANDIDATE_ROOT>
@@ -272,6 +272,26 @@ git -C <CANDIDATE_ROOT> commit -m "Validate Core update candidate"
 후보 clone은 연결·갱신을 위한 한시 검증 자원이며 Core 배포 사본이나 상시 Runtime으로 유지하지 않는다. 종료 시 승인된 정확한 임시 대상만 정리한다. 일반 작업에 후보 clone을 요구하지 않는다. 실제 filesystem read-only 강제와 import 이전 경계의 한계는 §6을 따른다.
 
 Host의 Core 파일 교체는 위의 승인된 revision 배포에 한정한다. 일반 소비·검증 실행에서는 Core에 직접·간접 쓰기를 하지 않으며, Core 내용의 임의 편집·새 Core commit·Core 원격 push는 허용하지 않는다. Maintainer의 push에는 별도 사용자 승인과 해당 후보에 선택된 필수 검증의 통과가 필요하다. 전체 회귀·commit snapshot clean clone은 release·packaging·재현성 등 실제 주장에 따라 [검증 계약](VERIFICATION.md#5-위험별-최소-수준)에서 선택한다.
+
+### 실제 프로젝트의 main 갱신과 완료 확인
+
+실제 Core에서는 원격 대상·로컬 변경·로컬 고유 commit·현재 브랜치·`main` 및 upstream을 먼저 확인하고 다음 순서로 갱신한다. 명령이 실패하면 후속 반영을 진행하지 않는다. `main`이 없으면 확인한 `origin/main`에서 `git switch --track -c main origin/main`으로 구성할 수 있다. 다른 upstream·분기 이력·인증 실패는 기존 이력과 설정을 보존해 보고하며 reset·강제 checkout·로컬 대체 원본으로 우회하지 않는다.
+
+```powershell
+git -C <CONSUMER_ROOT>/<CORE_PATH> switch main
+git -C <CONSUMER_ROOT>/<CORE_PATH> pull --ff-only --no-rebase --no-tags --no-recurse-submodules origin main
+```
+
+pull 결과가 후보와 같은 revision인지 확인하고 승인된 부모 commit 반영과 실제 Host gate를 완료한 뒤 아래 출력을 대조한다. `symbolic-ref`는 성공하며 `main`을 반환해야 하고, upstream은 `origin/main`이어야 한다. 나머지 객체 ID는 검증한 revision과 모두 같아야 한다. `status --short --branch`는 `main...origin/main`의 청결 상태여야 한다. commit ID만 같거나 소비 gate만 통과한 detached HEAD는 최신화 완료가 아니다. 고정 revision 복원·일반 clone은 이 최신화 완료와 구분한다.
+
+```powershell
+git -C <CONSUMER_ROOT>/<CORE_PATH> symbolic-ref --short HEAD
+git -C <CONSUMER_ROOT>/<CORE_PATH> rev-parse --abbrev-ref --symbolic-full-name '@{upstream}'
+git -C <CONSUMER_ROOT>/<CORE_PATH> rev-parse HEAD refs/heads/main refs/remotes/origin/main
+git -C <CONSUMER_ROOT>/<CORE_PATH> status --short --branch
+git -C <CONSUMER_ROOT> ls-tree HEAD -- <CORE_PATH>
+git -C <CONSUMER_ROOT> ls-files --stage -- <CORE_PATH>
+```
 
 ## 8. 원격 권한과 자격 증명
 
