@@ -61,13 +61,15 @@ Core revision을 연결·갱신하는 소비 작업에서는 선택한 revision�
 
 기존 Consumer의 Core 최신화는 각 실제 `core_path` 저장소의 `main`에서 승인된 `origin`의 `main`을 fast-forward pull한다. 시작 전에 원격 대상과 Core의 로컬 변경·현재 브랜치·`main` 및 upstream을 확인한다. 미커밋 변경·로컬 고유 commit·다른 upstream·인증 실패·분기 이력 때문에 안전하게 진행할 수 없으면 해당 갱신을 보류하고 상태를 보고하며 reset·강제 checkout·로컬 대체 원본으로 우회하지 않는다. 실제 프로젝트를 detached HEAD로 남긴 채 최신화 완료로 처리하지 않는다.
 
-격리된 일회성 후보의 고정 revision 검증은 detached checkout을 사용할 수 있다. 일반 clone·고정 revision 재현·명시적 복구는 최신화와 구분한다. 제한은 브랜치가 과거 revision에 남거나 원격 최신성 확인 없이 완료되는 일을 예방한다. commit SHA 일치나 기존 소비 gate 통과만으로 `main`/upstream/pull 성공을 대신할 수 없다. 완료 시 `main` 연결, `origin/main` 추적, HEAD·`main`·pull로 확인한 `origin/main`·검증한 revision·부모 HEAD/index gitlink 일치와 실제 Host gate 통과를 함께 확인한다. `main` 부재 시 확인된 `origin/main`에서 tracking `main`을 구성할 수 있으나 기존 이력·원격/인증 설정을 임의 변경하지 않는다.
+격리된 일회성 후보의 고정 revision 검증은 detached checkout을 사용할 수 있다. 일반 clone·고정 revision 재현·명시적 복구는 최신화와 구분한다. 제한은 브랜치가 과거 revision에 남거나 원격 최신성 확인 없이 완료되는 일을 예방한다. commit SHA 일치나 기존 소비 gate 통과만으로 `main`/upstream/pull 성공을 대신할 수 없다. Core 갱신 완료는 `main` 연결, `origin/main` 추적, HEAD·`main`·pull로 확인한 `origin/main`·검증한 revision·부모 HEAD/index gitlink 일치와 Core 자체 무결성·청결·실행 전후 불변으로 판정한다. 실제 Host gate는 별도로 실행·기록하며 전체 소비 준비 완료와 Core 갱신 완료를 구분한다. `main` 부재 시 확인된 `origin/main`에서 tracking `main`을 구성할 수 있으나 기존 이력·원격/인증 설정을 임의 변경하지 않는다.
 
 이전·목표 revision 간 변경이 기존 `docs/*.md`·`rules/*.md` 일반 파일의 본문 수정에만 한정되고, Core 상위 정책·호환성 선언·문서 역할/계층 선언·route·스킬 진입·코드·schema·속성·파일 종류/모드·추가/삭제/이동이 그대로이면 문서 갱신 경로를 선택할 수 있다. 전체 변경 목록과 선언 변경 여부로 판정하며 확장자만으로 허용하지 않는다. Maintainer가 고정 목표 Core의 공개 구조·링크 검사와 변경 의미에 필요한 감사·검증을 완료한 상태여야 한다.
 
-각 Consumer에 알려진 무결성 문제나 승인 범위와 대조한 입력 변경 문제가 없고, 원격 동일성·Core raw 청결·부모 HEAD/index gitlink 결속·소비 입력 범위/UTF-8/상태 크기 등 열거한 가벼운 사전 확인을 통과하면, 문서 갱신에서는 격리 후보의 전체 gate와 별도 사전 전체 verify를 반복하지 않는다. 이 사전 확인은 전체 소비 적합성을 증명하지 않는다. `main`에서 실제 pull하고 gitlink를 승인 범위에서 반영한 뒤 실제 Host gate를 한 번 실행하며, 기존 clean·계약·상태·route·capability·전후 불변 검사와 브랜치·upstream·revision 결속 확인을 유지한다. 조건 미충족이나 실행·소비 계약 변경은 기존 후보+실제 gate 경로를 사용한다.
+원격 동일성·Core raw 청결·부모 HEAD/index gitlink 결속·배포에 필요한 계약/보호 경계·경로 안전성의 사전 확인을 통과하면, 문서 갱신에서는 격리 후보의 전체 gate와 별도 사전 전체 verify를 반복하지 않는다. 사전 확인은 전체 소비 적합성을 증명하지 않는다. `main`에서 실제 pull하고 gitlink를 승인 범위에서 반영한 뒤 실제 Host gate를 실행하며, 기존 clean·계약·상태·route·capability·전후 불변 검사와 브랜치·upstream·revision 결속 확인을 유지한다. 문서 경로 조건 미충족이나 실행·소비 계약 변경은 후보+실제 gate 경로를 사용한다.
 
-준비 이후 입력·원격 변경은 실제 변경 여부를 구분해 보고하고 재계획한다. 실제 gate 실패는 pull·부모 commit 이후의 적용 후 검증 실패이며 최신화 완료가 아니다. 이미 적용된 revision·부모 commit·실패 결과를 보고하고 후속 적용을 중단한다. 기존 상태 문서의 자동 수정이나 reset·clean·임의 rollback은 하지 않는다. 줄이는 것은 동일 입력에 대한 중복 사전 소비 검증이며 실제 적용 결과 검증은 아니다.
+현재 요청 조건 및 이번 Core revision 변경 영향과 무관한 프로젝트 문서 finding은 Core 갱신을 막지 않는다. 소비 상태의 길이·형식·누락, 진입/설명 문서·링크·소비 규칙 route의 기존 오류는 프로젝트가 소유한다. 문서 실패 때만 동일한 실제 Consumer 입력을 이전·목표 Core에서 공개 검사해 같은 오류임을 확인한다. 구조화된 검사 결과로 그 범위를 한정하고 Core와 소비 입력의 무부작용을 확인한 경우, Core 갱신 성공과 Host gate 실패를 각각 보고하며 일괄 갱신의 다음 Consumer를 진행한다. 문서 전용·일반 후보 경로 모두 이 구분을 적용한다. 상태 문서의 비실행 내용 변경은 덮어쓰지 않고 관측·보고한다.
+
+새 Core가 유발한 문서/route 회귀, 관련성이나 실패 분류가 불명확한 경우, origin·core_path·부모 포인터·Core 청결·공통 Core 검증·Core 불변 실패와 보호/경로 경계 불확실성은 계속 차단한다. 배포에 필요한 Core 위치·역할·보호 계약은 해석 가능해야 하며 프로젝트 문서 예외로 우회하지 않는다. 적용 후 실패는 이미 적용된 revision·부모 commit과 함께 보고한다. 전체 Host 소비 준비 완료를 요청한 작업의 완료 조건은 별도이며 이 구분으로 Host gate를 pass로 바꾸지 않는다. 기존 상태 문서의 자동 압축·제품 자료 수정이나 reset·clean·임의 rollback은 하지 않는다.
 
 ## 6. 변경 후 검증
 

@@ -62,7 +62,7 @@ Core 자체 gate 통과만으로 Host 사용 가능성이나 read-only push 거�
 
 ## 4. 소비 통합 gate
 
-Core 최신화 완료에는 소비 gate 외에 [소비 안내 §7](CONSUMER_GUIDE.md#7-core-버전-갱신)의 `main` 브랜치·`origin/main` 추적·실제 pull·revision 결속 확인이 필요하다. 기존 Host gate가 이 브랜치·원격 최신성 조건을 자동 검사한다고 주장하지 않는다. 고정 revision 복원·일회성 후보 검증은 최신화 완료와 구분한다.
+Core 갱신 완료는 [소비 안내 §7](CONSUMER_GUIDE.md#7-core-버전-갱신)의 `main` 브랜치·`origin/main` 추적·실제 pull·revision 결속과 Core 자체 무결성·청결·실행 전후 불변으로 판정한다. 실제 Host gate도 실행하되 전체 소비 준비 판정과 별도로 보고한다. 현재 요청·이번 revision 영향과 무관한 기존 프로젝트 문서 오류는 같은 실제 입력의 이전·목표 Core 공개 검사 결과로 확인하고 Core 갱신을 차단하지 않는다. 새 회귀·분류/관련성 불명확·Core 안전 실패는 계속 차단한다. Host gate의 실패를 pass로 바꾸거나 소비 준비 완료로 주장하지 않는다. 기존 Host gate가 브랜치·원격 최신성을 자동 검사한다고 주장하지 않으며 고정 revision 복원·일회성 후보 검증은 최신화 완료와 구분한다.
 
 [소비 안내 §7](CONSUMER_GUIDE.md#변경-영향에-따른-경로-선택)의 문서 갱신 조건을 충족하면 고정 Core의 공개 구조·링크 검사 한 번과 변경 의미에 필요한 검증을 근거로, 각 Consumer의 가벼운 사전 확인 뒤 실제 Host gate를 한 번 실행한다. 격리 후보 gate·별도 사전 전체 verify를 중복 실행하지 않으며, 실제 gate의 기존 판정·전후 불변과 브랜치·gitlink 완료 조건은 유지한다. 가벼운 사전 확인 통과는 전체 소비 적합성 통과가 아니다. 문서 경로가 아니면 후보와 실제 소비를 각각 검증한다.
 
