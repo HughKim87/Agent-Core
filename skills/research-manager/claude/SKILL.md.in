@@ -1,0 +1,9 @@
+---
+name: research-manager
+description: "명시적으로 깊게 리서치해 또는 깊게 조사해 요청한 경우 여러 Agent와 출처로 심층 조사하고 근거를 검증한다. 일반 조사·검색·비교 요청이나 이 스킬의 수정·점검 요청에는 실행하지 않는다."
+disable-model-invocation: false
+---
+
+Core workflow entry v1.
+
+[공통 진입]({{WORKFLOW_LINK}})을 끝까지 읽고 연결된 실행 정본을 적용한다. 실행 정본에 도달할 수 없으면 그 사실을 보고한다.

@@ -93,7 +93,10 @@ Core workflow entry v1은 아래 공통 진입과 도구별 discovery 템플릿�
 | `session-close` | `skills/session-close/WORKFLOW.md` | `skills/session-close/codex/SKILL.md.in` | `skills/session-close/claude/SKILL.md.in` | 직접 호출 |
 | `review-chat-session` | `skills/review-chat-session/WORKFLOW.md` | `skills/review-chat-session/codex/SKILL.md.in` | `skills/review-chat-session/claude/SKILL.md.in` | 허용 |
 | `install-common-skills` | `skills/install-common-skills/WORKFLOW.md` | `skills/install-common-skills/codex/SKILL.md.in` | `skills/install-common-skills/claude/SKILL.md.in` | 허용 |
+| `research-manager` | `skills/research-manager/WORKFLOW.md` | `skills/research-manager/codex/SKILL.md.in` | `skills/research-manager/claude/SKILL.md.in` | 허용 |
 <!-- /core-workflow-entries -->
+
+`research-manager`는 Core 연결 없이 실행하는 `common` 심층 연구 스킬이다. 자동 선택은 실행 본문이 정한 “깊게 리서치해”·“깊게 조사해” 요청에 한하며 일반 조사나 스킬 수정·검토 요청으로 연구를 실행하지 않는다. 원본의 모델·Agent 활용·중단 조건은 해당 스킬만 소유한다.
 
 Codex 템플릿 옆의 `agents/openai.yaml`도 배포 자산이며 `allow_implicit_invocation`을 소유한다. Claude Code 템플릿은 `disable-model-invocation`을 소유한다. 양쪽은 같은 공통 본문을 읽으며 공통 절차를 native 진입에 복제하지 않는다. 이 계약은 기존 `optional_capabilities` JSON·Runtime API·schema와 분리한다. 설치 분류·개인용 패키지 명세는 아래 공개 설치 목록이 소유하며 Consumer schema에는 필드를 추가하지 않는다.
 

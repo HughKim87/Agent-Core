@@ -32,7 +32,8 @@ class CommonSkillInstallationTest(unittest.TestCase):
         # Deployment failure fixtures intentionally isolate one synthetic package.
         self.catalog(lambda data: data["skills"].update({
             "handoff-manager": {"scope": "project"},
-            "setup-agent-core-project": {"scope": "project"}}))
+            "setup-agent-core-project": {"scope": "project"},
+            "research-manager": {"scope": "project"}}))
         self.catalog(lambda data: data["skills"][NAME].update(version="1.0.0"))
 
     def catalog(self, mutate):
@@ -54,7 +55,7 @@ class CommonSkillInstallationTest(unittest.TestCase):
         data = json.loads((ROOT / "skills/INSTALLATION.json").read_text(encoding="utf-8"))
         public = {row[0] for row in entries(ROOT)}
         self.assertEqual(set(data["skills"]), public)
-        common = {NAME, "handoff-manager", "setup-agent-core-project"}
+        common = {NAME, "handoff-manager", "setup-agent-core-project", "research-manager"}
         self.assertEqual({name for name, spec in data["skills"].items() if spec["scope"] == "common"}, common)
         for name in public - common:
             self.assertEqual(data["skills"][name], {"scope": "project"})
@@ -73,12 +74,23 @@ class CommonSkillInstallationTest(unittest.TestCase):
                 fields, _ = frontmatter((installed / "SKILL.md").read_text(encoding="utf-8"))
                 self.assertEqual(fields["name"], name)
                 self.assertEqual((installed / "agents/openai.yaml").exists(), agent == "codex")
-                if name != NAME:
+                if name in {"handoff-manager", "setup-agent-core-project"}:
                     if agent == "claude":
                         self.assertTrue(fields["disable-model-invocation"])
                     else:
                         metadata = openai_fields((installed / "agents/openai.yaml").read_text(encoding="utf-8"))
                         self.assertFalse(metadata["policy"]["allow_implicit_invocation"])
+                else:
+                    if agent == "claude":
+                        self.assertFalse(fields.get("disable-model-invocation", False))
+                    else:
+                        metadata = openai_fields((installed / "agents/openai.yaml").read_text(encoding="utf-8"))
+                        self.assertTrue(metadata["policy"]["allow_implicit_invocation"])
+                if name == "research-manager":
+                    self.assertEqual(
+                        (installed / "references/procedure.md").read_bytes(),
+                        (ROOT / "skills/research-manager/source/SKILL.md").read_bytes(),
+                    )
                 for document in installed.rglob("*.md"):
                     for link in LINK.findall(document.read_text(encoding="utf-8")):
                         self.assertFalse(link.startswith(("http:", "https:")))

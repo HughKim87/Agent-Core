@@ -6,6 +6,7 @@
     "skills/session-close/source/agents/openai.yaml": "bcb872c5c0f43fd3295cedb25e5f880960aadcfc21630fa1c871af7be7ca7b92",
     "skills/session-close/source/references/design.md": "3a7791d0d394169535124c246a8d4a08532811ab8c7a09489fcbe85801b57097",
     "skills/setup-agent-core-project/source/SKILL.md": "5dba7c854fb2d2285dabef90a6e9dbff711172d33b76d9561a1b1993c1de7dac",
-    "skills/setup-agent-core-project/source/agents/openai.yaml": "5802f88b65c9525c4c639db8253379de8bd85b948159abfb0201292b8cd74919"
+    "skills/setup-agent-core-project/source/agents/openai.yaml": "5802f88b65c9525c4c639db8253379de8bd85b948159abfb0201292b8cd74919",
+    "skills/research-manager/source/SKILL.md": "75cccb5ade2545e00ed985d1e6969761c6274eb813d82212f58a05ac68936e8c"
   }
 }

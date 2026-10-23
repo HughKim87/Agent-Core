@@ -1,0 +1,6 @@
+interface:
+  display_name: "심층 연구"
+  short_description: "명시적인 심층 조사 요청에서 여러 Agent와 출처로 조사하고 근거와 산출물을 확인합니다."
+  default_prompt: "깊게 리서치해. $research-manager로 조사 목표에 맞는 근거를 검증하고 요청한 산출물을 제공해줘."
+policy:
+  allow_implicit_invocation: true

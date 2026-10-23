@@ -24,7 +24,8 @@ from core_check.integrity import (  # noqa: E402
     check_markdown_links,
     check_skill_source_integrity,
 )
-PRESERVED_NAMES = {"handoff-manager", "setup-agent-core-project", "session-close"}
+DIRECT_ONLY_NAMES = {"handoff-manager", "setup-agent-core-project", "session-close"}
+PRESERVED_NAMES = DIRECT_ONLY_NAMES | {"research-manager"}
 REQUIRED_NAMES = PRESERVED_NAMES | {"review-chat-session", "install-common-skills"}
 BLOCK = re.compile(
     r"<!-- core-workflow-entries:v1 -->\n(.*?)\n<!-- /core-workflow-entries -->", re.S
@@ -136,7 +137,7 @@ def validate_assets(root: Path) -> list[str]:
             ]
             if [workflow_rel, codex_rel, claude_rel] != expected:
                 raise ValueError("공개 경로와 workflow owner가 다르다")
-            automatic = name not in PRESERVED_NAMES
+            automatic = name not in DIRECT_ONLY_NAMES
             if invocation != ("허용" if automatic else "직접 호출"):
                 raise ValueError("공개 호출 정책 불일치")
             workflow = inside_file(root, workflow_rel)
@@ -196,6 +197,8 @@ class SkillAssetsTest(unittest.TestCase):
         mutations = {
             "missing-workflow": ("skills/session-close/WORKFLOW.md", None),
             "missing-source": ("skills/session-close/source/SKILL.md", None),
+            "missing-research-source": ("skills/research-manager/source/SKILL.md", None),
+            "changed-research-source": ("skills/research-manager/source/SKILL.md", b"changed original"),
             "missing-reference": ("skills/session-close/source/references/design.md", None),
             "missing-current": ("skills/session-close/current/SKILL.md", None),
             "missing-setup-current": ("skills/setup-agent-core-project/current/SKILL.md", None),

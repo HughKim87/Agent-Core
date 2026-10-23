@@ -53,6 +53,22 @@
         },
         "claude": {}
       }
+    },
+    "research-manager": {
+      "scope": "common",
+      "version": "1.0.0",
+      "files": {
+        "references/procedure.md": "skills/research-manager/source/SKILL.md"
+      },
+      "agent_files": {
+        "codex": {
+          "SKILL.md": "skills/research-manager/codex/PERSONAL_SKILL.md.in",
+          "agents/openai.yaml": "skills/research-manager/codex/agents/openai.yaml"
+        },
+        "claude": {
+          "SKILL.md": "skills/research-manager/claude/PERSONAL_SKILL.md.in"
+        }
+      }
     }
   }
 }
