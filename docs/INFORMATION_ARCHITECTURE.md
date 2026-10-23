@@ -37,6 +37,7 @@
 | 공통 조건부 규칙 | `rules/` |
 | 보존된 스킬 원본·자료·도구별 진입 | `skills/` |
 | 스킬 원본 파일 식별 | `skills/SOURCES.json` |
+| 스킬 설치 분류·개인용 패키지 파일 명세 | `skills/INSTALLATION.json` |
 | 목적·보장 | `docs/CHARTER.md` |
 | 계층·scope 경계 | `docs/ARCHITECTURE.md` |
 | 정보 소유와 선언 | 이 문서 |
@@ -65,7 +66,7 @@ Core 저장소에는 자동 진입 파일, 현재 상태, 특정 Maintainer·Hos
 | 가져오거나 병합한 자료의 source lineage | 원래 Git 또는 해당 Consumer의 migration·source owner |
 | 프로젝트 완료 이력 | 소비 저장소 Git commit |
 
-소비 정책의 `agent-core-consumer:v1` 블록이 프로젝트별 경로 선언의 기계 정본이다.
+소비 정책의 `agent-core-consumer:v1` 블록이 프로젝트별 경로 선언의 기계 정본이다. PC 개인용 공통 설치본과 `.agent-core-install.json` 영수증은 승인된 사용자 환경이 소유한다. 이는 프로젝트 상태나 Core revision 정본이 아니며 프로젝트 정책에 개인 설치 경로·상태를 복제하지 않는다.
 
 ## 5. Core 디렉터리 구조
 

@@ -29,7 +29,7 @@
 | L6 | 경로 안전, 오류 유형, fingerprint | 순수 함수와 예외 타입 |
 | L7 | 선택적 공통 데이터 Runtime과 호환 adapter | 호환성 선언에 등록된 versioned CLI·schema만 외부 공개 |
 
-`skills/`는 스킬 원본과 승인 개정을 보관·배포하는 자산 영역이다. 원본의 업무 절차를 L2 공통 규칙으로 승격하거나 기존 Core 기본값으로 재작성하지 않는다. `source/`는 보존 원본이며 각 `WORKFLOW.md`가 원본 또는 승인 개정 중 실행 본문 하나를 선택한다. 실행 본문 위치의 정본은 각 WORKFLOW다. WORKFLOW와 도구별 템플릿은 navigation만 소유한다. Core는 보존·참조·진입을, 스킬은 자기 작업의 고유 절차를, Consumer는 실제 설치·상태·결과를 소유한다. Kernel은 스킬을 Runtime 의존으로 import하지 않는다.
+`skills/`는 스킬 원본과 승인 개정을 보관·배포하는 자산 영역이다. 원본의 업무 절차를 L2 공통 규칙으로 승격하거나 기존 Core 기본값으로 재작성하지 않는다. `source/`는 보존 원본이며 각 `WORKFLOW.md`가 원본 또는 승인 개정 중 실행 본문 하나를 선택한다. 실행 본문 위치의 정본은 각 WORKFLOW다. WORKFLOW와 도구별 템플릿은 navigation만 소유한다. Core는 보존·참조·진입을, 스킬은 자기 작업의 고유 절차를, Consumer는 프로젝트 설치·상태·결과를 소유하고 사용자 환경은 승인된 개인용 공통 설치본을 소유한다. 개인용 설치는 명시된 스킬 패키지에 한하며 Core checkout 복제나 Runtime 배포물이 아니다. Kernel은 스킬을 Runtime 의존으로 import하지 않는다.
 
 ## 3. 의존 방향
 

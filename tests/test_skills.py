@@ -24,7 +24,8 @@ from core_check.integrity import (  # noqa: E402
     check_markdown_links,
     check_skill_source_integrity,
 )
-REQUIRED_NAMES = {"handoff-manager", "setup-agent-core-project", "session-close"}
+PRESERVED_NAMES = {"handoff-manager", "setup-agent-core-project", "session-close"}
+REQUIRED_NAMES = PRESERVED_NAMES | {"review-chat-session", "install-common-skills"}
 BLOCK = re.compile(
     r"<!-- core-workflow-entries:v1 -->\n(.*?)\n<!-- /core-workflow-entries -->", re.S
 )
@@ -123,7 +124,7 @@ def validate_assets(root: Path) -> list[str]:
     try:
         rows = entries(root)
         if len(rows) != len(REQUIRED_NAMES) or {row[0] for row in rows} != REQUIRED_NAMES:
-            raise ValueError("세 필수 workflow의 공개 목록이 다르다")
+            raise ValueError("필수 workflow의 공개 목록이 다르다")
     except (OSError, UnicodeError, ValueError) as exc:
         return [str(exc)]
     for name, workflow_rel, codex_rel, claude_rel, invocation in rows:
@@ -135,7 +136,7 @@ def validate_assets(root: Path) -> list[str]:
             ]
             if [workflow_rel, codex_rel, claude_rel] != expected:
                 raise ValueError("공개 경로와 workflow owner가 다르다")
-            automatic = False  # Three published skills are explicit-only.
+            automatic = name not in PRESERVED_NAMES
             if invocation != ("허용" if automatic else "직접 호출"):
                 raise ValueError("공개 호출 정책 불일치")
             workflow = inside_file(root, workflow_rel)
@@ -245,7 +246,8 @@ class SkillAssetsTest(unittest.TestCase):
                     workflow = core / "skills" / name / "WORKFLOW.md"
                     workflow.parent.mkdir(parents=True, exist_ok=True)
                     workflow.write_bytes((ROOT / "skills" / name / "WORKFLOW.md").read_bytes())
-                    shutil.copytree(ROOT / "skills" / name / "source", workflow.parent / "source")
+                    if name in PRESERVED_NAMES:
+                        shutil.copytree(ROOT / "skills" / name / "source", workflow.parent / "source")
                     current = ROOT / "skills" / name / "current"
                     if current.exists():
                         shutil.copytree(current, workflow.parent / "current")
@@ -277,7 +279,7 @@ class SkillAssetsTest(unittest.TestCase):
         manifest = json.loads((ROOT / "skills/SOURCES.json").read_text(encoding="utf-8"))
         actual = {
             path.relative_to(ROOT).as_posix()
-            for name in REQUIRED_NAMES
+            for name in PRESERVED_NAMES
             for path in (ROOT / "skills" / name / "source").rglob("*")
             if path.is_file()
         }

@@ -1,0 +1,22 @@
+{
+  "format_version": 1,
+  "provider": "agent-core",
+  "skills": {
+    "handoff-manager": {"scope": "project"},
+    "setup-agent-core-project": {"scope": "project"},
+    "session-close": {"scope": "project"},
+    "install-common-skills": {"scope": "project"},
+    "review-chat-session": {
+      "scope": "common",
+      "version": "1.0.0",
+      "files": {
+        "SKILL.md": "skills/review-chat-session/current/SKILL.md",
+        "references/report.md": "skills/review-chat-session/current/references/report.md"
+      },
+      "agent_files": {
+        "codex": {"agents/openai.yaml": "skills/review-chat-session/codex/agents/openai.yaml"},
+        "claude": {}
+      }
+    }
+  }
+}

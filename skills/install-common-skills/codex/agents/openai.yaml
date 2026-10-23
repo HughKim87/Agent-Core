@@ -1,0 +1,6 @@
+interface:
+  display_name: "공통스킬 설치"
+  short_description: "Core 프로젝트에서 개인용 공통 스킬의 설치 상태를 비교하고 갱신합니다."
+  default_prompt: "$install-common-skills로 이 PC의 공통 스킬 설치 상태를 확인하고 승인 범위에서 설치·갱신해줘."
+policy:
+  allow_implicit_invocation: true

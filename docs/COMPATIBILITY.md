@@ -83,7 +83,7 @@
 
 ## 3B. 공통 workflow 진입 계약
 
-Core workflow entry v1은 아래 공통 진입과 도구별 discovery 템플릿의 계약이다. 세 스킬의 원본과 참고 자료는 각 `source/` 트리에 그대로 보존한다. `WORKFLOW.md`는 실행 본문 하나를 연결한다. 선택된 본문 기준의 상대 참고자료를 읽고, 승인 개정이 선택되면 source는 비활성 보존 자료로 유지하며 동시에 적용하지 않는다. 원본을 공통 규칙으로 승격하거나 일반 Core 절차에 맞춰 수정하지 않는다. 배포 자산은 필수 제공하고 실행·Consumer 설치는 선택이다. 신규 setup의 도구 선택 기본값은 그 스킬이 소유하며 Core 공통 기본값이 아니다. 기존 갱신은 Consumer가 위임한 등록 범위·도구 선택·명시적 제외를 따른다. 자동 선택 표시는 스킬 발견/선택 정책이며 기존 사용자 승인·실행기 권한을 바꾸지 않는다.
+Core workflow entry v1은 아래 공통 진입과 도구별 discovery 템플릿의 계약이다. 기존 보존 스킬의 원본과 참고 자료는 각 `source/` 트리에 그대로 보존한다. 새로 작성한 스킬은 `current/`에 실행 본문을 둘 수 있으며 존재하지 않는 보존 원본을 만들지 않는다. `WORKFLOW.md`는 실행 본문 하나를 연결한다. 선택된 본문 기준의 상대 참고자료를 읽고, 승인 개정이 선택되면 source는 비활성 보존 자료로 유지하며 동시에 적용하지 않는다. 원본을 공통 규칙으로 승격하거나 일반 Core 절차에 맞춰 수정하지 않는다. 배포 자산은 필수 제공하고 실행·Consumer 설치는 선택이다. 신규 setup의 도구 선택 기본값은 그 스킬이 소유하며 Core 공통 기본값이 아니다. 기존 갱신은 Consumer가 위임한 등록 범위·도구 선택·명시적 제외를 따른다. 자동 선택 표시는 스킬 발견/선택 정책이며 기존 사용자 승인·실행기 권한을 바꾸지 않는다.
 
 <!-- core-workflow-entries:v1 -->
 | 스킬 | 공통 본문 | Codex 템플릿 | Claude Code 템플릿 | 자동 선택 |
@@ -91,15 +91,33 @@ Core workflow entry v1은 아래 공통 진입과 도구별 discovery 템플릿�
 | `handoff-manager` | `skills/handoff-manager/WORKFLOW.md` | `skills/handoff-manager/codex/SKILL.md.in` | `skills/handoff-manager/claude/SKILL.md.in` | 직접 호출 |
 | `setup-agent-core-project` | `skills/setup-agent-core-project/WORKFLOW.md` | `skills/setup-agent-core-project/codex/SKILL.md.in` | `skills/setup-agent-core-project/claude/SKILL.md.in` | 직접 호출 |
 | `session-close` | `skills/session-close/WORKFLOW.md` | `skills/session-close/codex/SKILL.md.in` | `skills/session-close/claude/SKILL.md.in` | 직접 호출 |
+| `review-chat-session` | `skills/review-chat-session/WORKFLOW.md` | `skills/review-chat-session/codex/SKILL.md.in` | `skills/review-chat-session/claude/SKILL.md.in` | 허용 |
+| `install-common-skills` | `skills/install-common-skills/WORKFLOW.md` | `skills/install-common-skills/codex/SKILL.md.in` | `skills/install-common-skills/claude/SKILL.md.in` | 허용 |
 <!-- /core-workflow-entries -->
 
-Codex 템플릿 옆의 `agents/openai.yaml`도 배포 자산이며 `allow_implicit_invocation`을 소유한다. Claude Code 템플릿은 `disable-model-invocation`을 소유한다. 양쪽은 같은 공통 본문을 읽으며 공통 절차를 native 진입에 복제하지 않는다. 이 계약은 기존 `optional_capabilities` JSON·Runtime API·schema와 분리하며 새 기계 판독 필드를 요구하지 않는다.
+Codex 템플릿 옆의 `agents/openai.yaml`도 배포 자산이며 `allow_implicit_invocation`을 소유한다. Claude Code 템플릿은 `disable-model-invocation`을 소유한다. 양쪽은 같은 공통 본문을 읽으며 공통 절차를 native 진입에 복제하지 않는다. 이 계약은 기존 `optional_capabilities` JSON·Runtime API·schema와 분리한다. 설치 분류·개인용 패키지 명세는 아래 공개 설치 목록이 소유하며 Consumer schema에는 필드를 추가하지 않는다.
 
 지원 템플릿은 단순 YAML frontmatter와 Markdown 포인터를 사용한다. scalar는 JSON 호환 double-quoted 문자열, 단순 이름, `true`/`false`만 사용하고 Codex 메타데이터는 `interface`와 `policy` 두 단계 mapping으로 제한한다. `SKILL.md.in`의 유일한 치환 항목은 `{{WORKFLOW_LINK}}`다. 실제 설치·치환·호환 검사 절차는 [소비 안내](CONSUMER_GUIDE.md#10-공통-스킬-진입-구성)가 소유한다.
 
 이 진입 형식의 제한은 Core가 생성하는 어댑터에만 적용한다. 보존된 원본 frontmatter·본문·고유 절차에 이 subset이나 Core 문서 형식을 강제하지 않는다. `skills/SOURCES.json` format_version 1의 `files`는 `skills/<name>/source/<원본 상대경로>`별 SHA-256이다. 확인된 source 파일만 일반 문서 헤더 검사와 구분하고 원본 bytes·누락·경로 이상은 별도 무결성 검사로 보고한다. source 영역의 Git `-text` 속성으로 줄바꿈 bytes도 보존한다.
 
 원본 보관은 원본의 도구·서비스·환경 값을 Core 전역 기본값으로 채택하는 일이 아니다. Core 내부 native 발견 경로나 별도 Runtime 의존도 만들지 않는다. 스킬 문제를 분석·보고할 수 있으나 단순한 Core 기본 절차와의 차이를 수정·차단 사유로 삼지 않는다. 어댑터 구조·원본 bytes 검사는 실제 두 도구의 parser·발견·읽기·행동을 증명하지 않는다. 원본이나 진입 경로·호출 의미를 바꾸려면 현재 사용자 범위와 §4의 호환성·이전을 대조한다.
+
+### 설치 분류와 공통 설치 패키지
+
+[설치 목록](../skills/INSTALLATION.json) format 1이 스킬별 설치 분류의 단일 정본이다. 위 표의 “공통 workflow”는 도구 간 본문 공유를 뜻하며 PC 공통 설치를 뜻하지 않는다. 공개 workflow 이름은 설치 목록에 정확히 하나씩 분류하며 미분류 항목을 설치 대상으로 추측하지 않는다.
+
+| scope | 정의 | 설치 선택 |
+|---|---|---|
+| `common` | 프로젝트·Git·Core 연결 없이 작업 목적을 완성하는 개인용 스킬 | PC 사용자 범위에 필요한 본문·자료를 포함한 독립 패키지 설치. 프로젝트 native 등록 제외 |
+| `project` | 프로젝트를 생성·운영·검증·인계하거나 Core 연결을 전제로 하는 스킬 | Consumer의 native 진입으로만 등록. 개인용 공통 설치 제외 |
+| `internal` | 독립 호출 대상이 아닌 보조 자료 | native 진입과 공통 설치 모두 제외. 참조하는 패키지의 필요한 자료로만 포함 가능 |
+
+원본 보관 위치, 설치 scope, 실행에 필요한 역할·환경은 서로 다른 정보다. 여러 프로젝트에서 재사용된다는 사실만으로 `common`이 되지 않는다. 프로젝트 생성은 기존 프로젝트 없이 시작할 수 있어도 목적이 프로젝트 구성이므로 `project`다. Core 연결·Maintainer 역할 등 실행 전제는 해당 스킬 본문이 소유한다. 내부 자료는 파일 확장자나 폴더 이름으로 개별 스킬로 승격하지 않는다.
+
+설치 목록은 `format_version`, `provider`, `skills`를 갖는다. `skills`의 key는 공개 이름이며 각 항목의 `scope`는 위 세 값 중 하나다. `project`·`internal` 항목은 scope만 선언한다. `common` 항목은 안정 버전 `MAJOR.MINOR.PATCH`인 `version`, 설치 상대경로→Core 원본 상대경로의 `files`, `codex`·`claude`별 추가 파일인 `agent_files`를 선언한다. source는 같은 스킬 owner 안의 명시 파일만 허용하며 재귀 폴더 복사는 하지 않는다. 설치 `SKILL.md`와 상대 참고자료는 설치본 내부에서 완결돼야 한다. 새 common 패키지는 내용·호출 정책·파일 구성이 바뀔 때 스킬 버전을 올린다. 이 버전은 Core 저장소 release 버전과 별개이며 Core revision의 정본을 복제하지 않는다.
+
+설치 영수증 `.agent-core-install.json` format 1은 사용자 설치 폴더 안에 `provider`, `name`, `agent`, 스킬 `version`, 설치 파일별 SHA-256인 `files`를 보존한다. 로컬 관리 식별이며 신뢰·권한의 증명은 아니다. 비교·교체·보존 절차는 [소비 안내 §11](CONSUMER_GUIDE.md#11-pc-공통-스킬-설치)가 소유한다. 분류 변경은 설치 위치의 자동 이동·삭제 승인이 아니며, 기존 설치·발견 출처와 고유 내용을 확인한 명시적 이전이 필요하다.
 
 ## 4. 호환·비호환
 
