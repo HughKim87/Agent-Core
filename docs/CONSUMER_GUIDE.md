@@ -248,6 +248,14 @@ $request | python -B -I -c $bootstrap `
 
 Host 소비 완료에는 부모 HEAD·index gitlink와 실행 Core HEAD의 일치가 필요하다. 따라서 실제 소비 저장소에서 새 Core를 checkout한 뒤 부모 commit 전에 gate를 통과시키려는 순서는 성립하지 않는다. stage만 추가해도 부모 HEAD와 index가 달라 실패한다. 아래 절차는 검증 대상인 후보 부모 snapshot을 먼저 만들며, 기존 gate의 결속 조건을 유지한다.
 
+### 변경 영향에 따른 경로 선택
+
+문서 갱신의 조건·실패 경계는 [Core 변경 통제](../rules/core-change-control.md#5-조건과-행동)를 따른다. 고정 목표 Core는 Maintainer에서 공개 구조·링크 검사를 한 번 수행하고 변경 의미에 필요한 감사·검증을 완료한다. 각 Consumer의 `core_path`·진입·정책·상태·규칙·요구 기능을 실제 입력으로 유지하며 가벼운 사전 확인 뒤 실제 `main` pull·승인된 부모 gitlink 반영·실제 Host gate 한 번으로 완료를 판정한다. 이 경우 다음 일반 절차의 2~4번인 임시 Consumer 복제·후보 commit·후보 gate와 별도 사전 전체 verify는 생략한다. 사전 확인은 전체 소비 적합성을 증명하지 않으며 나머지 적합성은 실제 gate가 판정한다.
+
+기존 `docs/*.md`·`rules/*.md` 본문 수정이라도 호환성·문서 역할/계층 선언이나 route가 달라지면 일반 경로다. Core 상위 정책·실행 코드·스킬·schema·속성·파일 추가/삭제/이동·종류/모드 변경도 일반 경로다. 문서 확장자만 검사해 문서 경로로 분류하지 않는다. 원격이나 입력 변경을 발견하면 적용 전후 상태를 구분해 중단·재계획한다. pull·부모 commit 뒤 실제 gate가 실패하면 적용된 revision·부모 commit과 실패를 보고하며 완료로 처리하거나 자동 복구하지 않는다.
+
+### 일반 갱신 절차
+
 1. 각 실제 Core의 승인된 `origin/main`에서 조회·fetch한 객체를 후보 revision으로 고정하고, Maintainer의 검증 근거와 호환성을 확인한다. 로컬 Maintainer에만 있는 commit을 최신 원격 대신 사용하지 않는다. 반영할 소비 입력·Git 쓰기·임시 자원의 범위를 정하고 실제 소비 저장소는 마지막 검증 상태에 둔다. 무관한 변경을 임의로 삭제하거나 commit하지 않는다.
 2. 승인된 임시 공간에 고정한 소비 부모 snapshot의 별도 clone과 전체 Core submodule을 준비한다. 최초 연결이면 §3~5의 승인된 입력을 이 후보에서 구성한다. 미커밋 소비 입력을 반영하기로 했다면 정확한 경로와 bytes를 후보에 포함한다. 보호 자료를 읽거나 복제할 권한은 이 절차에서 생기지 않는다.
 3. 후보 Core에서 검증된 revision을 fetch·checkout한다. §10의 공개 스킬 목록·native 등록 대조로 신규 진입과 필요한 이전 파일을 판정한다. 후보 부모에서 변경된 gitlink·소비 계약·승인된 native 진입 파일만 검토·commit한다. 이 commit은 검사할 입력의 고정점이며 소비 완료나 배포 승인 근거가 아니다. 새 Core commit을 Host에서 만드는 절차도 아니다.

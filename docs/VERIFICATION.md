@@ -64,6 +64,8 @@ Core 자체 gate 통과만으로 Host 사용 가능성이나 read-only push 거�
 
 Core 최신화 완료에는 소비 gate 외에 [소비 안내 §7](CONSUMER_GUIDE.md#7-core-버전-갱신)의 `main` 브랜치·`origin/main` 추적·실제 pull·revision 결속 확인이 필요하다. 기존 Host gate가 이 브랜치·원격 최신성 조건을 자동 검사한다고 주장하지 않는다. 고정 revision 복원·일회성 후보 검증은 최신화 완료와 구분한다.
 
+[소비 안내 §7](CONSUMER_GUIDE.md#변경-영향에-따른-경로-선택)의 문서 갱신 조건을 충족하면 고정 Core의 공개 구조·링크 검사 한 번과 변경 의미에 필요한 검증을 근거로, 각 Consumer의 가벼운 사전 확인 뒤 실제 Host gate를 한 번 실행한다. 격리 후보 gate·별도 사전 전체 verify를 중복 실행하지 않으며, 실제 gate의 기존 판정·전후 불변과 브랜치·gitlink 완료 조건은 유지한다. 가벼운 사전 확인 통과는 전체 소비 적합성 통과가 아니다. 문서 경로가 아니면 후보와 실제 소비를 각각 검증한다.
+
 소비 계약이나 연결 표면이 변경되어 소비 통합 gate를 선택한 작업에서는 `--consumer-root`를 지정한다. 이를 생략한 `verify`·`gate`는 Core 자체 검사일 뿐 Host 보호나 소비 완료의 근거가 아니다. `maintainer`는 Core 자체 gate와 아래 소비 검사를 함께 실행한다. `host` 소비 gate는 검증된 Core library의 구조·공개 계약을 읽기 전용으로 검사하되 Maintainer가 소유하는 Core 내부 회귀를 소비 완료의 필수 검사로 다시 실행하지 않는다. 별도의 격리된 read-only 진단은 허용되지만 Maintainer 근거를 대신하지 않는다.
 
 Host의 순수 `verify`는 dirty Core나 어긋난 부모 gitlink를 읽기만 해 원인을 finding으로 보고할 수 있다. 이 경로는 선택 기능 Runtime을 실행하지 않고 유효성 판정 전의 부모 gitlink 원시 상태와 Core tree·revision·index가 진단 전후 동일함을 증명하며, 발견이 있으면 소비 성공이 아니라 진단 실패 상태를 반환한다. 역할·Consumer 입력·Runtime storage에 무관한 정적 metadata discovery도 같은 전후 불변을 증명하고 쓰기 가능 경로를 열지 않을 때만 clean 사전 조건의 near-miss이며 기능 소비·완료 근거가 아니다. `context`, `gate`와 실제 기능 실행은 clean 기준과 부모 HEAD·index gitlink 및 실행 Core HEAD 일치를 하나의 결속 기준선으로 먼저 통과해야 한다.
