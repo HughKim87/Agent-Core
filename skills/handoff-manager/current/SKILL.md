@@ -56,9 +56,7 @@ Prepare a concise, evidence-backed handoff that lets the next session resume wit
    - Run available project document checks and diff checks. Record any unresolved validation issue as an active blocker; do not report a clean handoff when checks fail.
 10. Report the result.
    - List changed files, verification performed, remaining gaps, backup path or backup-policy reason, dedupe decisions, and unapplied instruction proposals.
-   - Always finish the final user-facing response with the next-session start prompt, introduced in the user's language and placed in a fenced `text` code block for direct copying. A file link or a prompt stored only in the handoff does not satisfy this output requirement. Do not append commentary after the code block.
-   - Use the task-specific prompt saved in the handoff. Include the verified project root, actual state-document path, existing entry/read order, and a concrete first next action. Keep detailed evidence in the referenced documents; leave no placeholders for the user to fill in and do not assume Core exists in every project.
-   - Match the saved scope, approvals, unresolved decisions, and any explicit user pause. A paused task should resume with the appropriate review or decision; already-approved work should not acquire an unnecessary new approval gate. The prompt must not grant permission for excluded changes or external actions.
+   - At the end of the final response, provide a short next-session start prompt in a copyable code block.
 
 ## Safety Rules
 

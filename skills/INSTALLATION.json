@@ -4,7 +4,7 @@
   "skills": {
     "handoff-manager": {
       "scope": "common",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "files": {
         "references/procedure.md": "skills/handoff-manager/current/SKILL.md"
       },
