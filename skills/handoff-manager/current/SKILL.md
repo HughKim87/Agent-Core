@@ -60,6 +60,9 @@ Prepare a concise, evidence-backed handoff that lets the next session resume wit
 
 ## Safety Rules
 
-- Do not publish, commit, open pull requests, or modify external systems unless explicitly requested.
+- Apply existing user or project authorization for local stage/commit to this handoff task without requiring a new commit request. Honor explicit user prohibition or deferral, exclude unrelated changes, and do not treat this skill alone as new Git authorization.
+- Require separate authorization for push, publication, opening pull requests, and other external writes.
+- Preserve existing authorization and exclusions in the handoff and next-session prompt; do not invent a no-Git instruction or present an Agent interpretation as a user prohibition.
+- Keep deliverables at the destination allowed by the owning project or the user; do not copy them outside the project to avoid uncommitted changes.
 - Do not delete or overwrite project-specific context without clear authorization.
 - Do not trust external Agent output as final truth; label it as an Agent result or verification target.
