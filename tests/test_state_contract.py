@@ -451,13 +451,13 @@ class StateContractTest(unittest.TestCase):
         block = (
             '- 결과: `pass`\n```md\n- 예시: `fail`\n```\n'
             '    - 예시: `fail`\n<!--\n- 예시: `fail`\n-->\n'
-            '- 실제 사용: <!-- 참고 --> `not_run`'
+            '- 추가 판정: <!-- 참고 --> `not_run`'
         )
         text = VALID_STATE.replace('- 결과: `pass`', block)
         lines = text.splitlines()
         expected = (
             lines.index('- 결과: `pass`') + 1,
-            lines.index('- 실제 사용: <!-- 참고 --> `not_run`') + 1,
+            lines.index('- 추가 판정: <!-- 참고 --> `not_run`') + 1,
         )
         for newline in ("\n", "\r\n"):
             with self.subTest(newline=repr(newline)):
@@ -469,13 +469,11 @@ class StateContractTest(unittest.TestCase):
                 self.assertIn("알려진 위험", message)
                 self.assertNotIn("과거 판정", message)
 
-    def test_same_line_judgments_and_separate_risk_have_distinct_diagnostics(self) -> None:
+    def test_same_line_unexecuted_activity_is_not_a_second_summary(self) -> None:
         line = '- 결과: `pass` / 실제 사용: `not_run`'
         text = VALID_STATE.replace('- 결과: `pass`', line)
-        number = text.splitlines().index(line) + 1
         findings = self._findings(text)
-        self.assertEqual(len(findings), 1)
-        self.assertIn(f"({number}, {number}행)", findings[0].message)
+        self.assertEqual(findings, [])
         for judgment in ("pass", "fail", "not_run", "not_applicable"):
             with self.subTest(judgment=judgment):
                 valid = VALID_STATE.replace('`pass`', f'`{judgment}`').replace(
@@ -483,6 +481,48 @@ class StateContractTest(unittest.TestCase):
                     '## 알려진 위험\n\n- 실제 사용은 `not_run`이다.',
                 )
                 self.assertEqual(self._findings(valid), [])
+
+    def test_summary_with_unexecuted_explanations_preserves_scope(self) -> None:
+        for explanation in (
+            '새 빌드·사용자 Play는 not_run.',
+            '- 실제 사용: `not_run`',
+            '- 선택하지 않은 기능: not_applicable',
+        ):
+            with self.subTest(explanation=explanation):
+                text = VALID_STATE.replace('- 결과: `pass`', '- 결과: `pass`\n' + explanation)
+                self.assertEqual(self._findings(text), [])
+
+    def test_successful_subchecks_in_one_summary_paragraph_are_not_duplicates(self) -> None:
+        summary = '검증 result.json pass. 기능 검사 pass, 화면 검사 pass. 새 빌드는 not_run.'
+        self.assertEqual(self._findings(VALID_STATE.replace('- 결과: `pass`', summary)), [])
+        for duplicate in (summary + '\n\n별도 result.json pass.', summary + ' 추가 판정: pass.'):
+            with self.subTest(duplicate=duplicate):
+                findings = self._findings(VALID_STATE.replace('- 결과: `pass`', duplicate))
+                self.assertTrue(any('판정 2개' in f.message for f in findings))
+
+    def test_failed_subcheck_conflicting_with_pass_is_not_hidden_as_prose(self) -> None:
+        summary = '- 결과: `pass`. 실제 기능 검사 fail.'
+        findings = self._findings(VALID_STATE.replace('- 결과: `pass`', summary))
+        self.assertTrue(any('판정 2개' in f.message for f in findings))
+
+    def test_unexecuted_explanation_cannot_supply_missing_summary(self) -> None:
+        for explanation in ('게임 실행은 not_run.', '- 실제 사용: `not_run`'):
+            with self.subTest(explanation=explanation):
+                findings = self._findings(VALID_STATE.replace('- 결과: `pass`', explanation))
+                self.assertTrue(any('판정이 없다' in f.message for f in findings))
+
+    def test_explicit_deferred_summary_and_conflicts_still_count(self) -> None:
+        for summary in ('`not_run` — 실행 전이다.', '- 결과: `not_run`', '- 판정: not_applicable'):
+            with self.subTest(summary=summary):
+                self.assertEqual(self._findings(VALID_STATE.replace('- 결과: `pass`', summary)), [])
+        for duplicate in (
+            '- 결과: `pass` / 추가 판정: `not_run`',
+            '- 결과: `pass`\n- 추가 결과: `not_run`',
+            '- 결과: `pass` / `fail`',
+        ):
+            with self.subTest(duplicate=duplicate):
+                findings = self._findings(VALID_STATE.replace('- 결과: `pass`', duplicate))
+                self.assertTrue(any('판정 2개' in f.message for f in findings))
 
     def test_heading_and_missing_declaration_diagnostics_use_real_locations(self) -> None:
         missing = VALID_STATE.replace("## 차단", "## 다른 절")

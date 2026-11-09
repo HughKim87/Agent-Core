@@ -105,6 +105,10 @@ GATE_JUDGMENT = re.compile(
     r"^\s*-\s*(?:통과|실패)(?![0-9A-Za-z가-힣_-]|\.[0-9A-Za-z가-힣_]))",
     re.IGNORECASE | re.MULTILINE,
 )
+GATE_SUMMARY_FIELD = re.compile(
+    r"(?:결과|판정|게이트|상태|result|verdict|gate|status)\s*[*_`]*\s*[:：=]\s*[*_`]*\s*$",
+    re.IGNORECASE,
+)
 SKIP_DIRS = {".git", "tmp", "__pycache__", ".obsidian"}
 CONSUMER_CHECKS = (
     "consumer-contract",
@@ -1166,6 +1170,40 @@ def _has_ephemeral_failure_state(text: str) -> bool:
     return False
 
 
+def _gate_summary_judgments(body: str) -> list[re.Match[str]]:
+    """Keep verdicts, but not prose about an unexecuted individual activity.
+
+    A deferred summary still counts when it is a standalone value or an explicit
+    result field. Never suppress pass/fail conflicts as explanatory prose.
+    Match offsets remain in the parsed body for original-source diagnostics.
+    """
+    judgments = []
+    previous = None
+    previous_value = None
+    for match in GATE_JUDGMENT.finditer(body):
+        token = re.search(r"not_applicable|not_run|pass|fail|통과|실패", match.group(), re.I)
+        assert token is not None
+        value = {"통과": "pass", "실패": "fail"}.get(token.group().lower(), token.group().lower())
+        line_start = body.rfind("\n", 0, match.start()) + 1
+        prefix = body[line_start:match.start()]
+        standalone = re.fullmatch(r"\s*(?:[-*+]\s+|\d+[.)]\s+)?[*_`]*", prefix)
+        explicit = bool(standalone or GATE_SUMMARY_FIELD.search(prefix))
+        if value in {"not_run", "not_applicable"}:
+            if not explicit:
+                continue
+        between = body[previous.end():match.start()] if previous else ""
+        new_block = previous is None or bool(re.search(r"\n[ \t]*\n|\n(?=[-*+]\s|\d+[.)]\s)", between))
+        bare_alternative = bool(previous and re.fullmatch(r"[\s/*_`|,;-]*", between))
+        conflicting = {previous_value, value} == {"pass", "fail"}
+        if not (new_block or explicit or bare_alternative or conflicting):
+            # Several successful subchecks in one prose paragraph support one
+            # summary; they are not several independent gate declarations.
+            continue
+        judgments.append(match)
+        previous, previous_value = match, value
+    return judgments
+
+
 def _state_findings(consumer_root: Path, state: Path, *, text: str | None = None) -> Iterable[Finding]:
     if text is None:
         text = state.read_text(encoding="utf-8")
@@ -1236,7 +1274,7 @@ def _state_findings(consumer_root: Path, state: Path, *, text: str | None = None
                 )
     if "## 직전 게이트" in sections:
         gates = sections["## 직전 게이트"][0]
-        judged = list(GATE_JUDGMENT.finditer(gates.body))
+        judged = _gate_summary_judgments(gates.body)
         if not judged:
             yield Finding(
                 "consumer-state", rel,
