@@ -505,6 +505,13 @@ class StateContractTest(unittest.TestCase):
         findings = self._findings(VALID_STATE.replace('- 결과: `pass`', summary))
         self.assertTrue(any('판정 2개' in f.message for f in findings))
 
+    def test_same_korean_verdict_in_two_explicit_fields_is_still_duplicate(self) -> None:
+        for value in ('통과', '실패'):
+            with self.subTest(value=value):
+                duplicate = f'- 이전 판정: {value} / 현재 판정: {value}'
+                findings = self._findings(VALID_STATE.replace('- 결과: `pass`', duplicate))
+                self.assertTrue(any('판정 2개' in f.message for f in findings))
+
     def test_unexecuted_explanation_cannot_supply_missing_summary(self) -> None:
         for explanation in ('게임 실행은 not_run.', '- 실제 사용: `not_run`'):
             with self.subTest(explanation=explanation):

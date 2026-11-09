@@ -1187,7 +1187,9 @@ def _gate_summary_judgments(body: str) -> list[re.Match[str]]:
         line_start = body.rfind("\n", 0, match.start()) + 1
         prefix = body[line_start:match.start()]
         standalone = re.fullmatch(r"\s*(?:[-*+]\s+|\d+[.)]\s+)?[*_`]*", prefix)
-        explicit = bool(standalone or GATE_SUMMARY_FIELD.search(prefix))
+        # Korean matches include the colon; English matches start at the value.
+        field_prefix = prefix + match.group()[:token.start()]
+        explicit = bool(standalone or GATE_SUMMARY_FIELD.search(field_prefix))
         if value in {"not_run", "not_applicable"}:
             if not explicit:
                 continue
