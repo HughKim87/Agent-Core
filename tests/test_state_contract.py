@@ -505,6 +505,67 @@ class StateContractTest(unittest.TestCase):
         findings = self._findings(VALID_STATE.replace('- 결과: `pass`', summary))
         self.assertTrue(any('판정 2개' in f.message for f in findings))
 
+    def test_numeric_statistics_do_not_add_summary_verdicts(self) -> None:
+        statistics = (
+            '964 pass/0 fail/1 skip',
+            '304 pass/1 fail/21 skip',
+            '**1,024 pass/0 fail/3 skip**',
+            '`256` `pass` / **0** **fail** / 3 skip',
+            'pass: 256 / fail: 0 / skip: 3',
+            '**pass**: **256** / `fail`: `1` / skip: 3',
+            'PASS = 256 / FAIL = 0 / SKIP = 3',
+        )
+        for stats in statistics:
+            for value in ('pass', 'fail', 'not_run'):
+                for separator in (' 통계: ', '\n\n- 통계: '):
+                    with self.subTest(stats=stats, value=value, separator=separator):
+                        summary = f'- 결과: `{value}`{separator}{stats}'
+                        self.assertEqual(self._findings(VALID_STATE.replace('- 결과: `pass`', summary)), [])
+
+    def test_numeric_statistics_alone_cannot_supply_missing_summary(self) -> None:
+        for stats in (
+            '256 pass/0 fail/3 skip',
+            '256 pass',
+            '1 fail',
+            '**964 pass/0 fail/1 skip**',
+            'pass: 256 / fail: 1 / skip: 3',
+            '`pass`: `256` / **fail**: **0**',
+        ):
+            with self.subTest(stats=stats):
+                findings = self._findings(VALID_STATE.replace('- 결과: `pass`', stats))
+                self.assertTrue(any('판정이 없다' in f.message for f in findings), findings)
+
+    def test_statistics_do_not_hide_true_duplicate_or_conflicting_verdicts(self) -> None:
+        for stats in ('256 pass/0 fail/3 skip', '304 pass/1 fail/21 skip', 'pass: 256 / fail: 0'):
+            for additional in ('추가 판정: `pass`', '추가 판정: `fail`', '실제 기능 검사 fail.'):
+                with self.subTest(stats=stats, additional=additional):
+                    summary = f'- 결과: `pass`. {stats}. {additional}'
+                    findings = self._findings(VALID_STATE.replace('- 결과: `pass`', summary))
+                    self.assertTrue(any('판정 2개' in f.message for f in findings), findings)
+
+    def test_statistics_before_summary_do_not_change_verdict_diagnostic_lines(self) -> None:
+        block = (
+            '- 통계: **964 pass/0 fail/1 skip**\n\n'
+            '- 결과: `pass`\n\n'
+            '- 통계: pass: 304 / fail: 1 / skip: 21\n\n'
+            '- 추가 판정: `fail` (1건)'
+        )
+        text = VALID_STATE.replace('- 결과: `pass`', block)
+        lines = text.splitlines()
+        expected = (lines.index('- 결과: `pass`') + 1, lines.index('- 추가 판정: `fail` (1건)') + 1)
+        for newline in ('\n', '\r\n'):
+            with self.subTest(newline=repr(newline)):
+                findings = self._findings(text.replace('\n', newline))
+                self.assertEqual(len(findings), 1, findings)
+                self.assertIn('판정 2개', findings[0].message)
+                self.assertIn(f'({expected[0]}, {expected[1]}행)', findings[0].message)
+
+    def test_numbered_summary_and_explicit_failure_with_count_remain_verdicts(self) -> None:
+        self.assertEqual(self._findings(VALID_STATE.replace('- 결과: `pass`', '1. `pass`')), [])
+        summary = '- 결과: `pass` / 추가 판정: `fail` (1건)'
+        findings = self._findings(VALID_STATE.replace('- 결과: `pass`', summary))
+        self.assertTrue(any('판정 2개' in f.message for f in findings), findings)
+
     def test_same_korean_verdict_in_two_explicit_fields_is_still_duplicate(self) -> None:
         for value in ('통과', '실패'):
             with self.subTest(value=value):

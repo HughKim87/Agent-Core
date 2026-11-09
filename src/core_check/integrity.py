@@ -109,6 +109,13 @@ GATE_SUMMARY_FIELD = re.compile(
     r"(?:결과|판정|게이트|상태|result|verdict|gate|status)\s*[*_`]*\s*[:：=]\s*[*_`]*\s*$",
     re.IGNORECASE,
 )
+GATE_STATISTIC = re.compile(
+    r"(?<![A-Za-z0-9_.+-])[*_`]*\d+(?:,\d{3})*[*_`]*[ \t]+"
+    r"[*_`]*(?:pass|fail)[*_`]*(?![A-Za-z0-9_-])|"
+    r"(?<![A-Za-z0-9_.-])[*_`]*(?:pass|fail)[*_`]*[ \t]*[:=][ \t]*"
+    r"[*_`]*\d+(?:,\d{3})*[*_`]*(?![A-Za-z0-9_-]|\.[A-Za-z0-9_])",
+    re.IGNORECASE,
+)
 SKIP_DIRS = {".git", "tmp", "__pycache__", ".obsidian"}
 CONSUMER_CHECKS = (
     "consumer-contract",
@@ -1174,15 +1181,20 @@ def _gate_summary_judgments(body: str) -> list[re.Match[str]]:
     """Keep verdicts, but not prose about an unexecuted individual activity.
 
     A deferred summary still counts when it is a standalone value or an explicit
-    result field. Never suppress pass/fail conflicts as explanatory prose.
+    result field. Numeric test statistics are evidence, not summary verdicts.
+    Never suppress other pass/fail conflicts as explanatory prose.
     Match offsets remain in the parsed body for original-source diagnostics.
     """
     judgments = []
     previous = None
     previous_value = None
+    statistics = list(GATE_STATISTIC.finditer(body))
     for match in GATE_JUDGMENT.finditer(body):
         token = re.search(r"not_applicable|not_run|pass|fail|통과|실패", match.group(), re.I)
         assert token is not None
+        token_start = match.start() + token.start()
+        if any(stat.start() <= token_start < stat.end() for stat in statistics):
+            continue
         value = {"통과": "pass", "실패": "fail"}.get(token.group().lower(), token.group().lower())
         line_start = body.rfind("\n", 0, match.start()) + 1
         prefix = body[line_start:match.start()]
