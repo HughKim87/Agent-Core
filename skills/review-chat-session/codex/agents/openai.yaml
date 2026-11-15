@@ -1,6 +1,6 @@
 interface:
   display_name: "채팅 세션 분석"
-  short_description: "채팅을 분석해 재사용 가능한 개선 후보가 있을 때만 Markdown 인계 보고서를 저장합니다."
-  default_prompt: "$review-chat-session로 Core 없는 프로젝트 또는 프로젝트 없는 현재 채팅을 분석하고, 재사용 가능한 개선 후보가 있을 때만 Markdown 인계 보고서를 저장해줘."
+  short_description: "채팅의 문제와 개선 필요성을 CORE/EXTENSION·적합도·필수 여부 표로 보고합니다."
+  default_prompt: "$review-chat-session로 현재 채팅 전체 기록을 검토해 CORE/EXTENSION·적합도·필수 여부와 관측된 문제·개선이 필요한 이유를 표로 보고해줘. 구체적인 해결 방법이나 작업 순서는 지시하지 말고 개선안과 반영 판단은 Maintainer에게 맡겨. 재사용 가능한 관측 사항이 있을 때만 Markdown 인계 보고서를 저장해줘."
 policy:
   allow_implicit_invocation: true

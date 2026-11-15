@@ -1,6 +1,6 @@
 ---
 name: review-chat-session
-description: "Core 없는 프로젝트 또는 프로젝트 없는 현재 채팅의 전체 기록을 재검토해 Core·Extension 개선 후보를 분류·평가하고 보고한다. 재사용 가능한 Core 개선 후보가 있을 때 Markdown 인계 보고서를 저장한다. 일반 종료 인사나 프로젝트 구현·세션 종료 절차에는 사용하지 않는다."
+description: "Core와 프로젝트별 Extension이 없는 현재 채팅의 전체 기록을 재검토해 CORE/EXTENSION·적합도·필수 여부와 관측된 문제·개선이 필요한 이유를 표로 보고한다. 재사용 가능한 관측 사항이 있을 때 Markdown 인계 보고서를 저장한다. 구체적인 해결 방법·작업 순서는 지시하지 않고 개선안과 반영 판단은 Maintainer에게 맡긴다. 일반 종료 인사나 프로젝트 구현·세션 종료 절차에는 사용하지 않는다."
 disable-model-invocation: false
 ---
 
