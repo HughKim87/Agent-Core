@@ -1608,14 +1608,14 @@ class PublicInterfaceTest(unittest.TestCase):
         code, payload = self._run(
             "--core-root", str(self.core), "--consumer-root", str(self.consumer), "verify"
         )
-        self.assertEqual(code, self.cli.EXIT_FINDINGS, payload)
+        self.assertEqual(code, self.cli.EXIT_OK, payload)
         findings = [f for f in payload["findings"] if f["check"] == "consumer-state"]
         self.assertEqual(len(findings), 1)
         self.assertEqual(set(findings[0]), {"check", "path", "message", "severity"})
         self.assertEqual(findings[0]["path"], "CURRENT.md")
         self.assertIn("판정 2개", findings[0]["message"])
         self.assertIn("행)", findings[0]["message"])
-        self.assertIn("알려진 위험", findings[0]["message"])
+        self.assertIn("현재 결과", findings[0]["message"])
 
     def test_context_command_reports_selection(self) -> None:
         code, payload = self._run(
@@ -2933,7 +2933,7 @@ class ConsumerUpdateWorkflowTest(unittest.TestCase):
             state = candidate / "CURRENT.md"
             original_state = state.read_bytes()
             state.write_text(
-                original_state.decode("utf-8").replace("## 차단", "## 다른 절"), encoding="utf-8"
+                " \n\t", encoding="utf-8"
             )
             payload = self._cli(candidate, "verify", 1)
             self.assertTrue(any(f["check"] == "consumer-state" for f in payload["findings"]))

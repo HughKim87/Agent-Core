@@ -1210,15 +1210,19 @@ def _state_findings(consumer_root: Path, state: Path, *, text: str | None = None
     if text is None:
         text = state.read_text(encoding="utf-8")
     rel = _rel(consumer_root, state)
+    if not text.strip():
+        yield Finding("consumer-state", rel, "상태 문서가 비어 있다. 재개에 필요한 정보를 제공한다")
+        return
     sections = _markdown_h2_sections(text)
     for section in STATE_SECTIONS:
         if section not in sections:
-            yield Finding("consumer-state", rel, f"필수 절이 없다: {section}. 실제 제목 절을 추가한다")
+            yield Finding("consumer-state", rel, f"권장 절 표기가 없다: {section}. 같은 정보가 다른 표현으로 충분한지 검토한다", severity="warning")
         elif len(sections[section]) > 1:
             lines = ", ".join(str(item.heading_line) for item in sections[section])
             yield Finding(
                 "consumer-state", rel,
-                f"필수 절이 중복됐다: {section} ({lines}행). 현재 내용을 한 절에 모은다",
+                f"권장 절이 중복됐다: {section} ({lines}행). 실제 정보 충돌이나 불필요한 중복인지 검토한다",
+                severity="warning",
             )
     for heading in sections:
         if FORBIDDEN_STATE_SECTION.search(heading.removeprefix("## ")):
@@ -1259,7 +1263,8 @@ def _state_findings(consumer_root: Path, state: Path, *, text: str | None = None
             yield Finding(
                 "consumer-state", rel,
                 f"번호가 매겨진 첫 다음 행동이 없다 (절 시작 {tail.heading_line}행). "
-                "대상과 판정 조건이 구체적인 번호 행동을 적는다",
+                "같은 행동의 다른 목록 표현인지, 실제 대상·판정 정보가 누락됐는지 검토한다",
+                severity="warning",
             )
         for action, line_number in actions:
             content = re.sub(r"^\d+\.\s*", "", action)
@@ -1281,14 +1286,16 @@ def _state_findings(consumer_root: Path, state: Path, *, text: str | None = None
             yield Finding(
                 "consumer-state", rel,
                 f"직전 게이트 절에 판정이 없다 (절 시작 {gates.heading_line}행). "
-                "실제 직전 결과 하나를 pass·fail·not_run·not_applicable로 적는다",
+                "실제 직전 결과가 다른 표현으로 충분히 기록됐는지 검토한다",
+                severity="warning",
             )
         elif len(judged) > 1:
             lines = ", ".join(str(gates.line_at(match.start())) for match in judged)
             yield Finding(
                 "consumer-state", rel,
                 f"직전 게이트 절에서 판정 {len(judged)}개를 인식했다 ({lines}행). "
-                "바로 앞 판정 하나를 남기고 별도 미검증 항목은 알려진 위험에서 설명한다",
+                "현재 결과와 과거 이력·미검증 항목이 구별되는지 검토한다",
+                severity="warning",
             )
 
 

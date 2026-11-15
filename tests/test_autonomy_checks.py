@@ -125,8 +125,8 @@ class AutonomyChecksTest(unittest.TestCase):
 
     def test_real_contract_and_protected_path_failures_still_block_with_warnings(self) -> None:
         self._long_state_with_expression_variations()
-        state = self.consumer / "CURRENT.md"
-        state.write_text(state.read_text(encoding="utf-8").replace("## 차단", "## 다른 절"), encoding="utf-8")
+        # A genuine entry-contract failure, rather than an alternate state heading.
+        (self.consumer / "AGENTS.md").write_text("# Entry\n", encoding="utf-8")
         code, verified = self._run("verify")
         self.assertEqual(code, cli.EXIT_FINDINGS, verified)
         self.assertGreater(verified["error_count"], 0)
@@ -145,6 +145,27 @@ class AutonomyChecksTest(unittest.TestCase):
         code, verified = self._run("verify")
         self.assertEqual(code, cli.EXIT_UNUSABLE, verified)
         self.assertFalse(verified["ok"])
+
+    def test_alternate_state_formats_pass_public_verify_context_and_gate(self) -> None:
+        state = self.consumer / "CURRENT.md"
+        original = state.read_text(encoding="utf-8")
+        variants = (
+            original.replace("## 현재 단계", "## 현재 진행 상황"),
+            original.replace("1. `CURRENT.md`", "- `CURRENT.md`"),
+            original.replace("- 결과: `pass`", "- 결과: 검증 성공"),
+        )
+        for text in variants:
+            with self.subTest(text=text):
+                state.write_text(text, encoding="utf-8")
+                before = state.read_bytes()
+                for command in ("verify", "context", "gate"):
+                    code, result = self._run(command)
+                    self.assertEqual(code, cli.EXIT_OK, result)
+                    if command == "verify":
+                        self.assertEqual(result["error_count"], 0)
+                        self.assertGreater(result["warning_count"], 0)
+                        self.assertEqual(result["semantic_review"], "not_assessed")
+                self.assertEqual(state.read_bytes(), before)
 
     def test_subprocess_cli_emits_success_and_warnings_without_python_cache(self) -> None:
         self._long_state_with_expression_variations()

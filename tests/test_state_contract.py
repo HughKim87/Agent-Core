@@ -76,6 +76,26 @@ class StateContractTest(unittest.TestCase):
     def test_valid_consumer_state_passes(self) -> None:
         self.assertEqual(self._findings(VALID_STATE), [])
 
+    def test_equivalent_state_formats_are_advisory_not_blocking(self) -> None:
+        variants = (
+            VALID_STATE.replace("## 현재 단계", "## 현재 진행 상황"),
+            VALID_STATE.replace("1. `PROJECT_RULES.md`", "- `PROJECT_RULES.md`"),
+            VALID_STATE.replace("- 결과: `pass`", "- 결과: 검증 성공"),
+        )
+        for text in variants:
+            with self.subTest(text=text):
+                findings = self._findings(text)
+                self.assertTrue(findings)
+                self.assertTrue(all(f.severity == "warning" for f in findings))
+
+    def test_empty_state_is_still_an_error(self) -> None:
+        for text in ("", " \n\t"):
+            with self.subTest(text=text):
+                findings = self._findings(text)
+                self.assertEqual(len(findings), 1)
+                self.assertEqual(findings[0].severity, "error")
+                self.assertIn("비어", findings[0].message)
+
     def test_comment_markers_inside_code_spans_preserve_following_sections(self) -> None:
         for literal in ("`<!--`", "``literal ` <!--``", "`<!-- -->` <!-- actual comment -->"):
             with self.subTest(literal=literal):
@@ -88,7 +108,7 @@ class StateContractTest(unittest.TestCase):
 
     def test_missing_required_section_is_detected(self) -> None:
         findings = self._findings(VALID_STATE.replace("## 차단", "## 다른 절"))
-        self.assertTrue(any("필수 절" in finding.message for finding in findings))
+        self.assertTrue(any("권장 절" in finding.message for finding in findings))
 
     def test_dynamic_git_number_is_detected(self) -> None:
         findings = self._findings(VALID_STATE.replace("- 없음", "- 추적 파일 40", 1))
@@ -198,7 +218,7 @@ class StateContractTest(unittest.TestCase):
 
     def test_specific_first_action_may_end_with_check_verb(self) -> None:
         for value in (
-            "1. `core/rules/handoff.md`의 필수 절을 확인한다.",
+            "1. `core/rules/handoff.md`의 권장 절을 확인한다.",
             "1. 승인 상태 절에 미승인 범위가 남아 있는지 확인한다.",
         ):
             with self.subTest(value=value):
@@ -265,7 +285,7 @@ class StateContractTest(unittest.TestCase):
             "## 다른 절\n\n- 본문에서 `## 차단` 문자열을 언급한다",
         )
         findings = self._findings(text)
-        self.assertTrue(any("필수 절" in finding.message for finding in findings))
+        self.assertTrue(any("권장 절" in finding.message for finding in findings))
 
     def test_completed_detail_section_is_detected(self) -> None:
         for heading in ("완료 상세", "완료 작업", "작업 이력", "과거 판정"):
@@ -283,7 +303,7 @@ class StateContractTest(unittest.TestCase):
             "## 다른 절\n\n```md\n## 차단\n```",
         )
         findings = self._findings(text)
-        self.assertTrue(any("필수 절" in finding.message for finding in findings))
+        self.assertTrue(any("권장 절" in finding.message for finding in findings))
 
     def test_shorter_fence_does_not_close_longer_fence(self) -> None:
         text = VALID_STATE.replace(
@@ -291,12 +311,12 @@ class StateContractTest(unittest.TestCase):
             "## 다른 절\n\n````md\n```\n## 차단\n````",
         )
         findings = self._findings(text)
-        self.assertTrue(any("필수 절" in finding.message for finding in findings))
+        self.assertTrue(any("권장 절" in finding.message for finding in findings))
 
     def test_indented_and_closing_hash_heading_is_valid(self) -> None:
         text = VALID_STATE.replace("## 차단", "   ## 차단 ##")
         self.assertFalse(
-            any("필수 절이 없다: ## 차단" in finding.message for finding in self._findings(text))
+            any("권장 절 표기가 없다: ## 차단" in finding.message for finding in self._findings(text))
         )
 
     def test_duplicate_required_sections_are_detected(self) -> None:
@@ -307,7 +327,7 @@ class StateContractTest(unittest.TestCase):
             with self.subTest(section=section):
                 findings = self._findings(VALID_STATE + f"\n## {section}\n")
                 self.assertTrue(any(
-                    f"필수 절이 중복됐다: ## {section}" in finding.message
+                    f"권장 절이 중복됐다: ## {section}" in finding.message
                     for finding in findings
                 ))
 
@@ -368,7 +388,7 @@ class StateContractTest(unittest.TestCase):
     def test_commented_headings_do_not_satisfy_required_sections(self) -> None:
         text = VALID_STATE.replace("## 차단", "<!--\n## 차단\n-->")
         self.assertTrue(any(
-            "필수 절이 없다: ## 차단" in finding.message
+            "권장 절 표기가 없다: ## 차단" in finding.message
             for finding in self._findings(text)
         ))
 
@@ -433,7 +453,7 @@ class StateContractTest(unittest.TestCase):
                 self.assertTrue(findings)
                 self.assertTrue(all(f.severity == "warning" for f in findings), findings)
 
-    def test_structural_state_defects_remain_errors_among_diagnostics(self) -> None:
+    def test_state_format_review_signals_do_not_become_errors(self) -> None:
         cases = (
             VALID_STATE.replace("## 차단", "## 다른 절"),
             VALID_STATE + "\n## 차단\n",
@@ -444,8 +464,8 @@ class StateContractTest(unittest.TestCase):
         for text in cases:
             with self.subTest(text=text):
                 findings = self._findings(text + "x" * 3_000)
-                self.assertTrue(any(f.severity == "error" for f in findings), findings)
-                self.assertTrue(any(f.severity == "warning" for f in findings), findings)
+                self.assertTrue(findings)
+                self.assertTrue(all(f.severity == "warning" for f in findings), findings)
 
     def test_judgment_diagnostics_report_original_lines_after_ignored_examples(self) -> None:
         block = (
@@ -466,7 +486,7 @@ class StateContractTest(unittest.TestCase):
                 message = findings[0].message
                 self.assertIn("판정 2개", message)
                 self.assertIn(f"({expected[0]}, {expected[1]}행)", message)
-                self.assertIn("알려진 위험", message)
+                self.assertIn("현재 결과", message)
                 self.assertNotIn("과거 판정", message)
 
     def test_same_line_unexecuted_activity_is_not_a_second_summary(self) -> None:
@@ -535,7 +555,7 @@ class StateContractTest(unittest.TestCase):
         missing = VALID_STATE.replace("## 차단", "## 다른 절")
         findings = self._findings(missing)
         self.assertEqual(len(findings), 1)
-        self.assertIn("필수 절이 없다: ## 차단", findings[0].message)
+        self.assertIn("권장 절 표기가 없다: ## 차단", findings[0].message)
         self.assertNotIn("행)", findings[0].message)
         duplicate = VALID_STATE + '\n```md\n## 차단\n```\n## 차단\n'
         findings = self._findings(duplicate)

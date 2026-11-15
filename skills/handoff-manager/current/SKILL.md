@@ -37,7 +37,7 @@ Prepare a concise, evidence-backed handoff that lets the next session resume wit
    - Treat automatic audit success as a limited check, not content or user approval.
    - Scan linked guides and reports for stale or superseded instructions and label them accordingly.
 5. Keep only resumable unresolved state.
-   - Retain the current unresolved cause, required decision, and restart condition; never record or carry forward failure counts, attempted methods or order, a failure ledger, or stop state.
+   - Retain the current unresolved cause, required decision, restart condition, and confirmed counterevidence that changes the next choice. Exclude temporary failure counts, verbose attempt sequences, a failure ledger, and expired stop state. Distinguish user decisions from Agent interpretations; an interpretation does not create a new user prohibition.
 6. Separate and deduplicate.
    - Keep project-specific facts, paths, run IDs, decisions, blockers, and next actions in the handoff.
    - Link to general operating rules instead of copying them. Keep a short task-specific warning only when it prevents an immediate repeated mistake.
