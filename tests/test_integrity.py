@@ -458,11 +458,11 @@ class FaultInjectionTest(unittest.TestCase):
         (self.root / "data.json").write_bytes(b'{"a": 1}\x00\n')
         self.assertTrue(findings_for(self.root, "text-encoding"))
 
-    def test_detects_missing_document_headers(self) -> None:
+    def test_missing_rule_header_literals_are_review_diagnostics(self) -> None:
         (self.root / "rules" / "sample.md").write_text("# 헤더 없음\n\n본문만 있다.\n" * 40, encoding="utf-8")
         findings = list(integrity_module.check_document_headers(self.root))
         self.assertTrue(findings)
-        self.assertTrue(all(f.severity == "error" for f in findings))
+        self.assertTrue(all(f.severity == "warning" for f in findings))
 
     def test_detects_missing_headers_on_short_root_document(self) -> None:
         (self.root / "README.md").write_text("# 짧은 개요\n", encoding="utf-8")

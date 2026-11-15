@@ -25,9 +25,11 @@
 
 `quick`과 `standard`는 영구 단계 설계 포인터를 저장하지 않는다. `controlled`는 `phase_id`, 소비 root 상대 `design_ref`, 검토한 내용의 `design_fingerprint`가 모두 필요하다. 생성·전이 직전에 현재 파일 bytes를 다시 hash하며 보호 경계·Runtime storage·root 밖 파일은 읽지 않는다. hash 차이는 내용 revision 변경이므로 event append 전에 `design_invalidated` 오류로 변경 검토를 요구한다. 오류 이름은 호환성을 위해 유지하며 그 자체가 재승인 판정은 아니다.
 
-공개 `request.compare`는 previous·current 각각에 작업 생성과 같은 work request 필수 field·type·execution 검증과 정규화를 적용한다. 빈 object·array·null·미지원 field는 쓰기 없이 구조화된 계약 오류로 거부한다. 비교는 설계 파일의 현재 내용이나 사용자 승인을 검증하는 작업이 아니다.
+공개 `request.compare`는 previous·current 각각에 작업 생성과 같은 work request 필수 field·type·execution 검증과 정규화를 적용한다. 빈 object·array·null·미지원 field는 쓰기 없이 구조화된 계약 오류로 거부한다. 비교는 설계 파일의 현재 내용이나 사용자 승인을 검증하는 작업이 아니다. 새 호출은 `info.request_comparison_versions`로 지원을 확인하고 `comparison_version:2`를 선택한다.
 
-`request.compare`는 요청 field 또는 실행 등급·단계·설계 경로가 바뀌면 `invalidated`와 `reapproval_required`를 반환한다. 같은 단계·경로의 fingerprint만 바뀌면 두 값은 false이고 `design_review_required`는 true다. 이는 내용 검토 필요 판정이며 의미가 같다는 자동 승인이나 증명이 아니다.
+비교 2는 원문 값의 차이를 `changed_fields`로 알리고 계약 검토 필요를 `contract_review_required`로 반환한다. `input_refs`·`verification_levels`는 비교 2에서 참조·필요 검증의 집합이므로 동일 구성원 재정렬만으로 계약 검토를 요구하지 않는다. 추가·삭제 및 다른 요청 field·실행 등급·단계·설계 경로 변경은 검토 대상으로 남긴다. 같은 단계·경로의 fingerprint만 바뀌면 별도 `design_review_required`가 true다. `invalidated`·`reapproval_required`는 반환하지 않으며 실질적 목표·권한·보호·필수 검증 변경과 기존 위임은 작업 계약 소유자가 판단한다. false도 승인·의미 동등성·실행 허가의 증명이 아니다. 최초 요청/event 불변, CAS와 replay·projection 복구는 바꾸지 않는다.
+
+생략/1은 기존 비교와 결과를 보존한다. 요청 field 또는 실행 등급·단계·설계 경로 변경 시 `invalidated`와 `reapproval_required`가 true이며 같은 단계·경로의 fingerprint만 바뀌면 두 값은 false, `design_review_required`는 true다. 이 보수적 호환 결과를 실제 승인 사실로 사용하지 않는다. 신규 비교 경로로의 이전은 [호환성](../../docs/COMPATIBILITY.md#3a-선택-runtime-공개-경계)을 따른다.
 
 승인된 목표·범위·권한·성공 조건이 유지되는 서식·설명·검증 근거 갱신은 `work.refresh_design`으로 같은 작업에서 이어 간다. 호출자는 `work_id`, `expected_state_hash`, `actor`, 현재 파일과 일치하는 `reviewed_fingerprint`, 명시적 `decisions_unchanged: true`, 비어 있지 않은 `evidence_refs`와 선택적 `timestamp`를 제공한다. Runtime은 호출자의 의미 검토를 추론하지 않는다. 결정이 달라졌다면 이 operation을 사용할 수 없으며 작업 계약과 필요한 승인을 다시 확정한다.
 
@@ -78,7 +80,7 @@ snapshot은 요청, 현재 상태, 중복 없는 완료 항목·관련 ID·근�
 | `work.rebuild` | `work_id` | `expected_last_event_id:null` | 예 | 재구축한 work_state record |
 | `work.refresh_design` | `work_id`, `expected_state_hash`, `actor`, `reviewed_fingerprint`, `decisions_unchanged`, `evidence_refs` | `timestamp` 공통 기본값 | 예 | 설계 fingerprint를 갱신한 work_state record |
 | `execution.fingerprint` | `design_ref` (소비 상대 파일 경로 문자열) | 없음 | 아니오 | `{design_ref,fingerprint}`; 전달한 ref와 현재 bytes의 SHA-256 |
-| `request.compare` | `previous`, `current` (각각 아래 request object) | 없음 | 아니오 | `{invalidated,reapproval_required,design_review_required,changed_fields,previous_execution,current_execution}` |
+| `request.compare` | `previous`, `current` (각각 아래 request object) | `comparison_version:1` (정수 1/2, 새 호출은 2) | 아니오 | 비교 1: 기존 6필드; 비교 2: `{comparison_version:2,contract_review_required,design_review_required,changed_fields,previous_execution,current_execution}` |
 
 Request는 `desired_outcome` 문자열과 `authorized_actions`, `excluded_scope`, `input_refs`, `protection_boundaries`, `required_decisions`, `verification_levels` 문자열 배열이 모두 필수이며 추가 field는 선택 `execution`뿐이다. 배열은 비어 있을 수 있다. `execution`을 생략할 수 있으나 null을 넣지 않는다. 넣으면 `{tier,phase_id?,design_ref?,design_fingerprint?}` object이며 tier는 `quick|standard|controlled`다. quick/standard의 세 포인터는 생략/null, controlled는 모두 비어 있지 않아야 한다. fingerprint는 공통 hash 타입이다. 정규화 결과는 생략한 포인터를 null로 갖는다.
 
@@ -92,8 +94,8 @@ Request는 `desired_outcome` 문자열과 `authorized_actions`, `excluded_scope`
 {"operation":"work.refresh_design","arguments":{"work_id":"11111111-1111-4111-8111-111111111111","expected_state_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","actor":"maintainer","reviewed_fingerprint":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","decisions_unchanged":true,"evidence_refs":["docs/review.md#설계-검토"]}}
 ```
 
-`request.compare`의 세 판정은 boolean, `changed_fields`는 바뀐 request field 이름 배열, 두 execution 값은 정규화 object 또는 실행 지정이 없으면 null이다. 설계 hash만 바뀌었는지와 요청 의미 field가 바뀌었는지는 §2 기준으로 구분한다. 다음은 쓰기나 설계 파일 읽기를 하지 않는 비교이며 세 판정은 모두 false, `changed_fields`는 빈 배열이다. 실제 재승인 필요 여부를 호출 자체가 승인하지 않는다.
+`request.compare`의 판정은 boolean, `changed_fields`는 원문 값이 바뀐 request field 이름 배열, 두 execution 값은 정규화 object 또는 실행 지정이 없으면 null이다. 2의 비교 버전은 정수 2다. 설계 hash만 바뀌었는지와 계약 검토가 필요한 차이는 §2 기준으로 구분한다. 다음은 쓰기나 설계 파일 읽기를 하지 않는 비교 2이며 두 검토 판정은 모두 false, `changed_fields`는 빈 배열이다. 실제 재승인 필요 여부를 호출 자체가 판정하지 않는다.
 
 ```json
-{"operation":"request.compare","arguments":{"previous":{"desired_outcome":"문서 검토","authorized_actions":["읽기"],"excluded_scope":[],"input_refs":[],"protection_boundaries":[],"required_decisions":[],"verification_levels":["정적 검사"]},"current":{"desired_outcome":"문서 검토","authorized_actions":["읽기"],"excluded_scope":[],"input_refs":[],"protection_boundaries":[],"required_decisions":[],"verification_levels":["정적 검사"]}}}
+{"operation":"request.compare","arguments":{"comparison_version":2,"previous":{"desired_outcome":"문서 검토","authorized_actions":["읽기"],"excluded_scope":[],"input_refs":[],"protection_boundaries":[],"required_decisions":[],"verification_levels":["정적 검사"]},"current":{"desired_outcome":"문서 검토","authorized_actions":["읽기"],"excluded_scope":[],"input_refs":[],"protection_boundaries":[],"required_decisions":[],"verification_levels":["정적 검사"]}}}
 ```

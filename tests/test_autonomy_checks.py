@@ -146,6 +146,35 @@ class AutonomyChecksTest(unittest.TestCase):
         self.assertEqual(code, cli.EXIT_UNUSABLE, verified)
         self.assertFalse(verified["ok"])
 
+    def test_alternate_active_rule_labels_warn_without_hiding_real_link_errors(self) -> None:
+        rules = (self.core / "rules/sample.md", self.consumer / "rules/project.md")
+        for rule in rules:
+            rule.write_text(rule.read_text(encoding="utf-8").replace(
+                "- 목적:", "- **목적**:",
+            ), encoding="utf-8")
+        original = {rule: rule.read_bytes() for rule in rules}
+        code, verified = self._run("verify")
+        self.assertEqual(code, cli.EXIT_OK, verified)
+        self.assertEqual(verified["error_count"], 0)
+        self.assertEqual(verified["warning_count"], 2)
+        self.assertEqual({f["check"] for f in verified["findings"]},
+                         {"document-headers", "consumer-document-headers"})
+        self.assertEqual(verified["semantic_review"], "not_assessed")
+        self.assertTrue(verified["review_guidance"])
+        self.assertEqual({rule: rule.read_bytes() for rule in rules}, original)
+
+        rules[0].write_text(rules[0].read_text(encoding="utf-8") +
+                            "\n[Missing reference](missing.md)\n", encoding="utf-8")
+        code, rejected = self._run("verify")
+        self.assertEqual(code, cli.EXIT_FINDINGS, rejected)
+        self.assertEqual(rejected["error_count"], 1)
+        self.assertGreaterEqual(rejected["warning_count"], 2)
+        self.assertTrue({"document-headers", "consumer-document-headers"}.issubset(
+            {f["check"] for f in rejected["findings"] if f["severity"] == "warning"},
+        ))
+        self.assertTrue(any(f["check"] == "markdown-links" and f["severity"] == "error"
+                            for f in rejected["findings"]))
+
     def test_alternate_state_formats_pass_public_verify_context_and_gate(self) -> None:
         state = self.consumer / "CURRENT.md"
         original = state.read_text(encoding="utf-8")

@@ -323,6 +323,66 @@ class PublicSharedDataCliTests(unittest.TestCase):
             self.assertTrue(changed["reapproval_required"])
             self.assertEqual(before, self.storage_bytes(root))
 
+    def test_versioned_request_comparison_separates_review_from_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            self.invoke(root, "initialize", {}, write=True)
+            previous = {**request_payload(), "input_refs": ["docs/a.md", "docs/b.md"],
+                        "verification_levels": ["static", "content"]}
+            before = self.storage_bytes(root)
+            cases = (
+                (previous, False, []),
+                ({**previous, "input_refs": ["docs/b.md", "docs/a.md"]}, False, ["input_refs"]),
+                ({**previous, "verification_levels": ["content", "static"]},
+                 False, ["verification_levels"]),
+                ({**previous, "input_refs": ["docs/a.md", "docs/b.md", "docs/c.md"]},
+                 True, ["input_refs"]),
+                ({**previous, "verification_levels": ["static"]}, True, ["verification_levels"]),
+                ({**previous, "authorized_actions": ["external publication"]},
+                 True, ["authorized_actions"]),
+                ({**previous, "protection_boundaries": []}, True, ["protection_boundaries"]),
+                ({**previous, "desired_outcome": "another result"}, True, ["desired_outcome"]),
+            )
+            for current, review, fields in cases:
+                with self.subTest(fields=fields, review=review):
+                    result = self.invoke(root, "request.compare", {
+                        "comparison_version": 2, "previous": previous, "current": current})
+                    self.assertEqual(result["comparison_version"], 2)
+                    self.assertEqual(result["contract_review_required"], review)
+                    self.assertEqual(result["changed_fields"], fields)
+                    self.assertFalse(result["design_review_required"])
+                    self.assertNotIn("invalidated", result)
+                    self.assertNotIn("reapproval_required", result)
+            reordered = {**previous, "input_refs": list(reversed(previous["input_refs"]))}
+            legacy = self.invoke(root, "request.compare", {"previous": previous, "current": reordered})
+            explicit = self.invoke(root, "request.compare", {
+                "comparison_version": 1, "previous": previous, "current": reordered})
+            self.assertEqual(legacy, explicit)
+            self.assertTrue(legacy["reapproval_required"])
+            self.assertNotIn("contract_review_required", legacy)
+            execution = {"tier": "controlled", "phase_id": "one", "design_ref": "absent.md",
+                         "design_fingerprint": "sha256:" + "a" * 64}
+            request = {**previous, "execution": execution}
+            revision = self.invoke(root, "request.compare", {
+                "comparison_version": 2, "previous": request,
+                "current": {**request, "execution": {
+                    **execution, "design_fingerprint": "sha256:" + "b" * 64}}})
+            self.assertTrue(revision["design_review_required"])
+            self.assertFalse(revision["contract_review_required"])
+            for invalid in (True, False, None, "2", 2.0, 0, 3):
+                with self.subTest(invalid_version=invalid):
+                    outcome = self.run_cli(root, request={"operation": "request.compare", "arguments": {
+                        "comparison_version": invalid, "previous": previous, "current": previous}})
+                    payload = json.loads(outcome.stdout)
+                    self.assertEqual(outcome.returncode, 1, payload)
+                    self.assertEqual(payload["kind"], "design_contract_error")
+                    self.assertNotIn("unexpected", payload)
+            invalid_request = self.run_cli(root, request={"operation": "request.compare", "arguments": {
+                "comparison_version": 2, "previous": {}, "current": previous}})
+            self.assertEqual(invalid_request.returncode, 1)
+            self.assertEqual(json.loads(invalid_request.stdout)["kind"], "work_state_error")
+            self.assertEqual(before, self.storage_bytes(root))
+
     def test_every_operation_rejects_unknown_arguments_without_writes(self) -> None:
         from experimental.shared_data.cli import OPERATIONS
         with tempfile.TemporaryDirectory() as raw:
@@ -420,6 +480,9 @@ class PublicSharedDataCliTests(unittest.TestCase):
 
         capability = declared_compatibility(ROOT)["optional_capabilities"]["shared_data"]
         self.assertEqual(info["capability_version"], capability["version"])
+        self.assertIn(2, info["request_comparison_versions"])
+        result_schema = json.loads((ROOT / capability["result_schema"]).read_text(encoding="utf-8"))
+        self.assertEqual(info["capability_version"], result_schema["properties"]["capability_version"]["const"])
         self.assertEqual(info["commands"], capability["commands"])
         self.assertEqual(info["request_schema"], capability["request_schema"])
         request_schema = json.loads((ROOT / capability["request_schema"]).read_text(encoding="utf-8"))

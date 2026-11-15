@@ -202,6 +202,7 @@ class SkillAssetsTest(unittest.TestCase):
             "missing-reference": ("skills/session-close/source/references/design.md", None),
             "missing-current": ("skills/session-close/current/SKILL.md", None),
             "missing-setup-current": ("skills/setup-agent-core-project/current/SKILL.md", None),
+            "missing-research-current": ("skills/research-manager/current/SKILL.md", None),
             "missing-current-reference": ("skills/session-close/current/references/design.md", None),
             "changed-source": ("skills/session-close/source/SKILL.md", b"changed original"),
             "missing-template": ("skills/handoff-manager/claude/SKILL.md.in", None),

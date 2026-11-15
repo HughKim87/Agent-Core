@@ -89,7 +89,7 @@ class CommonSkillInstallationTest(unittest.TestCase):
                 if name == "research-manager":
                     self.assertEqual(
                         (installed / "references/procedure.md").read_bytes(),
-                        (ROOT / "skills/research-manager/source/SKILL.md").read_bytes(),
+                        (ROOT / "skills/research-manager/current/SKILL.md").read_bytes(),
                     )
                 for document in installed.rglob("*.md"):
                     for link in LINK.findall(document.read_text(encoding="utf-8")):

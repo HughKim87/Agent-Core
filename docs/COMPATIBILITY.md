@@ -77,7 +77,9 @@
 - 실제 Runtime 데이터와 결과는 소비 저장소가 소유하며 Core 저장소에 쓰지 않는다.
 - 선택 기능이 없으면 필수 gate는 `not_applicable`로 처리하고 계속 성립해야 한다.
 
-`shared_data` v1은 격리 모드(`python -B -I`)에서 실행 중인 Core root와 `src`만 module 검색 경로 맨 앞에 넣고 선언된 `experimental.shared_data` entry의 `info|invoke`를 실행하는 bootstrap만 공개한다. `invoke`는 JSON request v1을 stdin으로 하나 받아 JSON result v1을 stdout으로 하나 반환한다. 요청·결과 schema는 envelope와 operation 열거를, payload schema는 저장 구조를 소유한다. operation별 arguments·기본값·성공 결과·쓰기와 승인 전제는 [저장 공통 명세](../experimental/shared_data/RECORD_STORAGE_CONTRACT.md#8-공개-호출-공통-명세), [지식·Lifecycle 명세](../experimental/shared_data/KNOWLEDGE_LIFECYCLE_CONTRACT.md#7-공개-operation-명세), [Evidence Context 명세](../experimental/shared_data/EVIDENCE_CONTEXT_CONTRACT.md#5-공개-operation-명세), [작업 상태 명세](../experimental/shared_data/WORK_STATE_CONTRACT.md#6-공개-operation-명세)가 소유한다. bare module 실행과 `experimental.shared_data` 아래 구현 모듈의 직접 import는 공개 계약이 아니다.
+`shared_data`는 격리 모드(`python -B -I`)에서 실행 중인 Core root와 `src`만 module 검색 경로 맨 앞에 넣고 선언된 `experimental.shared_data` entry의 `info|invoke`를 실행하는 bootstrap만 공개한다. `invoke`는 JSON request v1을 stdin으로 하나 받아 JSON result v1을 stdout으로 하나 반환한다. 요청·결과 schema는 envelope와 operation 열거를, payload schema는 저장 구조를 소유한다. operation별 arguments·기본값·성공 결과·쓰기와 승인 전제는 [저장 공통 명세](../experimental/shared_data/RECORD_STORAGE_CONTRACT.md#8-공개-호출-공통-명세), [지식·Lifecycle 명세](../experimental/shared_data/KNOWLEDGE_LIFECYCLE_CONTRACT.md#7-공개-operation-명세), [Evidence Context 명세](../experimental/shared_data/EVIDENCE_CONTEXT_CONTRACT.md#5-공개-operation-명세), [작업 상태 명세](../experimental/shared_data/WORK_STATE_CONTRACT.md#6-공개-operation-명세)가 소유한다. bare module 실행과 `experimental.shared_data` 아래 구현 모듈의 직접 import는 공개 계약이 아니다.
+
+`request.compare`는 선택 argument `comparison_version:2`로 변경 탐지·계약 검토 필요만 반환하며 실제 승인 판단은 작업 계약 소유자에게 맡긴다. 새 호출은 `info.request_comparison_versions`에 2가 있는지 확인하고 명시적으로 선택한다. 이 비교 버전은 capability 버전과 별개다. 생략/1의 결과, shared_data capability 1·JSON envelope·저장 schema·Core contract는 유지하며 기존 요청·event 이전은 없다. 기존 호출자는 새 결과를 처리하도록 바꾼 뒤 2를 선택한다. 이전 결과의 보수적 `reapproval_required`를 실제 사용자 승인 판정으로 사용하는 의존은 새 경로로 이전한다.
 
 `info`는 역할·Consumer 입력·Runtime storage와 무관하고 쓰기 가능 경로를 열지 않는 정적 discovery다. Core tree·Git 의미 상태의 전후 불변을 정상·예외 경로 모두에서 증명하며 dirty Core에서도 실행할 수 있지만 기능 소비·가용성·완료 성공 근거가 아니다. Git 기준선을 증명할 수 없으면 fail-closed한다.
 
@@ -98,7 +100,7 @@ Core workflow entry v1은 아래 공통 진입과 도구별 discovery 템플릿�
 | `research-manager` | `skills/research-manager/WORKFLOW.md` | `skills/research-manager/codex/SKILL.md.in` | `skills/research-manager/claude/SKILL.md.in` | 허용 |
 <!-- /core-workflow-entries -->
 
-`research-manager`는 Core 연결 없이 실행하는 `common` 심층 연구 스킬이다. 자동 선택은 실행 본문이 정한 “깊게 리서치해”·“깊게 조사해” 요청에 한하며 일반 조사나 스킬 수정·검토 요청으로 연구를 실행하지 않는다. 원본의 모델·Agent 활용·중단 조건은 해당 스킬만 소유한다.
+`research-manager`는 Core 연결 없이 실행하는 `common` 심층 연구 스킬이다. 자동 선택은 실행 본문이 정한 “깊게 리서치해”·“깊게 조사해” 요청에 한하며 일반 조사나 스킬 수정·검토 요청으로 연구를 실행하지 않는다. 연구 범위·방법·중단은 WORKFLOW가 선택한 실행 본문이 소유하고 source는 비활성 보존 자료다.
 
 Codex 템플릿 옆의 `agents/openai.yaml`도 배포 자산이며 `allow_implicit_invocation`을 소유한다. Claude Code 템플릿은 `disable-model-invocation`을 소유한다. 양쪽은 같은 공통 본문을 읽으며 공통 절차를 native 진입에 복제하지 않는다. 이 계약은 기존 `optional_capabilities` JSON·Runtime API·schema와 분리한다. 설치 분류·개인용 패키지 명세는 아래 공개 설치 목록이 소유하며 Consumer schema에는 필드를 추가하지 않는다.
 
@@ -134,7 +136,7 @@ Codex 템플릿 옆의 `agents/openai.yaml`도 배포 자산이며 `allow_implic
 
 문서의 충분한 의미를 길이·문체·고정 표제와 혼동한 오탐 정정, 경고 필드 추가와 `gate --budget` 선택 옵션 추가는 기존 필드·명령·종료 상태의 의미를 유지하는 호환 변경이다. `context --budget`의 명시 한도는 계속 강제하고, 기본값의 길이 진단과 확정 위반을 구분한다. 보호·경로·역할·공개 계약의 필수 경계를 경고로 낮추는 근거가 아니며 contract 2를 유지한다.
 
-고정 재시도 수치·명령 창·일률 직렬 실행처럼 특정 Consumer의 운영 기본값은 Core 공통 보장의 정본이 아니다. 그 제한을 사용하던 Consumer는 자기 정책과 합성 검사에 같은 기본값을 명시해 유지한다. Core의 명시 예산 준수·무진전 중단·불명확한 외부 결과 확인·취소·승인 경계는 계속 적용된다. 이 소유권 정정은 route trigger나 CLI·schema 세대를 축소·변경하지 않는다.
+고정 재시도 수치·명령 창·일률 직렬 실행처럼 특정 Consumer의 운영 기본값은 Core 공통 보장의 정본이 아니다. 그 기본값을 계속 선택한 Consumer는 자기 정책과 검사에서 소유한다. Core의 명시 예산 준수·무진전 중단·불명확한 외부 결과 확인·취소·승인 경계는 계속 적용된다. 이 소유권 정정은 route trigger나 CLI·schema 세대를 축소·변경하지 않는다.
 
 ## 5. v1에서 v2 이전
 

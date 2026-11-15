@@ -1,4 +1,4 @@
-"""공개 선택 기능 ``shared_data`` v1의 JSON stdin/stdout CLI."""
+"""공개 선택 기능 ``shared_data``의 JSON v1 stdin/stdout CLI."""
 
 from __future__ import annotations
 
@@ -385,9 +385,10 @@ class Dispatcher:
         }
 
     def _request_compare(self, raw: Mapping[str, Any]) -> Any:
-        values = _arguments(raw, required={"previous", "current"})
+        values = _arguments(raw, required={"previous", "current"}, optional={"comparison_version"})
         return compare_request_contract(
-            validate_work_request(values["previous"]), validate_work_request(values["current"])
+            validate_work_request(values["previous"]), validate_work_request(values["current"]),
+            comparison_version=values.get("comparison_version", 1),
         )
 
 
@@ -412,6 +413,7 @@ def _info() -> dict[str, Any]:
         "operations": list(OPERATIONS),
         "request_schema": "experimental/shared_data/schemas/shared-data-request-v1.schema.json",
         "result_schema": "experimental/shared_data/schemas/shared-data-result-v1.schema.json",
+        "request_comparison_versions": [1, 2],
     }
 
 

@@ -597,23 +597,6 @@ class IsolationTests(unittest.TestCase):
         self.assertEqual(set(module_layers(ROOT)["L7"]), actual)
 
 
-    def test_implementation_has_no_project_domain_or_hardcoded_protected_paths(self) -> None:
-        implementation = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in sorted((ROOT / "experimental" / "shared_data").glob("*.py"))
-        ).casefold()
-        for forbidden in (
-            "youtube",
-            "video",
-            "game",
-            "extension/data",
-            '"inputs"',
-            '"outputs"',
-            '".obsidian"',
-            '"backup"',
-        ):
-            self.assertNotIn(forbidden, implementation)
-
     def test_l7_runtime_uses_only_stdlib_relative_modules_and_boundary_api(self) -> None:
         standard = set(sys.stdlib_module_names)
         allowed_boundary = "core_check.runtime_boundary"

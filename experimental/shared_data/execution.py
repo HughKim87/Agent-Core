@@ -149,8 +149,10 @@ def validate_execution_contract(
 
 
 def compare_request_contract(
-    previous: Mapping[str, Any], current: Mapping[str, Any]
+    previous: Mapping[str, Any], current: Mapping[str, Any], *, comparison_version: int = 1
 ) -> dict[str, Any]:
+    if type(comparison_version) is not int or comparison_version not in (1, 2):
+        raise DesignContractError("comparison_version은 1 또는 2여야 한다")
     fields = (
         "desired_outcome",
         "authorized_actions",
@@ -172,6 +174,24 @@ def compare_request_contract(
     invalidated = bool(changed) or (previous_execution != current_execution and not revision_only)
     if previous_execution != current_execution:
         changed.append("execution")
+    if comparison_version == 2:
+        # These fields name references/checks, not an execution sequence.
+        review_fields = [
+            field for field in changed if field != "execution" and (
+                field not in ("input_refs", "verification_levels")
+                or set(previous[field]) != set(current[field])
+            )
+        ]
+        return {
+            "comparison_version": 2,
+            "contract_review_required": bool(review_fields) or (
+                previous_execution != current_execution and not revision_only
+            ),
+            "design_review_required": revision_only,
+            "changed_fields": changed,
+            "previous_execution": previous_execution,
+            "current_execution": current_execution,
+        }
     return {
         "invalidated": invalidated,
         "reapproval_required": invalidated,

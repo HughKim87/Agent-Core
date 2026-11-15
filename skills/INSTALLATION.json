@@ -56,9 +56,9 @@
     },
     "research-manager": {
       "scope": "common",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "files": {
-        "references/procedure.md": "skills/research-manager/source/SKILL.md"
+        "references/procedure.md": "skills/research-manager/current/SKILL.md"
       },
       "agent_files": {
         "codex": {

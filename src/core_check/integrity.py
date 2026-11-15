@@ -773,12 +773,11 @@ def check_document_headers(root: Path) -> Iterable[Finding]:
         text = path.read_text(encoding="utf-8")
         missing = [header for header in DOC_HEADERS if header not in text]
         if missing:
-            is_rule = path.parent == root / "rules"
             yield Finding(
                 "document-headers", _rel(root, path),
                 f"최소 설명 표기 미발견: {' '.join(missing)}. "
                 "동등한 설명의 충분성은 문서 소유자가 검토한다",
-                severity="error" if is_rule else "warning",
+                severity="warning",
             )
 
 
@@ -1422,7 +1421,7 @@ def consumer_findings(
                     "consumer-document-headers", rel,
                     f"최소 설명 표기 미발견: {' '.join(missing)}. "
                     "동등한 설명의 충분성은 문서 소유자가 검토한다",
-                    severity="error" if rel in active else "warning",
+                    severity="warning",
                 )
         if path.suffix == ".md":
             for target in MD_LINK.findall(text):

@@ -88,9 +88,9 @@ Core 저장소에는 자동 진입 파일, 현재 상태, 특정 Maintainer·Hos
 
 | 사실 | 정본 | 다른 위치의 처리 |
 |---|---|---|
-| Core 목적 | `docs/CHARTER.md` | 링크만 함 |
+| Core 목적 | `docs/CHARTER.md` | 정본을 링크하고 출처가 있는 짧은 요약 허용 |
 | 공개 version | `docs/COMPATIBILITY.md` 선언 | 값을 복제하지 않음 |
-| 사용 절차 | `docs/CONSUMER_GUIDE.md` | README는 링크만 함 |
+| 사용 절차 | `docs/CONSUMER_GUIDE.md` | README는 정본 링크와 짧은 개요 제공. 독립 절차 정본을 복제하지 않음 |
 | 소비 현재 상태 | 소비 계약의 state | Core에 복제하지 않음 |
 | 현재 선택한 Core revision | submodule gitlink | 별도 현재 revision 정본을 만들지 않음. 검증 snapshot 식별은 아래 기준 적용 |
 | 동적 Git 상태·파일 수 | 실행 조회 | 관측 시점·대상·범위를 밝힌 증거와 현재 사실을 구분 |

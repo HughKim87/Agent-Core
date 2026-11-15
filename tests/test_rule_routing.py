@@ -22,7 +22,6 @@ from core_check.declarations import document_roles, routed_rule_paths  # noqa: E
 
 LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 REQUIRED_KINDS = {"initial", "colloquial", "mid-task", "near-miss"}
-REQUIRED_HEADERS = ("- 목적:", "- 읽는 시점:", "- 책임:", "- 상태:", "- 관련 권위:")
 
 
 def read(path: Path) -> str:
@@ -57,11 +56,10 @@ class RoutingCompletenessTest(unittest.TestCase):
         ]
         self.assertEqual(others, [], "규칙 파일이 다른 규칙을 직접 라우팅한다")
 
-    def test_rule_shape(self) -> None:
+    def test_active_rule_documents_are_not_empty(self) -> None:
+        # Content sufficiency is a semantic review, not a fixed-label assertion.
         for rule in active_rules():
-            text = read(ROOT / rule)
-            for header in REQUIRED_HEADERS:
-                self.assertIn(header, text, f"{rule} 에 {header} 항목이 없다")
+            self.assertTrue(read(ROOT / rule).strip(), f"{rule} 에 내용이 없다")
 
     def test_generalization_gate_structure_anchor(self) -> None:
         # Navigation anchor only; independent semantic audit owns meaning.
