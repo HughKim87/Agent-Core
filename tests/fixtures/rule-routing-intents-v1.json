@@ -694,6 +694,51 @@
       "reason": "기존 구조의 설명만 요청했으며 경계 참조를 변경하거나 감사하지 않는다."
     },
     {
+      "id": "external-tool-adoption-initial",
+      "kind": "initial",
+      "utterance": "새 CLI를 프로젝트의 지속 작업 경로로 채택하기 전에 버전·설정·복원 근거를 읽기 전용으로 확인해줘.",
+      "prior_owners": [],
+      "expected_owners": ["rules/boundary-routing-and-dependency.md"],
+      "forbidden_owners": [],
+      "reason": "지속 외부 도구 채택 전 확인이며 읽기 전용이다."
+    },
+    {
+      "id": "external-tool-version-colloquial",
+      "kind": "colloquial",
+      "utterance": "호출 명령은 그대로인데 프로젝트에서 계속 쓰는 CLI의 고정 버전을 올리면 복원 기록에서 무엇을 바꿔야 하는지 알려줘.",
+      "prior_owners": [],
+      "expected_owners": ["rules/boundary-routing-and-dependency.md"],
+      "forbidden_owners": [],
+      "reason": "호출이 같아도 고정 버전 변경은 기존 환경의 복원 근거에 영향을 준다."
+    },
+    {
+      "id": "external-tool-settings-mid-task",
+      "kind": "mid-task",
+      "utterance": "프로젝트 분석은 이어가되, 앞으로 계속 쓸 CLI의 실행에 필요한 로컬 설정을 바꾸자.",
+      "prior_owners": ["rules/work-contract.md"],
+      "expected_owners": ["rules/boundary-routing-and-dependency.md"],
+      "forbidden_owners": [],
+      "reason": "지속 사용할 CLI의 복원에 필요한 설정을 바꾸는 작업 전환이다."
+    },
+    {
+      "id": "external-tool-once-near-miss",
+      "kind": "near-miss",
+      "utterance": "이번 작업에서만 이미 설치된 읽기 전용 CLI로 버전을 한 번 확인해줘.",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": ["rules/boundary-routing-and-dependency.md"],
+      "reason": "일회성 버전 조회는 외부 도구의 지속 채택·복원 감사·변경에 해당하지 않는다."
+    },
+    {
+      "id": "external-tool-and-assets-composed",
+      "kind": "composed",
+      "utterance": "지속 사용 중인 외부 도구의 복원 경로를 감사하면서, Git과 자동 추적에 노출되는 대형 모델의 복원·제외 범위도 읽기 전용으로 검토해줘.",
+      "prior_owners": [],
+      "expected_owners": ["rules/asset-reproducibility.md", "rules/boundary-routing-and-dependency.md"],
+      "forbidden_owners": [],
+      "reason": "지속 도구 복원 경로와 대형 파일 추적 제외라는 별개 작업 경계에 모두 해당한다."
+    },
+    {
       "id": "extract-and-cleanup-composed",
       "kind": "composed",
       "utterance": "여러 프로젝트의 규칙 파일을 바꾸는 controlled 작업이야. 범위를 먼저 고정하고, Core 공통 규칙과 출처를 흡수한 뒤 중복 파일을 정리하는 두 단계로 진행해줘",

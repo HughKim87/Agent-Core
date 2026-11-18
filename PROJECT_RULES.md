@@ -60,7 +60,7 @@ Core 저장소 자체에는 자동 진입 파일과 현재 상태를 두지 않�
 | 대형·대량 파일이 작업 범위에 들어오거나 Git·자동 추적에 새로 노출되기 전, 또는 해당 파일의 추적 범위·복원 방법이 바뀔 때 (기존 파일이 있는 폴더의 Git 초기화 포함) | [대형 파일의 추적 제외와 워크플로우 재현](rules/asset-reproducibility.md) |
 | 보호 경로의 항목을 다루거나, 비밀이 있을 수 있는 파일을 다루거나, 외부 효과를 일으키기 전 | [보호 데이터와 외부 효과](rules/protected-data.md) |
 | 소비 계약의 `core_path`를 생성·수정·삭제·이동·개명·재생성하거나 간접적으로 변경 | [Core 변경 통제](rules/core-change-control.md) |
-| Core↔Consumer 링크·route·schema·import·저장 경로·submodule 계약·경계 테스트나 새 외부 도구 경로를 변경·감사 | [Core·Consumer 경계와 의존성](rules/boundary-routing-and-dependency.md) |
+| Core↔Consumer 링크·route·schema·import·저장 경로·submodule 계약·경계 테스트를 변경·감사하거나, 외부 도구를 지속 경로로 채택·감사하거나, 그 도구의 복원에 영향을 주는 버전·설정·호출 경로를 변경 | [Core·Consumer 경계와 의존성](rules/boundary-routing-and-dependency.md) |
 | Git 저장소임이 확인된 변경 작업의 시작·체크포인트·완료 판단 또는 Git 스테이지·커밋·브랜치·push·복구·백업 | [버전 관리](rules/version-control.md) |
 | 다른 Agent·보고서·분석의 결론을 교차검증·비교·통합하거나 독립 재현을 주장 | [교차검증](rules/cross-validation.md) |
 | 결과 실패·무진전·불명확한 외부 결과·명시 예산 소진 뒤 재시도나 중단을 판정하거나, 해결·검증된 실패에서 일반화 가능한 예방책을 규칙·검사에 흡수 | [실패 처리와 예방책 흡수](rules/failure-records.md) |
