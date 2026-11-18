@@ -57,6 +57,7 @@ Core 저장소 자체에는 자동 진입 파일과 현재 상태를 두지 않�
 | 일반 유지 문서를 만들거나 바꾸거나, 보고서·계획 문서를 요청받거나, 임시 문서를 처분. 단 활성 규칙·현재 상태·실패 예방·파일 추출의 전용 소유권 판정은 제외 | [문서 작업](rules/document-work.md) |
 | 파일·저장소에서 재사용 지식·현재 상태·근거·source lineage를 추출하거나 병합·정리 전에 고유 내용을 판정. 단 활성 규칙 자체의 추가·통합과 일반 요약은 제외 | [파일 지식 추출과 출처 보존](rules/file-extraction.md) |
 | 파일·문서·보고서·cache·파생물의 물리적 유지·삭제·이동·개명·활성 트리 제외를 판정. 단 규칙 내용의 의미 통합은 제외 | [추출 후 파일 정리](rules/file-cleanup.md) |
+| 대형·대량 파일이 작업 범위에 들어오거나 Git·자동 추적에 새로 노출되기 전, 또는 해당 파일의 추적 범위·복원 방법이 바뀔 때 (기존 파일이 있는 폴더의 Git 초기화 포함) | [대형 파일의 추적 제외와 워크플로우 재현](rules/asset-reproducibility.md) |
 | 보호 경로의 항목을 다루거나, 비밀이 있을 수 있는 파일을 다루거나, 외부 효과를 일으키기 전 | [보호 데이터와 외부 효과](rules/protected-data.md) |
 | 소비 계약의 `core_path`를 생성·수정·삭제·이동·개명·재생성하거나 간접적으로 변경 | [Core 변경 통제](rules/core-change-control.md) |
 | Core↔Consumer 링크·route·schema·import·저장 경로·submodule 계약·경계 테스트나 새 외부 도구 경로를 변경·감사 | [Core·Consumer 경계와 의존성](rules/boundary-routing-and-dependency.md) |

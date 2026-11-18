@@ -5,6 +5,79 @@
   "selection_contract": "exact",
   "cases": [
     {
+      "id": "asset-existing-files-init",
+      "kind": "initial",
+      "utterance": "기존 제작 파일이 쌓인 폴더를 새 Git 저장소로 만들기 전에 어떤 대형 파일을 제외할지 읽기 전용으로 판단해줘.",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/asset-reproducibility.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "기존 자산의 첫 Git 노출이며 초기화나 인덱스 수정 자체를 수행하지 않는다."
+    },
+    {
+      "id": "asset-model-before-download",
+      "kind": "colloquial",
+      "utterance": "새 음성 모델을 여기 안에 둘 건데 다운받기 전에 무거운 파일이 자동 스냅샷에 안 걸리게 할 범위부터 봐줘.",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/asset-reproducibility.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "새 대형 의존성의 자동 추적 경계를 설치 전에 판정한다."
+    },
+    {
+      "id": "asset-capture-scope-transition",
+      "kind": "mid-task",
+      "utterance": "경로도 모델도 그대로야. 이번 단계는 자동 변경 추적의 범위를 넓힐 때 기존 큰 파일이 잡힐지만 분석해줘.",
+      "prior_owners": [
+        "rules/work-contract.md"
+      ],
+      "expected_owners": [
+        "rules/asset-reproducibility.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "파일 쓰기 없이도 자동 추적에 새로 노출될 수 있다."
+    },
+    {
+      "id": "asset-existing-model-near-miss",
+      "kind": "near-miss",
+      "utterance": "설치돼 있는 모델 그대로 써. 설치 경로나 추적 설정은 손댈 필요 없어. 이 입력으로 결과만 만들어줘.",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/asset-reproducibility.md"
+      ],
+      "reason": "이미 설치된 모델을 사용하는 것만으로는 대형 파일의 추적·복원 경계가 달라지지 않는다."
+    },
+    {
+      "id": "asset-exclusion-and-record",
+      "kind": "composed",
+      "utterance": "새 대형 모델용 제외 설정과 복원 근거 문서를 각각 작성하고 검토해줘.",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/work-contract.md",
+        "rules/document-work.md",
+        "rules/asset-reproducibility.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "두 쓰기의 계약과 문서 작업, 대형 파일의 제외·복원 판단이 함께 필요하다."
+    },
+    {
+      "id": "asset-tracked-file-review",
+      "kind": "initial",
+      "utterance": "이미 추적 중인 대형 제작본을 제외할 기준을 검토해줘. 실제 파일 이동이나 인덱스 수정은 하지 마.",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/asset-reproducibility.md"
+      ],
+      "forbidden_owners": [
+        "rules/file-cleanup.md",
+        "rules/version-control.md"
+      ],
+      "reason": "대형 파일의 추적 범위 검토이며 물리 처분이나 Git 쓰기를 수행하지 않는다."
+    },
+    {
       "id": "rule-governance-initial",
       "kind": "initial",
       "utterance": "규칙 하나 새로 추가하려고 하는데 어디에 둬야 하는지 봐줘",
