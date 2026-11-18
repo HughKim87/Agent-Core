@@ -433,6 +433,20 @@ class FaultInjectionTest(unittest.TestCase):
         )
         self.assertTrue(findings_for(self.root, "markdown-links"))
 
+    def test_distinguishes_unsupported_uri_from_missing_file(self) -> None:
+        (self.root / "rules" / "sample.md").write_text(
+            RULE_BODY.format(headers=DOC_HEADERS)
+            + "\n[app](example+tool://thread/id)\n[missing](missing.md)\n"
+              "[web](https://example.invalid/reference)\n[local](../ROUTER.md#anchor)\n",
+            encoding="utf-8",
+        )
+        findings = [f for f in run_all(self.root).findings if f.check == "markdown-links"]
+        self.assertEqual(
+            [(f.severity, f.message) for f in findings],
+            [("error", "지원하지 않는 링크 형식: example+tool://thread/id"),
+             ("error", "깨진 링크: missing.md")],
+        )
+
     def test_detects_invalid_json(self) -> None:
         (self.root / "data.json").write_text("{not json", encoding="utf-8")
         self.assertTrue(findings_for(self.root, "json-parse"))
@@ -1192,6 +1206,17 @@ class ConsumerContractTest(unittest.TestCase):
     def test_clean_consumer_contract_passes(self) -> None:
         report = run_consumer(self.core, self.consumer)
         self.assertTrue(report.ok, [finding.as_dict() for finding in report.findings])
+
+    def test_consumer_unsupported_uri_is_still_an_error(self) -> None:
+        with (self.consumer / "CURRENT.md").open("a", encoding="utf-8") as stream:
+            stream.write("\n[app](example+tool://thread/id)\n")
+        report = run_consumer(self.core, self.consumer)
+        findings = [f for f in report.findings if f.check == "consumer-markdown-links"]
+        self.assertFalse(report.ok)
+        self.assertEqual(
+            [(f.path, f.severity, f.message) for f in findings],
+            [("CURRENT.md", "error", "지원하지 않는 링크 형식: example+tool://thread/id")],
+        )
 
     def test_host_without_git_fails_closed(self) -> None:
         set_consumer_role(self.consumer, "host")

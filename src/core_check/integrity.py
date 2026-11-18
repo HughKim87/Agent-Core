@@ -32,6 +32,7 @@ from .primitives import CheckError, Finding, Report, resolve_inside
 from .registry import REGISTRY, register
 
 MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+URI_LINK = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+://")
 AT_REFERENCE = re.compile(r"(?m)^@([^\s]+\.md)\s*$")
 DOC_HEADERS = ("- 목적:", "- 읽는 시점:", "- 책임:", "- 상태:", "- 관련 권위:")
 STATE_SECTIONS = (
@@ -674,16 +675,25 @@ def check_text_encoding(root: Path) -> Iterable[Finding]:
                     yield Finding("text-encoding", rel, f"{number}행에 후행 공백이 있다")
 
 
+def _markdown_link_error(document: Path, target: str) -> str | None:
+    if target.startswith(("http://", "https://", "#", "mailto:")):
+        return None
+    # A drive letter can also precede two slashes on Windows.
+    if URI_LINK.match(target):
+        return f"지원하지 않는 링크 형식: {target}"
+    resolved = (document.parent / target.split("#", 1)[0]).resolve()
+    if not resolved.exists():
+        return f"깨진 링크: {target}"
+    return None
+
+
 @register("markdown-links")
 def check_markdown_links(root: Path) -> Iterable[Finding]:
     for path in _walk(root, ".md"):
         rel = _rel(root, path)
         for target in MD_LINK.findall(path.read_text(encoding="utf-8")):
-            if target.startswith(("http://", "https://", "#", "mailto:")):
-                continue
-            resolved = (path.parent / target.split("#", 1)[0]).resolve()
-            if not resolved.exists():
-                yield Finding("markdown-links", rel, f"깨진 링크: {target}")
+            if error := _markdown_link_error(path, target):
+                yield Finding("markdown-links", rel, error)
 
 
 @register("json-parse")
@@ -1437,11 +1447,8 @@ def consumer_findings(
                 )
         if path.suffix == ".md":
             for target in MD_LINK.findall(text):
-                if target.startswith(("http://", "https://", "#", "mailto:")):
-                    continue
-                resolved = (path.parent / target.split("#", 1)[0]).resolve()
-                if not resolved.exists():
-                    yield Finding("consumer-markdown-links", rel, f"깨진 링크: {target}")
+                if error := _markdown_link_error(path, target):
+                    yield Finding("consumer-markdown-links", rel, error)
 
     gitmodules = consumer_root / ".gitmodules"
     started("consumer-submodule")
