@@ -1,0 +1,6 @@
+interface:
+  display_name: "대형 자산 추적 점검"
+  short_description: "모델·도구·생성물의 Git 및 자동 스냅샷 추적 상태를 살펴보고 제외·보존·복원 방법을 제안합니다."
+  default_prompt: "$review-asset-tracking으로 이 프로젝트의 대형 모델과 도구, 생성물이 Git과 자동 스냅샷에 포함되는지 점검하고 제외할 경로와 복원 방법을 제안해줘."
+policy:
+  allow_implicit_invocation: true

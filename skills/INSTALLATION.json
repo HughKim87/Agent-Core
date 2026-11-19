@@ -54,6 +54,20 @@
         "claude": {}
       }
     },
+    "review-asset-tracking": {
+      "scope": "common",
+      "version": "1.0.0",
+      "files": {
+        "SKILL.md": "skills/review-asset-tracking/current/SKILL.md",
+        "scripts/inspect_git_paths.py": "skills/review-asset-tracking/current/scripts/inspect_git_paths.py"
+      },
+      "agent_files": {
+        "codex": {
+          "agents/openai.yaml": "skills/review-asset-tracking/codex/agents/openai.yaml"
+        },
+        "claude": {}
+      }
+    },
     "research-manager": {
       "scope": "common",
       "version": "1.1.0",

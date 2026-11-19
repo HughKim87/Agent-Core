@@ -96,6 +96,7 @@ Core workflow entry v1은 아래 공통 진입과 도구별 discovery 템플릿�
 | `setup-agent-core-project` | `skills/setup-agent-core-project/WORKFLOW.md` | `skills/setup-agent-core-project/codex/SKILL.md.in` | `skills/setup-agent-core-project/claude/SKILL.md.in` | 직접 호출 |
 | `session-close` | `skills/session-close/WORKFLOW.md` | `skills/session-close/codex/SKILL.md.in` | `skills/session-close/claude/SKILL.md.in` | 직접 호출 |
 | `review-chat-session` | `skills/review-chat-session/WORKFLOW.md` | `skills/review-chat-session/codex/SKILL.md.in` | `skills/review-chat-session/claude/SKILL.md.in` | 허용 |
+| `review-asset-tracking` | `skills/review-asset-tracking/WORKFLOW.md` | `skills/review-asset-tracking/codex/SKILL.md.in` | `skills/review-asset-tracking/claude/SKILL.md.in` | 허용 |
 | `install-common-skills` | `skills/install-common-skills/WORKFLOW.md` | `skills/install-common-skills/codex/SKILL.md.in` | `skills/install-common-skills/claude/SKILL.md.in` | 허용 |
 | `research-manager` | `skills/research-manager/WORKFLOW.md` | `skills/research-manager/codex/SKILL.md.in` | `skills/research-manager/claude/SKILL.md.in` | 허용 |
 <!-- /core-workflow-entries -->

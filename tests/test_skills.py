@@ -26,7 +26,7 @@ from core_check.integrity import (  # noqa: E402
 )
 DIRECT_ONLY_NAMES = {"handoff-manager", "setup-agent-core-project", "session-close"}
 PRESERVED_NAMES = DIRECT_ONLY_NAMES | {"research-manager"}
-REQUIRED_NAMES = PRESERVED_NAMES | {"review-chat-session", "install-common-skills"}
+REQUIRED_NAMES = PRESERVED_NAMES | {"review-chat-session", "install-common-skills", "review-asset-tracking"}
 BLOCK = re.compile(
     r"<!-- core-workflow-entries:v1 -->\n(.*?)\n<!-- /core-workflow-entries -->", re.S
 )

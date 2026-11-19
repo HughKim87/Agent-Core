@@ -31,9 +31,10 @@ class CommonSkillInstallationTest(unittest.TestCase):
         self.target = self.base / "personal skills"
         # Deployment failure fixtures intentionally isolate one synthetic package.
         self.catalog(lambda data: data["skills"].update({
-            "handoff-manager": {"scope": "project"},
-            "setup-agent-core-project": {"scope": "project"},
-            "research-manager": {"scope": "project"}}))
+            name: {"scope": "project"}
+            for name, spec in data["skills"].items()
+            if name != NAME and spec["scope"] == "common"
+        }))
         self.catalog(lambda data: data["skills"][NAME].update(version="1.0.0"))
 
     def catalog(self, mutate):
@@ -55,7 +56,7 @@ class CommonSkillInstallationTest(unittest.TestCase):
         data = json.loads((ROOT / "skills/INSTALLATION.json").read_text(encoding="utf-8"))
         public = {row[0] for row in entries(ROOT)}
         self.assertEqual(set(data["skills"]), public)
-        common = {NAME, "handoff-manager", "setup-agent-core-project", "research-manager"}
+        common = {NAME, "handoff-manager", "setup-agent-core-project", "research-manager", "review-asset-tracking"}
         self.assertEqual({name for name, spec in data["skills"].items() if spec["scope"] == "common"}, common)
         for name in public - common:
             self.assertEqual(data["skills"][name], {"scope": "project"})
@@ -90,6 +91,12 @@ class CommonSkillInstallationTest(unittest.TestCase):
                     self.assertEqual(
                         (installed / "references/procedure.md").read_bytes(),
                         (ROOT / "skills/research-manager/current/SKILL.md").read_bytes(),
+                    )
+                if name == "review-asset-tracking":
+                    helper = Path("scripts/inspect_git_paths.py")
+                    self.assertEqual(
+                        (installed / helper).read_bytes(),
+                        (ROOT / "skills" / name / "current" / helper).read_bytes(),
                     )
                 for document in installed.rglob("*.md"):
                     for link in LINK.findall(document.read_text(encoding="utf-8")):
@@ -126,7 +133,7 @@ class CommonSkillInstallationTest(unittest.TestCase):
 
     def test_authored_entrypoints_and_invocation_metadata(self):
         from test_skills import frontmatter, openai_fields
-        for name in (NAME, "install-common-skills"):
+        for name in (NAME, "install-common-skills", "review-asset-tracking"):
             fields, body = frontmatter((ROOT / f"skills/{name}/current/SKILL.md").read_text(encoding="utf-8"))
             self.assertEqual(set(fields), {"name", "description"})
             self.assertEqual(fields["name"], name)
