@@ -56,7 +56,7 @@
     },
     "review-asset-tracking": {
       "scope": "common",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "files": {
         "SKILL.md": "skills/review-asset-tracking/current/SKILL.md",
         "scripts/inspect_git_paths.py": "skills/review-asset-tracking/current/scripts/inspect_git_paths.py"
