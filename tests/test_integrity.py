@@ -2037,6 +2037,61 @@ class PublicInterfaceTest(unittest.TestCase):
             "maintainer",
         )
 
+    @unittest.skipUnless(shutil.which("git"), "Git is required for the changing enclosing repository")
+    def test_outer_commit_does_not_interrupt_non_git_maintainer_verify(self) -> None:
+        from core_check import gate
+
+        # The fixture also covers a path that cannot be a single entry in a Git ceilings list.
+        outer = Path(self.tmp) / f"work{os.pathsep}area"
+        core, consumer = build_consumer(outer)
+        (outer / ".gitignore").write_text("/consumer/\n", encoding="utf-8")
+        initialize_clean_git(outer)
+        pointer = consumer / "AGENTS.md"
+        original_pointer = pointer.read_text(encoding="utf-8")
+        observe = gate.host_consumer_gitlink_observation_fingerprint
+        for broken in (False, True):
+            with self.subTest(broken=broken):
+                if broken:
+                    pointer.write_text(original_pointer.replace("core/ROUTER.md", "<Missing Core/ROUTER.md>"),
+                                       encoding="utf-8")
+                committed = False
+
+                def advance_outer_head(*args):
+                    nonlocal committed
+                    result = observe(*args)
+                    if not committed:
+                        subprocess.run(
+                            ["git", "-c", "user.name=Core Test", "-c", "user.email=core-test@example.invalid",
+                             "-c", "commit.gpgsign=false", "commit", "--quiet", "--allow-empty", "-m", "other work"],
+                            cwd=outer, check=True, capture_output=True,
+                        )
+                        committed = True
+                    return result
+
+                with patch.object(gate, "host_consumer_gitlink_observation_fingerprint", advance_outer_head):
+                    code, result = self._run("--core-root", str(core), "--consumer-root", str(consumer), "verify")
+                self.assertTrue(committed)
+                self.assertEqual(code, self.cli.EXIT_FINDINGS if broken else self.cli.EXIT_OK, result)
+                self.assertIn("consumer:consumer-entry", result["ran"])
+                if broken:
+                    self.assertTrue(any(
+                        f["check"] == "consumer-entry" and f["path"] == "AGENTS.md"
+                        and "Missing Core/ROUTER.md" in f["message"] for f in result["findings"]
+                    ), result)
+
+    @unittest.skipUnless(shutil.which("git"), "Git is required for the linked worktree")
+    def test_host_context_accepts_core_in_a_linked_worktree(self) -> None:
+        set_consumer_role(self.consumer, "host")
+        source = Path(self.tmp) / "primary"
+        self.core.rename(source)
+        initialize_clean_git(source)
+        subprocess.run(["git", "worktree", "add", "--quiet", "--detach", str(self.core), "HEAD"],
+                       cwd=source, check=True, capture_output=True)
+        initialize_clean_git(self.consumer)
+        self.assertTrue((self.core / ".git").is_file())
+        code, result = self._run("--core-root", str(self.core), "--consumer-root", str(self.consumer), "context")
+        self.assertEqual(code, self.cli.EXIT_OK, result)
+
     def test_maintainer_context_allows_unavailable_host_observation(self) -> None:
         with patch.object(
             self.cli, "capture_host_consumer_observation",

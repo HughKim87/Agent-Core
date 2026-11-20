@@ -145,6 +145,9 @@ def _host_git_context(core_root: Path) -> tuple[dict[str, str], list[str]]:
     )
     git_prefix = [
         "git",
+        # cwd is the declared root; never discover a containing checkout.
+        # Git follows this path for both a .git directory and a worktree/submodule gitfile.
+        "--git-dir=.git",
         "-c",
         f"safe.directory={core_root.resolve().as_posix()}",
         "-c",
