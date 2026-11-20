@@ -33,7 +33,7 @@ Host에서 Core 변경 필요성을 발견하면 submodule을 수정하지 말�
 
 ## 3. Core 연결
 
-최초 연결은 §7의 격리된 후보 Consumer에서 시작한다. 그 후보 root에서 원하는 상대경로를 정해 Core 저장소 전체를 submodule로 추가한다.
+기존 프로젝트의 최초 연결은 승인된 Core 원격의 `main`과 현재 소비 부모 커밋에서 시작한다. 아직 실제 Core checkout이 없으므로 승인된 원격에서 후보 revision을 확인한다. 실제 부모 커밋의 격리된 clone에서 원하는 상대경로를 정해 Core 저장소 전체를 submodule로 추가한다.
 
 Host가 SSH로 연결할 때는 최초 `submodule add` 전에 §8의 절차로 기존 read-only 인증을 선택한다. 아직 생성되지 않은 submodule에는 로컬 설정을 넣을 수 없으므로 최초 clone에 사용할 인증을 먼저 전달하고, 연결 후 해당 clone의 로컬 설정에 유지한다.
 
@@ -42,7 +42,18 @@ git submodule add <AGENT_CORE_REMOTE> <CORE_PATH>
 git submodule update --init --recursive
 ```
 
-`CORE_PATH`는 저장소 안쪽의 상대경로여야 한다. 개인키·토큰·사용자별 절대경로를 저장소 파일에 기록하지 않는다. §4·5의 소비 입력과 `.gitmodules`·gitlink를 후보 부모 commit에 포함한 다음 §7의 후보 gate·실제 반영·반영 후 gate를 수행한다. 부모 HEAD에 gitlink가 없는 최초 연결 상태는 Host 소비 완료 상태가 아니다.
+`CORE_PATH`는 저장소 안쪽의 상대경로여야 한다. 개인키·토큰·사용자별 절대경로를 저장소 파일에 기록하지 않는다. 후보의 Core를 확인한 revision에 맞춘 뒤 §4·5의 실제 소비 입력과 `.gitmodules`·gitlink를 후보 부모 commit에 포함한다. §10의 대상은 승인 범위에 맞춰 대조한다. 후보의 부모 HEAD·index·Core가 일치하는 상태에서 §6의 Host gate를 통과하면 아래 순서로 처음 반영한다.
+
+1. 실제 부모 HEAD가 후보의 출발점인지, 반영할 파일·경로와 승인된 원격이 같은지 확인한다. 기존 파일과 로컬 변경을 덮어쓰지 않는다. 실제 부모에 검증한 후보 부모 커밋을 반영한 뒤 그 gitlink로 첫 submodule checkout을 초기화한다. 예를 들어 후보 커밋만 fast-forward할 수 있으면 실제 부모에서 다음을 실행한다.
+
+   ```powershell
+   git fetch --no-tags <CANDIDATE_ROOT> <CANDIDATE_PARENT_COMMIT>
+   git merge --ff-only FETCH_HEAD
+   git submodule update --init --recursive -- <CORE_PATH>
+   ```
+
+2. 실제 Core의 `origin`이 승인한 원격인지 확인하고 `git fetch origin main`으로 확인한 `origin/main`이 검증한 revision과 일치하는지 대조한다. 일치하면 해당 revision의 로컬 `main`으로 전환해 `origin/main`을 추적하게 한다. 로컬 `main`이 없으면 `git switch --track -c main origin/main`으로 만든다. 원격이 전진했거나 부모·체크아웃이 어긋나면 영향받은 후보를 다시 검증한다. 중간에 끊겼으면 실제 부모의 gitlink와 checkout 상태부터 확인하고 미완료 단계에서 이어간다.
+3. §7의 브랜치·upstream·부모 HEAD/index gitlink·Core HEAD 일치와 청결을 확인하고, 실제 소비 루트에서 §6의 Host gate까지 통과해야 최초 연결을 완료한다.
 
 이미 Core가 연결된 저장소를 clone할 때는 다음 중 하나를 사용한다.
 
@@ -259,10 +270,10 @@ Host 소비 완료에는 부모 HEAD·index gitlink와 실행 Core HEAD의 일�
 
 기존 `docs/*.md`·`rules/*.md` 본문 수정이라도 호환성·문서 역할/계층 선언이나 route가 달라지면 일반 경로다. Core 상위 정책·실행 코드·스킬·schema·속성·파일 추가/삭제/이동·종류/모드 변경도 일반 경로다. 문서 확장자만 검사해 문서 경로로 분류하지 않는다. 원격·배포 계약·Core 안전 경계의 변경은 적용 전후 상태를 구분해 중단·재계획한다. 현재 요청·이번 revision 영향과 무관한 프로젝트 문서 오류는 동일 실제 입력의 이전·목표 Core 공개 검사 결과를 비교해 확인하고, Core 갱신을 계속하며 Host 실패를 별도로 보고한다. 이 비교는 문서 실패 때만 추가한다. 새 회귀·관련성 불명확·Core 안전 검사 실패는 계속 차단하며 자동 복구하지 않는다.
 
-### 일반 갱신 절차
+### 기존 연결의 일반 갱신 절차
 
 1. 각 실제 Core의 승인된 `origin/main`에서 조회·fetch한 객체를 후보 revision으로 고정하고, Maintainer의 검증 근거와 호환성을 확인한다. 로컬 Maintainer에만 있는 commit을 최신 원격 대신 사용하지 않는다. 반영할 소비 입력·Git 쓰기·임시 자원의 범위를 정하고 실제 소비 저장소는 마지막 검증 상태에 둔다. 무관한 변경을 임의로 삭제하거나 commit하지 않는다.
-2. 승인된 임시 공간에 고정한 소비 부모 snapshot의 별도 clone과 전체 Core submodule을 준비한다. 최초 연결이면 §3~5의 승인된 입력을 이 후보에서 구성한다. 미커밋 소비 입력을 반영하기로 했다면 정확한 경로와 bytes를 후보에 포함한다. 보호 자료를 읽거나 복제할 권한은 이 절차에서 생기지 않는다.
+2. 승인된 임시 공간에 고정한 소비 부모 snapshot의 별도 clone과 전체 Core submodule을 준비한다. 최초 연결은 §3의 순서를 따른다. 미커밋 소비 입력을 반영하기로 했다면 정확한 경로와 bytes를 후보에 포함한다. 보호 자료를 읽거나 복제할 권한은 이 절차에서 생기지 않는다.
 3. 후보 Core에서 검증된 revision을 fetch·checkout한다. §10의 공개 스킬 목록·native 등록 대조로 신규 진입과 필요한 이전 파일을 판정한다. 후보 부모에서 변경된 gitlink·소비 계약·승인된 native 진입 파일만 검토·commit한다. 이 commit은 검사할 입력의 고정점이며 소비 완료나 배포 승인 근거가 아니다. 새 Core commit을 Host에서 만드는 절차도 아니다.
 4. 후보의 부모 HEAD·index·Core가 모두 새 revision을 가리키는 상태에서 §6의 Host 소비 gate를 실행한다. 후보의 정책·진입·상태·route·기능 요구는 실제 반영할 입력과 같아야 한다. 유효한 가짜 상태로 바꾸어 통과시키지 않는다. 실패하면 위 경로 선택의 기존 프로젝트 문서 오류인지 판정한다. 그 외 실패는 실제 소비 저장소를 이전 상태에 유지하고 후보 원인을 해결한다.
 5. 통과한 후보와 실제 반영할 입력을 다시 대조한다. 실제 부모·입력이 준비 이후 달라졌으면 영향받은 후보 근거를 다시 검증한다. 각 실제 `core_path` 저장소의 `main`에서 `origin main`을 fast-forward pull한다. pull 뒤 revision이 후보와 달라지면 부모 gitlink 갱신과 소비 실행을 보류하고 바뀐 revision의 후보를 다시 검증한다. 실제 Core를 후보의 detached 상태 그대로 복제해 종료하지 않는다. 승인된 소비 작업에서 검증한 gitlink와 소비 파일만 실제 부모 commit에 반영한다. 후보 commit을 그대로 반영할지 동일 변경을 별도 commit으로 만들지는 Consumer가 정한다.

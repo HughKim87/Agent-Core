@@ -9,6 +9,24 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 from pathlib import Path
+import re
+from urllib.parse import unquote
+
+
+# Inline Markdown destinations may quote a local path with angle brackets.
+_MARKDOWN_LINK = re.compile(
+    r"""\[[^\]\n]*\]\(\s*(<[^<>\r\n]+>|(?:[^()\s<>]|\([^()\s]*\))+)"""
+    r"""(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'))?\s*\)"""
+)
+
+
+def markdown_targets(text: str) -> list[str]:
+    return [value[1:-1] if value.startswith("<") else value for value in _MARKDOWN_LINK.findall(text)]
+
+
+def markdown_local_path(target: str) -> str:
+    # Split the fragment before decoding so an encoded '#' can belong to the filename.
+    return unquote(target.partition("#")[0])
 
 
 WARNING_REVIEW_GUIDANCE = (

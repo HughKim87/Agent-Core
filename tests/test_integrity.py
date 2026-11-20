@@ -417,6 +417,32 @@ class BaselineTest(unittest.TestCase):
             declared = declared_compatibility(root)
             self.assertIn("shared_data", declared["optional_capabilities"])
 
+    def test_only_links_inside_a_completely_absent_capability_are_optional(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build_clean(root)
+            declare_optional_shared_data(root)
+            (root / "links.md").write_text(
+                "[optional](experimental/shared_data/manual.md)\n"
+                "[required](experimental/shared_data_notes/manual.md)\n", encoding="utf8")
+            self.assertEqual(findings_for(root, "markdown-links"),
+                             ["깨진 링크: experimental/shared_data_notes/manual.md"])
+            # With the runtime installed its linked manual is required as well.
+            declare_optional_shared_data(root, installed=True)
+            self.assertEqual(len(findings_for(root, "markdown-links")), 2)
+
+    def test_regular_file_at_an_optional_module_directory_is_partial(self) -> None:
+        from core_check.declarations import declared_compatibility
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build_clean(root)
+            declare_optional_shared_data(root)
+            (root / "experimental").mkdir(exist_ok=True)
+            (root / "experimental/shared_data").write_text("unexpected file", encoding="utf8")
+            with self.assertRaisesRegex(CheckError, "부분 설치"):
+                declared_compatibility(root)
+
 
 class FaultInjectionTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -1496,6 +1522,37 @@ class ConsumerContractTest(unittest.TestCase):
         )
         findings = run_consumer(self.core, self.consumer).findings
         self.assertTrue(any(finding.check == "consumer-entry" for finding in findings))
+
+    def test_entry_references_are_specific_to_each_agent(self) -> None:
+        codex, claude = self.consumer / "AGENTS.md", self.consumer / "CLAUDE.md"
+        markdown, imports = codex.read_text("utf8"), claude.read_text("utf8")
+        for a, b, invalid in ((markdown, imports, set()), (imports, imports, {codex.name}),
+                              (markdown, markdown, {claude.name}),
+                              (markdown + "@CURRENT.md\n", imports, {codex.name})):
+            with self.subTest(invalid=invalid):
+                codex.write_text(a, encoding="utf8")
+                claude.write_text(b, encoding="utf8")
+                findings = run_consumer(self.core, self.consumer).findings
+                self.assertEqual({f.path for f in findings if f.check == "consumer-entry"}, invalid)
+
+    def test_spaces_in_entry_paths_and_document_links(self) -> None:
+        original = self.consumer / "CURRENT.md"
+        state = original.rename(self.consumer / "Current Notes.md")
+        policy = self.consumer / "PROJECT_RULES.md"
+        policy.write_text(policy.read_text("utf8").replace("CURRENT.md", state.name), encoding="utf8")
+        claude = self.consumer / "CLAUDE.md"
+        claude.write_text(claude.read_text("utf8").replace("CURRENT.md", state.name), encoding="utf8")
+        codex = self.consumer / "AGENTS.md"
+        template = codex.read_text("utf8")
+        for destination in ("Current%20Notes.md", "<Current Notes.md>"):
+            with self.subTest(destination=destination):
+                codex.write_text(template.replace("CURRENT.md", destination), encoding="utf8")
+                self.assertTrue(run_consumer(self.core, self.consumer).ok)
+        with state.open("a", encoding="utf8") as output:
+            output.write("\n[one](Missing%20File.md) and [two](<Missing File.md>)\n")
+        errors = [f for f in run_consumer(self.core, self.consumer).findings
+                  if f.check == "consumer-markdown-links"]
+        self.assertEqual([f.path for f in errors], [state.name, state.name])
 
     def test_protected_path_is_not_read(self) -> None:
         private = self.consumer / "private"
@@ -2840,7 +2897,8 @@ class IntegrationGateTest(unittest.TestCase):
             self.assertFalse(payload["ok"])
             self.assertEqual(self.gate._tests(packaged).status, "not_run")
             optional = self.gate._optional(packaged, execution_root=packaged, run_internal_tests=True)
-            self.assertEqual(optional.status, "not_run", optional.as_dict())
+            expected = "not_run" if (packaged / "experimental/shared_data").is_dir() else "not_applicable"
+            self.assertEqual(optional.status, expected, optional.as_dict())
 
     def test_test_runner_unavailable_or_early_exit_is_not_pass(self):
         tests = self.root / "tests"

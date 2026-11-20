@@ -28,12 +28,11 @@ from .declarations import (
     optional_capability_installation_state,
     routed_rule_paths,
 )
-from .primitives import CheckError, Finding, Report, resolve_inside
+from .primitives import CheckError, Finding, Report, markdown_local_path, markdown_targets, resolve_inside
 from .registry import REGISTRY, register
 
-MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 URI_LINK = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+://")
-AT_REFERENCE = re.compile(r"(?m)^@([^\s]+\.md)\s*$")
+AT_REFERENCE = re.compile(r"(?m)^@([^\r\n]+?\.md)[ \t]*\r?$")
 DOC_HEADERS = ("- 목적:", "- 읽는 시점:", "- 책임:", "- 상태:", "- 관련 권위:")
 STATE_SECTIONS = (
     "## 현재 단계",
@@ -675,24 +674,35 @@ def check_text_encoding(root: Path) -> Iterable[Finding]:
                     yield Finding("text-encoding", rel, f"{number}행에 후행 공백이 있다")
 
 
-def _markdown_link_error(document: Path, target: str) -> str | None:
+def _markdown_link_error(document: Path, target: str, *, absent_modules: tuple[Path, ...] = ()) -> str | None:
     if target.startswith(("http://", "https://", "#", "mailto:")):
         return None
     # A drive letter can also precede two slashes on Windows.
     if URI_LINK.match(target):
         return f"지원하지 않는 링크 형식: {target}"
-    resolved = (document.parent / target.split("#", 1)[0]).resolve()
-    if not resolved.exists():
-        return f"깨진 링크: {target}"
-    return None
+    try:
+        path = (document.parent / markdown_local_path(target)).resolve()
+        if path.exists() or any(path.is_relative_to(module) for module in absent_modules):
+            return None
+    except (ValueError, OSError, RuntimeError):
+        pass
+    return f"깨진 링크: {target}"
 
 
 @register("markdown-links")
 def check_markdown_links(root: Path) -> Iterable[Finding]:
+    try:
+        capabilities = declared_compatibility(root).get("optional_capabilities", {})
+        absent = tuple((root / declaration["entry_module"].replace(".", "/")).resolve()
+                       for name, declaration in capabilities.items()
+                       if optional_capability_installation_state(root, name, declaration) == "absent")
+    except CheckError:
+        # declaration-contracts reports the invalid declaration. No links are exempt.
+        absent = ()
     for path in _walk(root, ".md"):
         rel = _rel(root, path)
-        for target in MD_LINK.findall(path.read_text(encoding="utf-8")):
-            if error := _markdown_link_error(path, target):
+        for target in markdown_targets(path.read_text(encoding="utf-8")):
+            if error := _markdown_link_error(path, target, absent_modules=absent):
                 yield Finding("markdown-links", rel, error)
 
 
@@ -822,7 +832,7 @@ def check_rule_cross_routing(root: Path) -> Iterable[Finding]:
     if not rules_dir.is_dir():
         return
     for path in sorted(rules_dir.glob("*.md")):
-        for target in MD_LINK.findall(path.read_text(encoding="utf-8")):
+        for target in markdown_targets(path.read_text(encoding="utf-8")):
             if target.endswith(".md") and "/" not in target and target != path.name:
                 yield Finding(
                     "rule-cross-routing", _rel(root, path),
@@ -977,7 +987,7 @@ def check_no_hardcoded_doc_names(root: Path) -> Iterable[Finding]:
 def check_temporary_canonical_links(root: Path) -> Iterable[Finding]:
     for path in _walk(root, ".md"):
         rel = _rel(root, path)
-        for target in MD_LINK.findall(path.read_text(encoding="utf-8")):
+        for target in markdown_targets(path.read_text(encoding="utf-8")):
             if target.startswith("tmp/") or "/tmp/" in target:
                 yield Finding("temporary-canonical-links", rel, f"한시 자료를 참조한다: {target}")
 
@@ -1325,12 +1335,6 @@ def state_contract_findings(consumer_root: Path, state: Path) -> list[Finding]:
     return list(_state_findings(consumer_root.resolve(), state.resolve()))
 
 
-def _entry_targets(text: str) -> list[str]:
-    targets = MD_LINK.findall(text)
-    targets.extend(AT_REFERENCE.findall(text))
-    return [target.replace("\\", "/") for target in targets]
-
-
 def _consumer_contract_files(core_root: Path, consumer_root: Path, contract: dict[str, object]) -> list[Path]:
     return consumer_contract_files(core_root, consumer_root, contract)
 
@@ -1400,10 +1404,14 @@ def consumer_findings(
     started("consumer-entry")
     for agent, value in contract["entry_pointers"].items():
         pointer = consumer_owned_path(core_root, consumer_root, contract, value, kind="file", canonical=True)
-        actual = _entry_targets(consumer_read_text(core_root, consumer_root, contract, pointer))
-        if actual != expected:
+        text = consumer_read_text(core_root, consumer_root, contract, pointer)
+        markdown = [markdown_local_path(target) for target in markdown_targets(text)]
+        imports = AT_REFERENCE.findall(text)
+        targets, wrong_format = (markdown, imports) if agent == "codex" else (imports, markdown)
+        actual = [target.replace("\\", "/") for target in targets]
+        if wrong_format or actual != expected:
             yield Finding(
-                "consumer-entry", _rel(consumer_root, pointer), f"{agent} 진입 순서가 다르다: {actual}"
+                "consumer-entry", _rel(consumer_root, pointer), f"{agent} 진입 참조 형식·대상·순서를 확인한다: {actual}"
             )
 
     state = consumer_owned_path(core_root, consumer_root, contract, contract["state"], kind="file", canonical=True)
@@ -1446,7 +1454,7 @@ def consumer_findings(
                     severity="warning",
                 )
         if path.suffix == ".md":
-            for target in MD_LINK.findall(text):
+            for target in markdown_targets(text):
                 if error := _markdown_link_error(path, target):
                     yield Finding("consumer-markdown-links", rel, error)
 
