@@ -12,8 +12,9 @@ import os
 from pathlib import Path
 import re
 import stat
+from urllib.parse import unquote
 
-from .primitives import CheckError, markdown_local_path, markdown_targets, resolve_inside
+from .primitives import CheckError, markdown_targets, resolve_inside
 
 DOCUMENT_ROLES_BLOCK = re.compile(
     r"<!--\s*core-document-roles:v2\s*-->\s*```json\s*(.*?)```", re.S
@@ -173,7 +174,7 @@ def _route_targets(policy: Path) -> list[str]:
     matches = list(RULE_ROUTES_BLOCK.finditer(policy.read_text(encoding="utf-8")))
     if len(matches) != 1:
         raise CheckError(f"{policy}의 규칙 route 선언이 {len(matches)}개다")
-    return [markdown_local_path(target) for target in markdown_targets(matches[0].group(1))]
+    return [unquote(target) for target in markdown_targets(matches[0].group(1))]
 
 
 def routed_rule_paths(core_root: Path) -> list[str]:
@@ -188,7 +189,7 @@ def consumer_routed_rule_paths(core_root: Path, consumer_root: Path) -> list[str
     matches = list(RULE_ROUTES_BLOCK.finditer(text))
     if len(matches) != 1:
         raise CheckError("소비 정책의 규칙 route 선언 수가 다르다")
-    targets = [markdown_local_path(target) for target in markdown_targets(matches[0].group(1))]
+    targets = [unquote(target) for target in markdown_targets(matches[0].group(1))]
     invalid = [target for target in targets if not target.startswith(roots)] if roots else targets
     if invalid:
         raise CheckError(f"소비 route가 선언된 rule_roots 밖을 가리킨다: {invalid}")

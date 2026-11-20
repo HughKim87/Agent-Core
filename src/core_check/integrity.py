@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 import re
 import stat
 import subprocess
+from urllib.parse import unquote
 
 from .declarations import (
     consumer_contract,
@@ -28,7 +29,7 @@ from .declarations import (
     optional_capability_installation_state,
     routed_rule_paths,
 )
-from .primitives import CheckError, Finding, Report, markdown_local_path, markdown_targets, resolve_inside
+from .primitives import CheckError, Finding, Report, markdown_targets, resolve_inside
 from .registry import REGISTRY, register
 
 URI_LINK = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+://")
@@ -681,7 +682,9 @@ def _markdown_link_error(document: Path, target: str, *, absent_modules: tuple[P
     if URI_LINK.match(target):
         return f"지원하지 않는 링크 형식: {target}"
     try:
-        path = (document.parent / markdown_local_path(target)).resolve()
+        # A navigation link may name a section. Entry pointers and routes require
+        # the exact declared target, so only the navigation check drops fragments.
+        path = (document.parent / unquote(target.partition("#")[0])).resolve()
         if path.exists() or any(path.is_relative_to(module) for module in absent_modules):
             return None
     except (ValueError, OSError, RuntimeError):
@@ -1405,7 +1408,7 @@ def consumer_findings(
     for agent, value in contract["entry_pointers"].items():
         pointer = consumer_owned_path(core_root, consumer_root, contract, value, kind="file", canonical=True)
         text = consumer_read_text(core_root, consumer_root, contract, pointer)
-        markdown = [markdown_local_path(target) for target in markdown_targets(text)]
+        markdown = [unquote(target) for target in markdown_targets(text)]
         imports = AT_REFERENCE.findall(text)
         targets, wrong_format = (markdown, imports) if agent == "codex" else (imports, markdown)
         actual = [target.replace("\\", "/") for target in targets]

@@ -1528,7 +1528,8 @@ class ConsumerContractTest(unittest.TestCase):
         markdown, imports = codex.read_text("utf8"), claude.read_text("utf8")
         for a, b, invalid in ((markdown, imports, set()), (imports, imports, {codex.name}),
                               (markdown, markdown, {claude.name}),
-                              (markdown + "@CURRENT.md\n", imports, {codex.name})):
+                              (markdown + "@CURRENT.md\n", imports, {codex.name}),
+                              (markdown.replace("CURRENT.md)", "CURRENT.md#other)"), imports, {codex.name})):
             with self.subTest(invalid=invalid):
                 codex.write_text(a, encoding="utf8")
                 claude.write_text(b, encoding="utf8")
