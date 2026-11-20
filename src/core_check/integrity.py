@@ -522,6 +522,8 @@ def host_core_cleanliness(core_root: Path) -> tuple[bool, str]:
     except OSError as exc:
         return False, f"Git 상태를 실행할 수 없다: {exc}"
     if toplevel.returncode != 0:
+        if not os.path.lexists(core_root / ".git"):
+            return False, "Git top-level이 core_root와 다르다: 이 루트에 자체 .git이 없다"
         detail = toplevel.stderr.strip() or toplevel.stdout.strip() or "Git root 확인 실패"
         return False, detail[-500:]
     try:
