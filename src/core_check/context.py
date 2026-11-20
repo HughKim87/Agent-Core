@@ -16,7 +16,7 @@ from .declarations import (
     routed_rule_paths,
     walk_markdown,
 )
-from .primitives import CheckError, Finding, WARNING_REVIEW_GUIDANCE, fingerprint, resolve_inside
+from .primitives import CheckError, Finding, WARNING_REVIEW_GUIDANCE, empty_state_finding, fingerprint, resolve_inside
 
 STARTUP_BUDGET_CHARS = 20_000
 
@@ -89,10 +89,11 @@ def build(
     contract = consumer_contract(core_root, consumer_root)
     package = ContextPackage(budget=budget)
 
+    state_ref = _ref("consumer", consumer_root, resolve_inside(consumer_root, contract["state"]))
     package.required = [
         _ref("core", core_root, core_policy_path(core_root)),
         _ref("consumer", consumer_root, consumer_policy_path(core_root, consumer_root)),
-        _ref("consumer", consumer_root, resolve_inside(consumer_root, contract["state"])),
+        state_ref,
     ]
 
     available: dict[str, ContextRef] = {}
@@ -135,7 +136,10 @@ def build(
     for ref in package.required + package.optional:
         root = core_root if ref.scope == "core" else consumer_root
         if ref.scope == "consumer":
-            texts.append(consumer_read_text(core_root, consumer_root, contract, root / ref.path))
+            text = consumer_read_text(core_root, consumer_root, contract, root / ref.path)
+            if ref == state_ref and (empty := empty_state_finding(ref.path, text)):
+                raise CheckError(f"{empty.path}: {empty.message}")
+            texts.append(text)
         else:
             texts.append(resolve_inside(root, ref.path).read_text(encoding="utf-8"))
     joined = "\n".join(texts)

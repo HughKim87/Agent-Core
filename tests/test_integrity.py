@@ -1714,6 +1714,73 @@ class PublicInterfaceTest(unittest.TestCase):
         self.assertIn({"scope": "core", "path": "rules/sample.md"}, payload["optional"])
         self.assertEqual(len(payload["required"]), 3)
 
+    def test_renamed_pointer_is_rejected_even_when_declaration_matches(self) -> None:
+        args = ("--core-root", str(self.core), "--consumer-root", str(self.consumer))
+        policy = self.consumer / "PROJECT_RULES.md"
+        original = policy.read_text(encoding="utf-8")
+        for agent, filename in (("codex", "AGENTS.md"), ("claude", "CLAUDE.md")):
+            with self.subTest(agent=agent):
+                pointer = self.consumer / filename
+                alternate = self.consumer / f"{agent}-start.md"
+                pointer.rename(alternate)
+                policy.write_text(original.replace(f'"{filename}"', f'"{alternate.name}"'), encoding="utf-8")
+                code, payload = self._run(*args, "verify")
+                alternate.rename(pointer)
+                policy.write_text(original, encoding="utf-8")
+                self.assertEqual(code, self.cli.EXIT_UNUSABLE, payload)
+                self.assertIn(f"entry_pointers.{agent}", payload["error"])
+                self.assertIn(filename, payload["error"])
+
+    def test_context_rejects_empty_declared_state(self) -> None:
+        args = ("--core-root", str(self.core), "--consumer-root", str(self.consumer))
+        for content in ("", " \n\t"):
+            with self.subTest(content=content):
+                (self.consumer / "CURRENT.md").write_text(content, encoding="utf-8")
+                code, payload = self._run(*args, "context")
+                self.assertEqual(code, self.cli.EXIT_UNUSABLE, payload)
+                self.assertIn("CURRENT.md", payload["error"])
+                self.assertIn("비어", payload["error"])
+
+    def test_entry_files_require_active_references(self) -> None:
+        args = ("--core-root", str(self.core), "--consumer-root", str(self.consumer), "verify")
+        for name in ("AGENTS.md", "CLAUDE.md"):
+            pointer = self.consumer / name
+            body = pointer.read_text(encoding="utf-8")
+            for example in (f"<!--\n{body}\n-->", f"```text\n{body}\n```"):
+                with self.subTest(pointer=name, prefix=example[:4]):
+                    pointer.write_text(example, encoding="utf-8")
+                    code, report = self._run(*args)
+                    self.assertEqual(code, self.cli.EXIT_FINDINGS, report)
+                    self.assertTrue(any(f["check"] == "consumer-entry" and f["path"] == name
+                                        for f in report["findings"]))
+                    pointer.write_text(body + "\n" + example + "\n<!-- [old](obsolete.md) -->", encoding="utf-8")
+                    code, report = self._run(*args)
+                    self.assertEqual(code, self.cli.EXIT_OK, report)
+            pointer.write_text(body, encoding="utf-8")
+
+    def test_only_visible_route_owner_cells_select_rules(self) -> None:
+        args = ("--core-root", str(self.core), "--consumer-root", str(self.consumer))
+        for scope, policy, rule in (("core", self.core / "ROUTER.md", "rules/sample.md"),
+                                    ("consumer", self.consumer / "PROJECT_RULES.md", "rules/project.md")):
+            original = policy.read_text(encoding="utf-8")
+            row = next(line for line in original.splitlines() if f"({rule})" in line)
+            for replacement in (f"<!--\n{row}\n-->", f"```markdown\n{row}\n```", f"\n{row}",
+                                f"See [reference]({rule}).", f"| [trigger]({rule}) | disabled |",
+                                f"| example | `[rule]({rule})` |"):
+                with self.subTest(scope=scope, replacement=replacement):
+                    policy.write_text(original.replace(row, replacement), encoding="utf-8")
+                    code, payload = self._run(*args, "context", "--rule", f"{scope}:{rule}")
+                    self.assertEqual(code, self.cli.EXIT_UNUSABLE, payload)
+                    self.assertIn(f"{scope}:{rule}", payload["error"])
+            start = original.index("<!-- core-rule-routes:v1 -->")
+            end = original.index("<!-- /core-rule-routes:v1 -->") + len("<!-- /core-rule-routes:v1 -->")
+            example = original[start:end]
+            policy.write_text(original + "\n```markdown\n" + example + "\n```\n", encoding="utf-8")
+            code, payload = self._run(*args, "context", "--rule", f"{scope}:{rule}")
+            self.assertEqual(code, self.cli.EXIT_OK, payload)
+            self.assertEqual(payload["optional"], [{"scope": scope, "path": rule}])
+            policy.write_text(original, encoding="utf-8")
+
     def test_context_rejects_unrouted_rule_with_structured_error(self) -> None:
         code, payload = self._run(
             "--core-root",
@@ -1839,6 +1906,48 @@ class PublicInterfaceTest(unittest.TestCase):
         self.assertTrue(
             any(finding["check"] == "consumer-submodule" for finding in payload["findings"])
         )
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host 진단 fixture를 건너뛴다")
+    def test_host_verifies_git_quoted_path_in_named_submodule_section(self) -> None:
+        relative = "libs/C# Tools"
+        moved = self.consumer / relative
+        moved.parent.mkdir()
+        self.core.rename(moved)
+        for name, old, new in [
+            ("PROJECT_RULES.md", '"core_path": "core"', f'"core_path": "{relative}"'),
+            ("AGENTS.md", "core/ROUTER.md", "libs/C%23%20Tools/ROUTER.md"),
+            ("CLAUDE.md", "@core/ROUTER.md", f"@{relative}/ROUTER.md"),
+        ]:
+            path = self.consumer / name
+            path.write_text(path.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")
+        set_consumer_role(self.consumer, "host")
+        subprocess.run(["git", "config", "--file", ".gitmodules", "submodule.core.path", relative],
+                       cwd=self.consumer, check=True)
+        initialize_host_consumer_gitlink(moved, self.consumer)
+        args = ["--core-root", str(moved), "--consumer-root", str(self.consumer)]
+        code, payload = self._run(*args, "gate")
+        self.assertEqual(code, self.cli.EXIT_OK, payload)
+
+        modules = self.consumer / ".gitmodules"
+        modules.write_text(modules.read_text(encoding="utf-8").replace('[submodule "core"]', '[other]'),
+                           encoding="utf-8")
+        code, payload = self._run(*args, "verify")
+        self.assertEqual(code, self.cli.EXIT_FINDINGS, payload)
+        self.assertTrue(any(item["check"] == "consumer-submodule" and item["path"] == ".gitmodules"
+                            for item in payload["findings"]), payload)
+
+    def test_static_maintainer_checks_submodule_when_git_is_unavailable(self) -> None:
+        args = ["--core-root", str(self.core), "--consumer-root", str(self.consumer), "verify"]
+        modules = self.consumer / ".gitmodules"
+        with patch("core_check.integrity._run_host_git", side_effect=FileNotFoundError("git")):
+            code, payload = self._run(*args)
+            self.assertEqual(code, self.cli.EXIT_OK, payload)
+            for value in ("elsewhere", r'"\u0063ore"'):
+                with self.subTest(value=value):
+                    modules.write_text(f'[submodule "core"]\npath = {value}\n', encoding="utf-8")
+                    code, payload = self._run(*args)
+                    self.assertEqual(code, self.cli.EXIT_FINDINGS, payload)
+                    self.assertTrue(any(item["check"] == "consumer-submodule" for item in payload["findings"]))
 
     @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host 진단 fixture를 건너뛴다")
     def test_host_verify_diagnoses_malformed_gitmodules_as_finding(self) -> None:

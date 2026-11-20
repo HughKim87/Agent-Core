@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterable, Iterator
+import configparser
 from dataclasses import dataclass
 import hashlib
 import json
@@ -29,7 +30,7 @@ from .declarations import (
     optional_capability_installation_state,
     routed_rule_paths,
 )
-from .primitives import CheckError, Finding, Report, markdown_targets, resolve_inside
+from .primitives import CheckError, Finding, Report, empty_state_finding, markdown_targets, resolve_inside, visible_markdown_lines
 from .registry import REGISTRY, register
 
 URI_LINK = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]+://")
@@ -242,6 +243,51 @@ def _parse_head_entries(raw: str) -> dict[str, tuple[str, str]]:
     return entries
 
 
+def _submodule_paths(consumer_root: Path, text: str) -> set[str]:
+    """Parse the same checked .gitmodules bytes whose contents are fingerprinted."""
+    try:
+        result = _run_host_git(
+            consumer_root, "config", "--no-includes", "--null", "--file", "-",
+            "--get-regexp", r"^submodule\..+\.path$", input_text=text,
+        )
+    except FileNotFoundError:
+        # Static Maintainer inspection also supports plain and Git-quoted path
+        # declarations on systems without Git. Host revision checks still require Git.
+        config = configparser.RawConfigParser(delimiters=("=",), default_section="")
+        try:
+            config.read_string(text)
+            paths = set()
+            for section in config.sections():
+                if not re.fullmatch(r'submodule\s+"(?:[^"\\]|\\.)+"', section, re.IGNORECASE):
+                    continue
+                value = config.get(section, "path", fallback="").strip()
+                if value.startswith('"'):
+                    quoted = re.fullmatch(r'("(?:[^"\\\r\n]|\\["\\ntb])*")\s*(?:[#;].*)?', value)
+                    if not quoted:
+                        raise ValueError("지원되지 않는 Git 인용")
+                    value = json.loads(quoted.group(1))
+                else:
+                    value = re.split(r"[#;]", value, maxsplit=1)[0].rstrip()
+                    if any(char in value for char in ('"', "\\", "\n")):
+                        raise ValueError("정적 경로 판독에 Git 실행기가 필요하다")
+                if value:
+                    paths.add(Path(value).as_posix())
+            return paths
+        except (ValueError, configparser.Error) as exc:
+            raise CheckError("submodule 경로 선언을 해석할 수 없다") from exc
+    if result.returncode == 1 and not result.stderr:
+        return set()
+    if result.returncode != 0:
+        raise CheckError("submodule 경로 선언을 해석할 수 없다")
+    values = (item.partition("\n")[2] for item in result.stdout.split("\0"))
+    return {Path(value).as_posix() for value in values if value}
+
+
+def _require_submodule_path(consumer_root: Path, text: str, core_relative: str) -> None:
+    if Path(core_relative).as_posix() not in _submodule_paths(consumer_root, text):
+        raise CheckError("core_path와 일치하는 submodule path가 없다")
+
+
 def host_consumer_gitlink_fingerprint(
     core_root: Path,
     consumer_root: Path,
@@ -259,12 +305,7 @@ def host_consumer_gitlink_fingerprint(
         gitmodules_text = gitmodules_bytes.decode("utf-8")
     except (OSError, UnicodeError) as exc:
         raise CheckError(f"Core submodule 선언 파일을 읽을 수 없다: {exc}") from exc
-    paths = re.findall(
-        r"(?m)^\s*path\s*=\s*(.+?)\s*$",
-        gitmodules_text,
-    )
-    if core_relative not in {Path(value).as_posix() for value in paths}:
-        raise CheckError("core_path와 일치하는 submodule path가 없다")
+    _require_submodule_path(consumer_root, gitmodules_text, core_relative)
 
     try:
         toplevel = _run_host_git(consumer_root, "rev-parse", "--show-toplevel")
@@ -1015,8 +1056,6 @@ def _markdown_h2_sections(text: str) -> dict[str, list[_MarkdownSection]]:
     body: list[str] = []
     body_size = 0
     line_starts: list[tuple[int, int]] = []
-    fence: tuple[str, int] | None = None
-    in_comment = False
 
     def flush() -> None:
         if heading is not None:
@@ -1024,59 +1063,7 @@ def _markdown_h2_sections(text: str) -> dict[str, list[_MarkdownSection]]:
                 _MarkdownSection("".join(body), heading_line, line_starts)
             )
 
-    for line_number, line in enumerate(text.splitlines(keepends=True), 1):
-        content = line.rstrip("\r\n")
-        if fence is not None:
-            closing_match = re.fullmatch(r" {0,3}(`{3,}|~{3,})[ \t]*", content)
-            if (
-                closing_match
-                and closing_match.group(1)[0] == fence[0]
-                and len(closing_match.group(1)) >= fence[1]
-            ):
-                fence = None
-            continue
-        # Indented examples cannot declare state or open HTML comments.
-        if not in_comment and content.expandtabs(4).startswith("    "):
-            continue
-        opening_fence = re.match(r"^ {0,3}(`{3,}|~{3,})", content)
-        if not in_comment and opening_fence:
-            marker = opening_fence.group(1)
-            fence = (marker[0], len(marker))
-            continue
-        visible: list[str] = []
-        cursor = 0
-        while cursor < len(content):
-            if in_comment:
-                end = content.find("-->", cursor)
-                if end == -1:
-                    break
-                visible.append(" " * (end + 3 - cursor))
-                cursor = end + 3
-                in_comment = False
-            else:
-                token = re.search(r"`+|<!--", content[cursor:])
-                if token is None:
-                    visible.append(content[cursor:])
-                    break
-                start = cursor + token.start()
-                visible.append(content[cursor:start])
-                if token.group().startswith("`"):
-                    marker = token.group()
-                    span_end = re.search(r"(?<!`)" + re.escape(marker) + r"(?!`)", content[start + len(marker):])
-                    end = start + len(marker)
-                    if span_end is not None:
-                        end += span_end.end()
-                    visible.append(content[start:end])
-                    cursor = end
-                    continue
-                cursor = start
-                in_comment = True
-        content = "".join(visible)
-        fence_match = re.match(r"^ {0,3}(`{3,}|~{3,})", content)
-        if fence_match:
-            marker = fence_match.group(1)
-            fence = (marker[0], len(marker))
-            continue
+    for line_number, content in visible_markdown_lines(text):
         match = re.match(r"^ {0,3}##(?!#)\s+(.+?)\s*$", content)
         if match:
             flush()
@@ -1244,8 +1231,8 @@ def _state_findings(consumer_root: Path, state: Path, *, text: str | None = None
     if text is None:
         text = state.read_text(encoding="utf-8")
     rel = _rel(consumer_root, state)
-    if not text.strip():
-        yield Finding("consumer-state", rel, "상태 문서가 비어 있다. 재개에 필요한 정보를 제공한다")
+    if empty := empty_state_finding(rel, text):
+        yield empty
         return
     sections = _markdown_h2_sections(text)
     for section in STATE_SECTIONS:
@@ -1405,11 +1392,15 @@ def consumer_findings(
     policy = consumer_policy_path(core_root, consumer_root).relative_to(consumer_root).as_posix()
     expected = [f"{core_rel}/{core_policy}", policy, Path(contract["state"]).as_posix()]
     started("consumer-entry")
+    pointer_links: dict[str, list[str]] = {}
     for agent, value in contract["entry_pointers"].items():
         pointer = consumer_owned_path(core_root, consumer_root, contract, value, kind="file", canonical=True)
         text = consumer_read_text(core_root, consumer_root, contract, pointer)
-        markdown = [unquote(target) for target in markdown_targets(text)]
-        imports = AT_REFERENCE.findall(text)
+        visible = "\n".join(line for _, line in visible_markdown_lines(text, hide_code_spans=True))
+        links = markdown_targets(visible)
+        pointer_links[_rel(consumer_root, pointer)] = links
+        markdown = [unquote(target) for target in links]
+        imports = AT_REFERENCE.findall(visible)
         targets, wrong_format = (markdown, imports) if agent == "codex" else (imports, markdown)
         actual = [target.replace("\\", "/") for target in targets]
         if wrong_format or actual != expected:
@@ -1438,7 +1429,6 @@ def consumer_findings(
         except CheckError:
             yield Finding("consumer-rule-routes", route, "고아 route 또는 소비 경계 위반")
 
-    pointers = {Path(value).as_posix() for value in contract["entry_pointers"].values()}
     started("consumer-document-headers")
     started("consumer-markdown-links")
     for path in files:
@@ -1447,7 +1437,7 @@ def consumer_findings(
             text = consumer_read_text(core_root, consumer_root, contract, path)
         except UnicodeError:
             text = ""
-        if path.suffix == ".md" and rel not in pointers:
+        if path.suffix == ".md" and rel not in pointer_links:
             missing = [header for header in DOC_HEADERS if header not in text]
             if missing:
                 yield Finding(
@@ -1457,7 +1447,8 @@ def consumer_findings(
                     severity="warning",
                 )
         if path.suffix == ".md":
-            for target in markdown_targets(text):
+            links = pointer_links[rel] if rel in pointer_links else markdown_targets(text)
+            for target in links:
                 if error := _markdown_link_error(path, target):
                     yield Finding("consumer-markdown-links", rel, error)
 
@@ -1474,11 +1465,11 @@ def consumer_findings(
                 ".gitmodules",
                 f"UTF-8 submodule 선언을 읽을 수 없다: {exc}",
             )
-            gitmodules_text = ""
-        paths = re.findall(r"(?m)^\s*path\s*=\s*(.+?)\s*$", gitmodules_text)
-        normalized = {Path(value).as_posix() for value in paths}
-        if Path(contract["core_path"]).as_posix() not in normalized:
-            yield Finding("consumer-submodule", ".gitmodules", "core_path와 일치하는 submodule path가 없다")
+        else:
+            try:
+                _require_submodule_path(consumer_root, gitmodules_text, str(contract["core_path"]))
+            except CheckError as exc:
+                yield Finding("consumer-submodule", ".gitmodules", str(exc))
     if contract["consumer_role"] == "host":
         linked, detail = host_consumer_gitlink_status(
             core_root,

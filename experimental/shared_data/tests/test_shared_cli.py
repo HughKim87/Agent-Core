@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -136,6 +138,39 @@ def configure_consumer(
 
 
 class PublicSharedDataCliTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("git") and (shutil.which("powershell") or shutil.which("pwsh")),
+                         "문서의 PowerShell/Git 예시를 실행할 도구가 없다")
+    def test_powershell_guide_preserves_unicode_request_and_result(self) -> None:
+        guide = (ROOT / "docs/CONSUMER_GUIDE.md").read_text(encoding="utf-8")
+        section = guide.split("## 6A.", 1)[1].split("\n## ", 1)[0]
+        setup, invoke = re.findall(r"```powershell\n(.*?)\n```", section, re.S)
+        purpose = "재고 검토"
+        request = json.dumps({"operation": "context.build", "arguments": {"purpose": purpose}},
+                             ensure_ascii=False)
+        setup, info = setup.replace("<CORE_PATH>", "core").rsplit("\n", 1)
+        invoke = invoke.replace('{"operation":"source.list","arguments":{}}', request)
+        with tempfile.TemporaryDirectory(prefix="Core guide ") as directory:
+            host = Path(directory)
+            prepared = self.run_cli(host, consumer_role="host", write=True,
+                                    request={"operation": "initialize", "arguments": {}},
+                                    storage_root="runtime/agent-core")
+            self.assertEqual(prepared.returncode, 0, prepared.stdout)
+            script = (
+                "$ErrorActionPreference = 'Stop'\n" + setup + "\n"
+                f"$info = ({info}) | ConvertFrom-Json\n"
+                "if ($LASTEXITCODE -ne 0 -or -not $info.ok) { exit 10 }\n"
+                f"$result = & {{\n{invoke}\n}} | ConvertFrom-Json\n"
+                "if ($LASTEXITCODE -ne 0 -or -not $result.ok) { exit 11 }\n"
+                "[Console]::Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($result.result.purpose)))"
+            )
+            encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+            for shell in filter(None, (shutil.which("powershell"), shutil.which("pwsh"))):
+                with self.subTest(shell=shell):
+                    executed = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+                                              cwd=host, capture_output=True, check=False)
+                    self.assertEqual(executed.returncode, 0, (executed.stdout, executed.stderr))
+                    self.assertEqual(base64.b64decode(executed.stdout, validate=True).decode("utf-8"), purpose)
+
     def test_local_source_public_arguments_become_observation_and_hash(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)

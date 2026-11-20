@@ -228,10 +228,23 @@ Core 내부 Python entry를 import한 뒤에 시작하는 관찰 기준선만으
 
 ```powershell
 $coreRoot = (Resolve-Path -LiteralPath '<CORE_PATH>').Path
-$coreJson = ConvertTo-Json $coreRoot -Compress
-$srcJson = ConvertTo-Json (Join-Path $coreRoot 'src') -Compress
-$bootstrap = "import runpy,sys;sys.path[:0]=[$coreJson,$srcJson];runpy.run_module('experimental.shared_data',run_name='__main__',alter_sys=True)"
-python -B -I -c $bootstrap info
+function Invoke-SharedData {
+    param([string[]]$RuntimeArgs, [string]$Request)
+    $bootstrap = "import os,runpy,sys;root=sys.argv.pop(1);sys.path[:0]=[root,os.path.join(root,'src')];runpy.run_module('experimental.shared_data',run_name='__main__',alter_sys=True)"
+    $previousConsoleEncoding = [Console]::OutputEncoding
+    try {
+        $OutputEncoding = [Text.UTF8Encoding]::new($false)
+        [Console]::OutputEncoding = $OutputEncoding
+        if ($PSBoundParameters.ContainsKey('Request')) {
+            $Request | python -B -I -c $bootstrap $coreRoot @RuntimeArgs
+        } else {
+            python -B -I -c $bootstrap $coreRoot @RuntimeArgs
+        }
+    } finally {
+        [Console]::OutputEncoding = $previousConsoleEncoding
+    }
+}
+Invoke-SharedData -RuntimeArgs @('info')
 ```
 
 `info`의 정적 discovery 조건은 [호환성 §3A](COMPATIBILITY.md#3a-선택-runtime-공개-경계)를 따른다. dirty Core에서도 조회할 수 있지만 기능 소비·가용성·완료의 성공 근거는 아니다. 실제 호출은 소비 root·Runtime storage root·보호 경계를 명시하고 request v1 JSON 하나를 stdin으로 보낸다.
@@ -242,11 +255,10 @@ python -B -I -c $bootstrap info
 
 ```powershell
 $request = '{"operation":"source.list","arguments":{}}'
-$request | python -B -I -c $bootstrap `
-  --consumer-root . `
-  --storage-root runtime/agent-core `
-  --protected-path private-material `
-  invoke
+Invoke-SharedData -Request $request -RuntimeArgs @(
+    '--consumer-root', '.', '--storage-root', 'runtime/agent-core',
+    '--protected-path', 'private-material', 'invoke'
+)
 ```
 
 - 읽기 호출은 `--write` 없이 실행한다.

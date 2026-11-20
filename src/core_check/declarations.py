@@ -14,7 +14,7 @@ import re
 import stat
 from urllib.parse import unquote
 
-from .primitives import CheckError, markdown_targets, resolve_inside
+from .primitives import CheckError, markdown_targets, resolve_inside, visible_markdown_lines
 
 DOCUMENT_ROLES_BLOCK = re.compile(
     r"<!--\s*core-document-roles:v2\s*-->\s*```json\s*(.*?)```", re.S
@@ -25,6 +25,7 @@ MODULE_LAYERS_BLOCK = re.compile(
 RULE_ROUTES_BLOCK = re.compile(
     r"<!--\s*core-rule-routes:v1\s*-->(.*?)<!--\s*/core-rule-routes:v1\s*-->", re.S
 )
+RULE_ROUTES_MARKER = re.compile(r" {0,3}<!--[ \t]*/?core-rule-routes:v1[ \t]*-->[ \t]*")
 CONSUMER_CONTRACT_BLOCK = re.compile(
     r"<!--\s*agent-core-consumer:v1\s*-->\s*```json\s*(.*?)```"
     r"\s*<!--\s*/agent-core-consumer:v1\s*-->",
@@ -170,15 +171,33 @@ def role_path(core_root: Path, role: str) -> Path:
     raise CheckError(f"Core가 소유하지 않는 문서 역할이다: {role}")
 
 
-def _route_targets(policy: Path) -> list[str]:
-    matches = list(RULE_ROUTES_BLOCK.finditer(policy.read_text(encoding="utf-8")))
+def _route_targets(text: str, policy: Path) -> list[str]:
+    visible = "\n".join(line for _, line in visible_markdown_lines(
+        text, comment_marker=RULE_ROUTES_MARKER, hide_code_spans=True
+    ))
+    matches = list(RULE_ROUTES_BLOCK.finditer(visible))
     if len(matches) != 1:
         raise CheckError(f"{policy}의 규칙 route 선언이 {len(matches)}개다")
-    return [unquote(target) for target in markdown_targets(matches[0].group(1))]
+    targets: list[str] = []
+    in_table = False
+    previous_columns = 0
+    for line in matches[0].group(1).splitlines():
+        row = line.strip().removeprefix("|").removesuffix("|")
+        cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", row)]
+        if len(cells) < 2:
+            in_table = False
+        elif all(re.fullmatch(r":?-+:?", cell) for cell in cells):
+            in_table = previous_columns == len(cells)
+        elif in_table:
+            targets.extend(unquote(target) for target in markdown_targets(cells[1]))
+        previous_columns = len(cells)
+    return targets
 
 
 def routed_rule_paths(core_root: Path) -> list[str]:
-    return [target for target in _route_targets(core_policy_path(core_root)) if target.startswith("rules/")]
+    policy = core_policy_path(core_root)
+    targets = _route_targets(policy.read_text(encoding="utf-8"), policy)
+    return [target for target in targets if target.startswith("rules/")]
 
 
 def consumer_routed_rule_paths(core_root: Path, consumer_root: Path) -> list[str]:
@@ -186,10 +205,7 @@ def consumer_routed_rule_paths(core_root: Path, consumer_root: Path) -> list[str
     roots = tuple(f"{Path(value).as_posix().rstrip('/')}/" for value in contract["rule_roots"])
     policy = consumer_root / document_roles(core_root)["consumer_policy"]
     text = consumer_read_text(core_root, consumer_root, contract, policy)
-    matches = list(RULE_ROUTES_BLOCK.finditer(text))
-    if len(matches) != 1:
-        raise CheckError("소비 정책의 규칙 route 선언 수가 다르다")
-    targets = [unquote(target) for target in markdown_targets(matches[0].group(1))]
+    targets = _route_targets(text, policy)
     invalid = [target for target in targets if not target.startswith(roots)] if roots else targets
     if invalid:
         raise CheckError(f"소비 route가 선언된 rule_roots 밖을 가리킨다: {invalid}")
@@ -369,8 +385,12 @@ def consumer_contract(core_root: Path, consumer_root: Path) -> dict[str, object]
     state = owned_declaration(contract.get("state"), "state", "file")
 
     pointers = contract.get("entry_pointers")
-    if not isinstance(pointers, dict) or set(pointers) != {"codex", "claude"}:
+    expected_pointers = {"codex": "AGENTS.md", "claude": "CLAUDE.md"}
+    if not isinstance(pointers, dict) or pointers.keys() != expected_pointers.keys():
         raise CheckError("entry_pointers는 codex와 claude 경로를 가져야 한다")
+    for agent, filename in expected_pointers.items():
+        if not isinstance(pointers[agent], str) or Path(pointers[agent]).as_posix() != filename:
+            raise CheckError(f"entry_pointers.{agent}는 소비 저장소 루트의 {filename}여야 한다")
     pointer_paths = [
         owned_declaration(value, f"entry_pointers.{agent}", "file")
         for agent, value in pointers.items()

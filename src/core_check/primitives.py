@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 import hashlib
 from pathlib import Path
@@ -21,6 +22,72 @@ _MARKDOWN_LINK = re.compile(
 
 def markdown_targets(text: str) -> list[str]:
     return [value[1:-1] if value.startswith("<") else value for value in _MARKDOWN_LINK.findall(text)]
+
+
+def visible_markdown_lines(
+    text: str, *, comment_marker: re.Pattern[str] | None = None, hide_code_spans: bool = False,
+) -> Iterator[tuple[int, str]]:
+    """Yield visible lines with original numbers; retain requested declaration markers."""
+    fence: tuple[str, int] | None = None
+    in_comment = False
+    for line_number, line in enumerate(text.splitlines(keepends=True), 1):
+        content = line.rstrip("\r\n")
+        if fence is not None:
+            closing_match = re.fullmatch(r" {0,3}(`{3,}|~{3,})[ \t]*", content)
+            if (
+                closing_match
+                and closing_match.group(1)[0] == fence[0]
+                and len(closing_match.group(1)) >= fence[1]
+            ):
+                fence = None
+            continue
+        # Indented examples cannot declare state or open HTML comments.
+        if not in_comment and content.expandtabs(4).startswith("    "):
+            continue
+        opening_fence = re.match(r"^ {0,3}(`{3,}|~{3,})", content)
+        if not in_comment and opening_fence:
+            marker = opening_fence.group(1)
+            fence = (marker[0], len(marker))
+            continue
+        if comment_marker and not in_comment and comment_marker.fullmatch(content):
+            yield line_number, content
+            continue
+        visible: list[str] = []
+        cursor = 0
+        while cursor < len(content):
+            if in_comment:
+                end = content.find("-->", cursor)
+                if end == -1:
+                    break
+                visible.append(" " * (end + 3 - cursor))
+                cursor = end + 3
+                in_comment = False
+            else:
+                token = re.search(r"`+|<!--", content[cursor:])
+                if token is None:
+                    visible.append(content[cursor:])
+                    break
+                start = cursor + token.start()
+                visible.append(content[cursor:start])
+                if token.group().startswith("`"):
+                    marker = token.group()
+                    span_end = re.search(r"(?<!`)" + re.escape(marker) + r"(?!`)", content[start + len(marker):])
+                    end = start + len(marker)
+                    if span_end is not None:
+                        end += span_end.end()
+                    span = content[start:end]
+                    visible.append(" " * len(span) if hide_code_spans and span_end else span)
+                    cursor = end
+                    continue
+                cursor = start
+                in_comment = True
+        content = "".join(visible)
+        fence_match = re.match(r"^ {0,3}(`{3,}|~{3,})", content)
+        if fence_match:
+            marker = fence_match.group(1)
+            fence = (marker[0], len(marker))
+            continue
+        yield line_number, content
 
 
 WARNING_REVIEW_GUIDANCE = (
@@ -55,6 +122,12 @@ class Finding:
             "message": self.message,
             "severity": self.severity,
         }
+
+
+def empty_state_finding(path: str, text: str) -> Finding | None:
+    if text.strip():
+        return None
+    return Finding("consumer-state", path, "상태 문서가 비어 있다. 재개에 필요한 정보를 제공한다")
 
 
 @dataclass
