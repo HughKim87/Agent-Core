@@ -1431,13 +1431,23 @@ class ConsumerContractTest(unittest.TestCase):
         build_clean(mirror)
         initialize_clean_git(mirror)
         (self.core / "data.json").write_text('{"dirty": true}\n', encoding="utf-8")
-        with patch.dict(
-            os.environ,
-            {"GIT_DIR": str(mirror / ".git"), "GIT_WORK_TREE": str(mirror)},
-        ):
-            findings = run_consumer(self.core, self.consumer).findings
-        finding = [f for f in findings if f.check == "consumer-core-read-only"][0]
-        self.assertIn("data.json", finding.message)
+        # Give the checker real Git overrides without changing the test runner's environment.
+        env = dict(os.environ, GIT_DIR=str(mirror / ".git"), GIT_WORK_TREE=str(mirror),
+                   PYTHONPATH=str(ROOT / "src"))
+        probe = (
+            "import json, sys\n"
+            "from pathlib import Path\n"
+            "from core_check.integrity import run_consumer\n"
+            "report = run_consumer(Path(sys.argv[1]), Path(sys.argv[2]))\n"
+            "print(json.dumps(report.as_dict()))\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-B", "-c", probe, str(self.core), str(self.consumer)],
+            env=env, capture_output=True, text=True, check=True,
+        )
+        findings = json.loads(result.stdout)["findings"]
+        messages = [f["message"] for f in findings if f["check"] == "consumer-core-read-only"]
+        self.assertTrue(any("data.json" in message for message in messages), messages)
 
     @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
     def test_host_core_must_be_its_own_git_toplevel(self) -> None:
