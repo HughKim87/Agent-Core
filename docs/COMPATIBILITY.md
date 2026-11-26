@@ -19,6 +19,14 @@
   "required_dependencies": [],
   "optional_dependencies": ["git"],
   "optional_capabilities": {
+    "evidence_lookup": {
+      "version": 1,
+      "entry_module": "experimental.evidence_lookup",
+      "commands": ["info", "invoke"],
+      "request_schema": "experimental/evidence_lookup/schemas/request-v1.schema.json",
+      "result_schema": "experimental/evidence_lookup/schemas/result-v1.schema.json",
+      "schemas": ["experimental/evidence_lookup/schemas/request-v1.schema.json", "experimental/evidence_lookup/schemas/result-v1.schema.json"]
+    },
     "shared_data": {
       "version": 1,
       "entry_module": "experimental.shared_data",
@@ -76,6 +84,8 @@
 - 내부 Python module 경로와 참고 구현의 이름은 공개 계약이 아니다.
 - 실제 Runtime 데이터와 결과는 소비 저장소가 소유하며 Core 저장소에 쓰지 않는다.
 - 선택 기능이 없으면 필수 gate는 `not_applicable`로 처리하고 계속 성립해야 한다.
+
+`evidence_lookup` v1은 Obsidian의 Markdown 역링크와 Graphify의 Python 심볼 관계를 Consumer가 필요할 때 조회한다. 두 도구의 설치와 선택은 서로 독립적이다. [설치·호출·대체 검색 계약](EVIDENCE_LOOKUP.md)
 
 `shared_data`는 격리 모드(`python -B -I`)에서 실행 중인 Core root와 `src`만 module 검색 경로 맨 앞에 넣고 선언된 `experimental.shared_data` entry의 `info|invoke`를 실행하는 bootstrap만 공개한다. `invoke`는 JSON request v1을 stdin으로 하나 받아 JSON result v1을 stdout으로 하나 반환한다. 요청·결과 schema는 envelope와 operation 열거를, payload schema는 저장 구조를 소유한다. operation별 arguments·기본값·성공 결과·쓰기와 승인 전제는 [저장 공통 명세](../experimental/shared_data/RECORD_STORAGE_CONTRACT.md#8-공개-호출-공통-명세), [지식·Lifecycle 명세](../experimental/shared_data/KNOWLEDGE_LIFECYCLE_CONTRACT.md#7-공개-operation-명세), [Evidence Context 명세](../experimental/shared_data/EVIDENCE_CONTEXT_CONTRACT.md#5-공개-operation-명세), [작업 상태 명세](../experimental/shared_data/WORK_STATE_CONTRACT.md#6-공개-operation-명세)가 소유한다. bare module 실행과 `experimental.shared_data` 아래 구현 모듈의 직접 import는 공개 계약이 아니다.
 

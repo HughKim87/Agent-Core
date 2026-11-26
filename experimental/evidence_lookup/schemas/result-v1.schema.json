@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "backend", "execution_mode", "fallback_reason", "partial", "truncated", "result"],
+      "properties": {
+        "ok": {"const": true},
+        "backend": {"enum": ["obsidian", "graphify", "markdown", "python"]},
+        "execution_mode": {"enum": ["cold_obsidian", "new_index", "reused_index", "markdown_fallback", "python_fallback"]},
+        "fallback_reason": {"type": ["string", "null"]},
+        "partial": {"type": "boolean"},
+        "truncated": {"type": "boolean"},
+        "result": {"type": ["array", "string"]}
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "error"],
+      "properties": {"ok": {"const": false}, "error": {"type": "string"}}
+    }
+  ]
+}
