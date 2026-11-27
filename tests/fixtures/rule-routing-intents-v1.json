@@ -231,6 +231,56 @@
       "reason": "작업 인계는 인수인계 규칙의 명시된 trigger다."
     },
     {
+      "id": "compare-session-colloquial",
+      "kind": "colloquial",
+      "utterance": "남은 일을 여기서 이어가는 게 나을까, 새 대화로 옮기는 게 나을까?",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/handoff.md"
+      ],
+      "forbidden_owners": [
+        "rules/failure-records.md"
+      ],
+      "reason": "요청한 것은 세션 선택 비교이며 실패 후 재시도 판단은 없다."
+    },
+    {
+      "id": "compare-session-after-retry",
+      "kind": "mid-task",
+      "utterance": "앞에서 실패 원인과 다음 시도 가능 여부는 이미 확인했어. 그 작업을 여기서 할지 새 대화에서 할지 장단점만 알려줘.",
+      "prior_owners": [
+        "rules/failure-records.md"
+      ],
+      "expected_owners": [
+        "rules/handoff.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "이미 읽은 실패 처리에 더해 명시적으로 요청한 세션 비교만 새로 선택한다."
+    },
+    {
+      "id": "compare-session-and-retry",
+      "kind": "composed",
+      "utterance": "같은 원인으로 실패한 다음 시도를 지금 중단해야 하는지 판단하고, 나중에 재개할 때 여기와 새 대화 중 어디가 나은지도 비교해줘.",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/failure-records.md",
+        "rules/handoff.md"
+      ],
+      "forbidden_owners": [],
+      "reason": "실패 후 재시도 판단과 사용자가 요청한 세션 비교는 각각의 소유자를 갖는다."
+    },
+    {
+      "id": "compare-session-status-near-miss",
+      "kind": "near-miss",
+      "utterance": "이 세션에서 지금까지 무엇을 마쳤는지 말해줘.",
+      "prior_owners": [],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/handoff.md",
+        "rules/failure-records.md"
+      ],
+      "reason": "세션 내 진행 상황 설명만 요청했다. 세션 선택·인계·상태 변경·실패 판정에 해당하지 않는다."
+    },
+    {
       "id": "handoff-colloquial",
       "kind": "colloquial",
       "utterance": "지금 상황 좀 남겨놔",
