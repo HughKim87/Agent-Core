@@ -364,12 +364,19 @@ def python_call_sites(files, symbol):
         except SyntaxError:
             incomplete = True
             continue
+        nodes = list(ast.walk(tree))
+        imported_names = {
+            item.asname
+            for node in nodes if isinstance(node, ast.ImportFrom)
+            for item in node.names if item.name == name and item.asname is not None
+        }
+        direct_names = {name} | imported_names
         lines = set()
-        for call in ast.walk(tree):
+        for call in nodes:
             if not isinstance(call, ast.Call):
                 continue
             fn = call.func
-            if (isinstance(fn, ast.Name) and fn.id == name) or (
+            if (isinstance(fn, ast.Name) and fn.id in direct_names) or (
                 isinstance(fn, ast.Attribute) and fn.attr == name
             ):
                 lines.add(call.lineno)

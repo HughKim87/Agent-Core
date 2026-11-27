@@ -29,6 +29,19 @@ class EvidenceLookupTests(unittest.TestCase):
         self.assertEqual(matches, [{"path": "src/example.py", "line": 2}, {"path": "src/example.py", "line": 3}])
         self.assertTrue(incomplete)
 
+    def test_direct_python_call_candidates_include_renamed_imports(self):
+        files = {
+            "src/caller.py": b"from .context import build as build_context\n"
+                             b"from .other import setup as prepare\n"
+                             b"build_context()\n"
+                             b"api.build_context()\n"
+                             b"prepare()\n",
+            "src/unrelated.py": b"build_context()\n",
+        }
+        matches, incomplete = backends.python_call_sites(files, "core_check.context.build")
+        self.assertEqual(matches, [{"path": "src/caller.py", "line": 3}])
+        self.assertFalse(incomplete)
+
     def test_new_core_scope_is_limited_to_explicit_maintainer_python_files(self):
         root = Path("workspace").resolve()
         target = "experimental/shared_data/cli.py"
