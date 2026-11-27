@@ -73,6 +73,7 @@ L7이 없어도 Core import, Core 자체 `verify`, Core 자체 `gate`가 성립�
     "experimental/evidence_lookup/__init__.py",
     "experimental/evidence_lookup/__main__.py",
     "experimental/evidence_lookup/backends.py",
+    "experimental/evidence_lookup/obsidian_session.py",
     "experimental/shared_data/__init__.py",
     "experimental/shared_data/__main__.py",
     "experimental/shared_data/cli.py",

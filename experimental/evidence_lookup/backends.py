@@ -5,7 +5,6 @@ import ast
 import ctypes as c
 from ctypes import wintypes as w
 import hashlib
-import json
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -226,61 +225,6 @@ def matches_graph_symbol(symbol, output, files):
                 return qualified == symbol or qualified.endswith("." + symbol)
         pending.extend((child, parents) for child in ast.iter_child_nodes(node))
     return False
-
-
-def obsidian(files, note, executable, runtime):
-    require(os.name == 'nt', 'OBSIDIAN_WINDOWS_ONLY')
-    executable = Path(executable)
-    require(executable.name.casefold() == 'obsidian.exe', 'OBSIDIAN_EXECUTABLE_REQUIRED')
-    cli = executable.with_suffix('.com')
-    no_links(executable)
-    no_links(cli)
-    vault = runtime / 'vault'
-    profile = runtime / 'profile'
-    profile.mkdir()
-    write_sources(vault, files)
-    settings = vault / ".obsidian"
-    settings.mkdir()
-    for name, value in {
-        "app.json": {"checkForUpdates": False},
-        "community-plugins.json": [],
-        "core-plugins.json": ["backlink", "outgoing-link"],
-    }.items():
-        (settings / name).write_text(json.dumps(value), encoding="utf-8")
-    vault_id = "evidence" + uuid.uuid4().hex
-    (profile / "obsidian.json").write_text(json.dumps({
-        "vaults": {vault_id: {"path": str(vault), "ts": 0, "open": True}},
-        "cli": True, "updateDisabled": True,
-    }), encoding="utf-8")
-    env = isolated_env(runtime)
-    env["PATH"] = str(executable.parent) + os.pathsep + env["PATH"]
-    owned = OwnedProcess(
-        [str(executable), "--user-data-dir=" + str(profile), "--disable-background-networking",
-         "--disable-component-update", "--no-first-run"], vault, env, runtime / "app.log",
-    )
-    command = [str(cli), "vault=" + vault_id]
-    try:
-        deadline = time.monotonic() + 25
-        while time.monotonic() < deadline:
-            require(owned.process.poll() is None, "OBSIDIAN_START_FAILED")
-            try:
-                output = run_bounded(command + ["vault", "info=path"], vault, env, 5, runtime)
-            except Rejected:
-                continue
-            if os.path.normcase(output.decode("utf-8").strip()) == os.path.normcase(str(vault)):
-                break
-            time.sleep(0.2)
-        else:
-            raise Rejected("OBSIDIAN_BINDING_TIMEOUT")
-        output = run_bounded(command + ["backlinks", "path=" + note], vault, env, 20, runtime)
-        result = output.decode("utf-8")
-        require(not any(error in result for error in ("Error:", "Vault not found.", "CLI is unable")),
-                "OBSIDIAN_QUERY_FAILED")
-        paths = sorted({line.strip().replace(chr(92), '/') for line in result.splitlines() if line.strip()})
-        require(all(path in files and path != note for path in paths), 'OBSIDIAN_RESULT_OUTSIDE_SCOPE')
-        return paths
-    finally:
-        owned.close()
 
 
 def write_sources(destination, files):

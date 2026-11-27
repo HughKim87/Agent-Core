@@ -17,7 +17,7 @@ from core_check.runtime_boundary import (  # noqa: E402
     prepare_consumer_runtime_boundary, require_consumer_runtime_boundary_unchanged,
     require_static_discovery_unchanged,
 )
-from . import backends  # noqa: E402
+from . import backends, obsidian_session  # noqa: E402
 
 CAPABILITY = "evidence_lookup"
 SCHEMAS = "experimental/evidence_lookup/schemas/"
@@ -125,6 +125,23 @@ def invoke(consumer_root, request):
     backends.require(executable is None or (isinstance(executable, str) and Path(executable).is_absolute()),
                      "ABSOLUTE_EXECUTABLE_REQUIRED")
     backends.no_links(consumer_root)
+    obsidian_request = None
+    obsidian_error = None
+    if tool == "obsidian" and executable is not None:
+        try:
+            obsidian_request = obsidian_session.Request(executable)
+        except (backends.Rejected, OSError, ValueError) as exc:
+            obsidian_error = getattr(exc, "code", type(exc).__name__)
+    try:
+        return lookup_with_boundary(consumer_root, cache, tool, target, roots, executable,
+                                    include_call_sites, obsidian_request, obsidian_error)
+    finally:
+        if obsidian_request is not None:
+            obsidian_request.close()
+
+
+def lookup_with_boundary(consumer_root, cache, tool, target, roots, executable, include_call_sites,
+                         obsidian_request, obsidian_error):
     boundary = prepare_consumer_runtime_boundary(CORE, consumer_root, capability_id=CAPABILITY,
                                                  write_paths=(cache,))
     try:
@@ -133,15 +150,15 @@ def invoke(consumer_root, request):
         data = {path: snapshot[0] for path, snapshot in snapshots.items()}
         if tool == "obsidian":
             backends.require(target in data, "NOTE_NOT_IN_SCOPE")
-        reason = "CORE_FILE_LIST_UNAVAILABLE" if partial else "TOOL_NOT_CONFIGURED"
+        reason = "CORE_FILE_LIST_UNAVAILABLE" if partial else obsidian_error or "TOOL_NOT_CONFIGURED"
         result = None
         mode = None
-        if executable is not None and not partial:
+        if executable is not None and not partial and (tool == "graphify" or obsidian_request is not None):
             local_cache = cache_directory(boundary)
             try:
                 with TemporaryDirectory(dir=local_cache, prefix=f"{tool}-") as temp:
                     if tool == "obsidian":
-                        result = backends.obsidian(data, target, executable, Path(temp))
+                        result = obsidian_request.lookup(data, target, Path(temp))
                         mode = "cold_obsidian"
                     else:
                         result, mode = backends.graphify(data, target, executable, Path(temp), local_cache)
