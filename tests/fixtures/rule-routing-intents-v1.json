@@ -236,12 +236,12 @@
       "utterance": "남은 일을 여기서 이어가는 게 나을까, 새 대화로 옮기는 게 나을까?",
       "prior_owners": [],
       "expected_owners": [
-        "rules/handoff.md"
-      ],
-      "forbidden_owners": [
         "rules/failure-records.md"
       ],
-      "reason": "요청한 것은 세션 선택 비교이며 실패 후 재시도 판단은 없다."
+      "forbidden_owners": [
+        "rules/handoff.md"
+      ],
+      "reason": "사용자가 세션 선택을 물으면 공통 권고 기준을 적용한다. 인계 실행은 요청하지 않았다."
     },
     {
       "id": "compare-session-after-retry",
@@ -250,23 +250,80 @@
       "prior_owners": [
         "rules/failure-records.md"
       ],
-      "expected_owners": [
+      "expected_owners": [],
+      "forbidden_owners": [
         "rules/handoff.md"
       ],
-      "forbidden_owners": [],
-      "reason": "이미 읽은 실패 처리에 더해 명시적으로 요청한 세션 비교만 새로 선택한다."
+      "reason": "재시도 판단에서 이미 읽은 소유자가 수동 세션 비교 기준도 소유한다."
     },
     {
       "id": "compare-session-and-retry",
-      "kind": "composed",
+      "kind": "initial",
       "utterance": "같은 원인으로 실패한 다음 시도를 지금 중단해야 하는지 판단하고, 나중에 재개할 때 여기와 새 대화 중 어디가 나은지도 비교해줘.",
+      "prior_owners": [],
+      "expected_owners": [
+        "rules/failure-records.md"
+      ],
+      "forbidden_owners": [
+        "rules/handoff.md"
+      ],
+      "reason": "공통 소유자가 실패 후 재시도와 향후 재개 위치를 판단한다. 상태 기록이나 인계 실행은 요청하지 않았다."
+    },
+    {
+      "id": "compare-session-repeated-correction",
+      "kind": "mid-task",
+      "utterance": "지난번에 이미 원본 비율을 유지하라고 바로잡았는데, 이번 수정본도 또 잘렸어. 이 요구는 처음부터 그대로였어.",
+      "prior_owners": [
+        "rules/work-contract.md"
+      ],
+      "expected_owners": [
+        "rules/failure-records.md"
+      ],
+      "forbidden_owners": [
+        "rules/handoff.md"
+      ],
+      "reason": "사용자가 세션을 언급하지 않아도 교정 뒤 실제 결과에서 같은 요구가 누락돼 세션 선택을 검토한다."
+    },
+    {
+      "id": "compare-session-missing-context",
+      "kind": "mid-task",
+      "utterance": "이전 대화가 요약되면서 확정된 판정 기준이 빠졌어. 그 기준이 없으면 바로 다음 결과를 검수할 수 없어.",
+      "prior_owners": [
+        "rules/work-contract.md"
+      ],
+      "expected_owners": [
+        "rules/failure-records.md"
+      ],
+      "forbidden_owners": [
+        "rules/handoff.md"
+      ],
+      "reason": "다음 검수에 필요한 근거의 유실이 자동 검토 신호다. 요약만으로 전환을 결정하지 않는다."
+    },
+    {
+      "id": "compare-session-new-goal-near-miss",
+      "kind": "near-miss",
+      "utterance": "답답하네. 앞 결과는 원래 요청대로 됐어. 이제 목표를 바꿔서 다른 비율로 만들자.",
+      "prior_owners": [
+        "rules/work-contract.md"
+      ],
+      "expected_owners": [],
+      "forbidden_owners": [
+        "rules/failure-records.md",
+        "rules/handoff.md"
+      ],
+      "reason": "최근 결과는 기존 요구를 충족했다. 사용자의 어조와 새로 바뀐 목표는 반복 누락을 보여 주지 않는다."
+    },
+    {
+      "id": "compare-session-and-record-state",
+      "kind": "composed",
+      "utterance": "어느 세션에서 다음 작업을 하는 게 나은지 알려줘. 그리고 이번에 확정한 조건과 첫 검수 대상을 현재 상태 문서에 남겨줘.",
       "prior_owners": [],
       "expected_owners": [
         "rules/failure-records.md",
         "rules/handoff.md"
       ],
       "forbidden_owners": [],
-      "reason": "실패 후 재시도 판단과 사용자가 요청한 세션 비교는 각각의 소유자를 갖는다."
+      "reason": "세션 권고와 실제 상태 갱신을 함께 요청했다."
     },
     {
       "id": "compare-session-status-near-miss",
