@@ -161,9 +161,12 @@ def cmd_context(
     return EXIT_OK
 
 
-def cmd_gate(core_root: Path, consumer_root: Path | None = None, budget: int | None = None) -> int:
+def cmd_gate(
+    core_root: Path, consumer_root: Path | None = None, budget: int | None = None, *,
+    include_optional: bool = False,
+) -> int:
     """소비자: Core 변경 또는 소비 연결의 통합 검증 관문을 실행한다."""
-    result = run_gate(core_root, consumer_root, budget=budget)
+    result = run_gate(core_root, consumer_root, budget=budget, include_optional=include_optional)
     _emit(result.as_dict())
     return EXIT_OK if result.ok else EXIT_FINDINGS
 
@@ -178,6 +181,8 @@ def build_parser() -> argparse.ArgumentParser:
     gate = sub.add_parser("gate", help="통합 검증 게이트를 실행한다")
     gate.add_argument("--budget", type=int, default=None,
                       help="소비 시작 문맥의 명시적 양의 정수 문자 한도 (생략 시 길이 진단만)")
+    gate.add_argument("--include-optional", action="store_true",
+                      help="Core 단독 또는 Maintainer에서 설치된 선택 기능의 정적 검사·info·회귀도 실행한다")
     context = sub.add_parser("context", help="소비 저장소 시작 컨텍스트를 구성한다")
     context.add_argument(
         "--rule", action="append", default=[], help="core: 또는 consumer: scope가 있는 규칙 ID"
@@ -210,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "verify":
             return cmd_verify(core_root, consumer_root)
         if args.command == "gate":
-            return cmd_gate(core_root, consumer_root, args.budget)
+            return cmd_gate(core_root, consumer_root, args.budget, include_optional=args.include_optional)
         if args.command == "context":
             if consumer_root is None:
                 raise CheckError("context 명령에는 --consumer-root가 필요하다")

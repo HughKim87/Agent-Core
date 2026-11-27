@@ -83,7 +83,7 @@
 - 각 항목은 기능 ID, 계약 버전, 공개 명령과 schema 경로를 함께 선언해야 한다.
 - 내부 Python module 경로와 참고 구현의 이름은 공개 계약이 아니다.
 - 실제 Runtime 데이터와 결과는 소비 저장소가 소유하며 Core 저장소에 쓰지 않는다.
-- 선택 기능이 없으면 필수 gate는 `not_applicable`로 처리하고 계속 성립해야 한다.
+- 기본 `verify`와 `gate`는 선택 Runtime 내부의 구조 검사·`info`·회귀를 요구하지 않는다. 소비 계약이 요구한 기능의 설치 구조와 최소 버전은 판정한다. 배포 후보 검증에 선택 Runtime을 포함하려면 Core 자체 또는 Maintainer에서 `gate --include-optional`을 지정한다. Host는 이 옵션을 사용하지 않는다.
 
 `evidence_lookup` v1은 Obsidian의 Markdown 역링크와 Graphify의 Python 심볼 관계를 Consumer가 필요할 때 조회한다. 두 도구의 설치와 선택은 서로 독립적이다. [설치·호출·대체 검색 계약](EVIDENCE_LOOKUP.md)
 
@@ -161,7 +161,7 @@ Codex 템플릿 옆의 `agents/openai.yaml`도 배포 자산이며 `allow_implic
 ## 6. 의존성과 텍스트
 
 - Core 자체 필수 경로의 Python package 의존성은 표준 라이브러리뿐이고 필수 외부 실행 도구는 없다.
-- `git` CLI는 선택 의존성이다. 선택 기능이 설치되지 않은 Core 자체 검증에는 필요하지 않지만, 설치된 선택 기능이 Git-backed 정적 discovery를 공개하면 그 기능의 `optional-features` 검사에 필요하다. 또한 소비 계약의 submodule revision과 `host`의 Core clean 상태를 증명하는 역할별 소비 gate에서는 필수다. 필요한 경로에서 `git`이 없으면 기준을 증명할 수 없으므로 fail-closed한다.
+- `git` CLI는 Core 자체의 기본 검사에서 필수 의존성이 아니다. Git을 사용하는 선택 기능의 공개 `info`와 이를 포함한 후보 검사에는 필요하다. 소비 계약의 submodule revision과 `host`의 Core clean 상태를 증명하는 역할별 소비 gate에서도 필수다. 필요한 경로에서 `git`으로 기준을 증명할 수 없으면 해당 검사는 fail-closed한다.
 - Host clean 증명은 검사 중 content 변환을 실행하지 않는다. tracked 경로에 `filter`, `working-tree-encoding` 또는 `ident` attribute가 필요하면 해당 checkout은 Host gate에서 지원하지 않고 fail-closed한다.
 - Host clean 증명의 tracked 일반 파일 내용은 Git 줄바꿈 정규화 전의 실제 worktree bytes로 HEAD blob과 대조한다. 따라서 `git status`가 clean이어도 checkout bytes가 다르면 실패한다.
 - 선택 기능이 없어도 필수 검증이 통과해야 한다.

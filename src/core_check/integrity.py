@@ -16,6 +16,7 @@ import subprocess
 from urllib.parse import unquote
 
 from .declarations import (
+    EXPERIMENTAL_ROOT,
     consumer_contract,
     consumer_contract_files,
     consumer_owned_path,
@@ -29,6 +30,7 @@ from .declarations import (
     module_layers,
     optional_capability_installation_state,
     routed_rule_paths,
+    walk_core_files,
 )
 from .primitives import CheckError, Finding, Report, empty_state_finding, markdown_targets, resolve_inside, visible_markdown_lines
 from .registry import REGISTRY, register
@@ -118,7 +120,6 @@ GATE_STATISTIC = re.compile(
     r"[*_`]*\d+(?:,\d{3})*[*_`]*(?![A-Za-z0-9_-]|\.[A-Za-z0-9_])",
     re.IGNORECASE,
 )
-SKIP_DIRS = {".git", "tmp", "__pycache__", ".obsidian"}
 CONSUMER_CHECKS = (
     "consumer-contract",
     "consumer-core-read-only",
@@ -678,13 +679,6 @@ def host_core_cleanliness(core_root: Path) -> tuple[bool, str]:
     return True, "HEAD·index·tracked blob/type/mode, untracked·ignored, 우회 flag, 추가 directory 일치"
 
 
-def _walk(root: Path, suffix: str) -> Iterator[Path]:
-    for path in sorted(root.rglob(f"*{suffix}")):
-        if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
-            continue
-        yield path
-
-
 def _rel(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
@@ -704,9 +698,9 @@ def check_declaration_contracts(root: Path) -> Iterable[Finding]:
 
 
 @register("text-encoding")
-def check_text_encoding(root: Path) -> Iterable[Finding]:
+def check_text_encoding(root: Path, *, include_optional: bool = False) -> Iterable[Finding]:
     for suffix in (".md", ".py", ".json"):
-        for path in _walk(root, suffix):
+        for path in walk_core_files(root, suffix, include_optional=include_optional):
             raw = path.read_bytes()
             rel = _rel(root, path)
             try:
@@ -730,8 +724,11 @@ def _markdown_link_error(document: Path, target: str, *, absent_modules: tuple[P
     try:
         # A navigation link may name a section. Entry pointers and routes require
         # the exact declared target, so only the navigation check drops fragments.
-        path = (document.parent / unquote(target.partition("#")[0])).resolve()
-        if path.exists() or any(path.is_relative_to(module) for module in absent_modules):
+        candidate = document.parent / unquote(target.partition("#")[0])
+        normalized = Path(os.path.normpath(candidate))
+        if any(normalized.is_relative_to(module) for module in absent_modules):
+            return None
+        if candidate.resolve().exists():
             return None
     except (ValueError, OSError, RuntimeError):
         pass
@@ -739,16 +736,19 @@ def _markdown_link_error(document: Path, target: str, *, absent_modules: tuple[P
 
 
 @register("markdown-links")
-def check_markdown_links(root: Path) -> Iterable[Finding]:
+def check_markdown_links(root: Path, *, include_optional: bool = False) -> Iterable[Finding]:
     try:
         capabilities = declared_compatibility(root).get("optional_capabilities", {})
-        absent = tuple((root / declaration["entry_module"].replace(".", "/")).resolve()
-                       for name, declaration in capabilities.items()
-                       if optional_capability_installation_state(root, name, declaration) == "absent")
+        absent = tuple(
+            root / declaration["entry_module"].replace(".", "/")
+            for name, declaration in capabilities.items()
+            if not include_optional
+            or optional_capability_installation_state(root, name, declaration) == "absent"
+        )
     except CheckError:
         # declaration-contracts reports the invalid declaration. No links are exempt.
         absent = ()
-    for path in _walk(root, ".md"):
+    for path in walk_core_files(root, ".md", include_optional=include_optional):
         rel = _rel(root, path)
         for target in markdown_targets(path.read_text(encoding="utf-8")):
             if error := _markdown_link_error(path, target, absent_modules=absent):
@@ -756,8 +756,8 @@ def check_markdown_links(root: Path) -> Iterable[Finding]:
 
 
 @register("json-parse")
-def check_json_parse(root: Path) -> Iterable[Finding]:
-    for path in _walk(root, ".json"):
+def check_json_parse(root: Path, *, include_optional: bool = False) -> Iterable[Finding]:
+    for path in walk_core_files(root, ".json", include_optional=include_optional):
         try:
             json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, UnicodeError, OSError) as exc:
@@ -765,8 +765,8 @@ def check_json_parse(root: Path) -> Iterable[Finding]:
 
 
 @register("python-ast")
-def check_python_ast(root: Path) -> Iterable[Finding]:
-    for path in _walk(root, ".py"):
+def check_python_ast(root: Path, *, include_optional: bool = False) -> Iterable[Finding]:
+    for path in walk_core_files(root, ".py", include_optional=include_optional):
         try:
             ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError as exc:
@@ -841,9 +841,9 @@ def check_skill_source_integrity(root: Path) -> Iterable[Finding]:
 
 
 @register("document-headers")
-def check_document_headers(root: Path) -> Iterable[Finding]:
+def check_document_headers(root: Path, *, include_optional: bool = False) -> Iterable[Finding]:
     preserved, _ = _preserved_skill_sources(root)
-    for path in _walk(root, ".md"):
+    for path in walk_core_files(root, ".md", include_optional=include_optional):
         if _rel(root, path) in preserved:
             continue
         text = path.read_text(encoding="utf-8")
@@ -892,7 +892,7 @@ def check_rule_cross_routing(root: Path) -> Iterable[Finding]:
 
 
 @register("layer-boundaries")
-def check_layer_boundaries(root: Path) -> Iterable[Finding]:
+def check_layer_boundaries(root: Path, *, include_optional: bool = False) -> Iterable[Finding]:
     graph: dict[str, set[str]] = {}
     package = root / "src" / "core_check"
     if not package.is_dir():
@@ -906,23 +906,26 @@ def check_layer_boundaries(root: Path) -> Iterable[Finding]:
     assignments: dict[str, list[str]] = {}
     absent_l7_paths: set[str] = set()
     l7_groups: dict[tuple[str, str], list[str]] = {}
-    for declared in layers["L7"]:
-        parts = Path(declared).parts
-        if len(parts) >= 2 and parts[0] == "experimental":
-            l7_groups.setdefault((parts[0], parts[1]), []).append(declared)
-    for paths in l7_groups.values():
-        if not any((root / declared).is_file() for declared in paths):
-            absent_l7_paths.update(paths)
+    if include_optional:
+        for declared in layers["L7"]:
+            parts = Path(declared).parts
+            if len(parts) >= 2 and parts[0] == EXPERIMENTAL_ROOT:
+                l7_groups.setdefault((parts[0], parts[1]), []).append(declared)
+        for paths in l7_groups.values():
+            if not any((root / declared).is_file() for declared in paths):
+                absent_l7_paths.update(paths)
     for layer, paths in layers.items():
         for declared in paths:
             assignments.setdefault(declared, []).append(layer)
+            if layer == "L7" and not include_optional and Path(declared).is_relative_to(EXPERIMENTAL_ROOT):
+                continue
             if not (root / declared).is_file() and declared not in absent_l7_paths:
                 yield Finding("layer-boundaries", declared, f"{layer} 배정 대상 파일이 없다")
 
     # One graph for both packages; normalize import spelling before applying layers.
     runtime_paths = set(package.rglob("*.py"))
-    experimental = root / "experimental"
-    if experimental.is_dir():
+    experimental = root / EXPERIMENTAL_ROOT
+    if include_optional and experimental.is_dir():
         runtime_paths.update(
             path for path in experimental.rglob("*.py")
             if "tests" not in path.relative_to(experimental).parts
@@ -1033,8 +1036,8 @@ def check_no_hardcoded_doc_names(root: Path) -> Iterable[Finding]:
 
 
 @register("temporary-canonical-links")
-def check_temporary_canonical_links(root: Path) -> Iterable[Finding]:
-    for path in _walk(root, ".md"):
+def check_temporary_canonical_links(root: Path, *, include_optional: bool = False) -> Iterable[Finding]:
+    for path in walk_core_files(root, ".md", include_optional=include_optional):
         rel = _rel(root, path)
         for target in markdown_targets(path.read_text(encoding="utf-8")):
             if target.startswith("tmp/") or "/tmp/" in target:
@@ -1494,19 +1497,21 @@ def run_consumer(core_root: Path, consumer_root: Path) -> Report:
     return report
 
 
-def run_all(root: Path) -> Report:
+def run_all(root: Path, *, include_optional: bool = False) -> Report:
+    root = root.resolve()
     report = Report()
+    scope_checks = {
+        check_text_encoding, check_markdown_links, check_json_parse, check_python_ast,
+        check_document_headers, check_layer_boundaries, check_temporary_canonical_links,
+    }
     for name, fn in sorted(REGISTRY.required.items()):
         report.ran.append(name)
-        report.findings.extend(fn(root))
-    for name, fn in sorted(REGISTRY.optional.items()):
-        report.ran.append(name)
-        report.findings.extend(fn(root))
-    if not REGISTRY.optional:
-        try:
-            declared_optional = declared_compatibility(root).get("optional_capabilities", {})
-        except CheckError:
-            declared_optional = {}
-        if not declared_optional:
-            report.skipped["optional-checks"] = "선택 기능이 등록되지 않았다. 실패가 아니다."
+        findings = fn(root, include_optional=True) if include_optional and fn in scope_checks else fn(root)
+        report.findings.extend(findings)
+    if include_optional:
+        for name, fn in sorted(REGISTRY.optional.items()):
+            report.ran.append(name)
+            report.findings.extend(fn(root))
+    else:
+        report.skipped["optional-checks"] = "선택 기능 검사를 요청하지 않았다."
     return report

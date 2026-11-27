@@ -464,8 +464,8 @@ def _integrity_result(name: str, report: Report) -> StepResult:
     )
 
 
-def _integrity(core_root: Path) -> StepResult:
-    return _integrity_result("core-integrity", run_all(core_root))
+def _integrity(core_root: Path, *, include_optional: bool = False) -> StepResult:
+    return _integrity_result("core-integrity", run_all(core_root, include_optional=include_optional))
 
 
 def _consumer_integrity(core_root: Path, consumer_root: Path) -> StepResult:
@@ -704,9 +704,7 @@ def _tests(core_root: Path) -> StepResult:
     return _test_suite(tests_dir, execution_root=core_root, environment=env)
 
 
-def _optional(
-    core_root: Path, *, execution_root: Path, run_internal_tests: bool
-) -> StepResult:
+def _optional(core_root: Path) -> StepResult:
     try:
         capabilities = declared_compatibility(core_root).get("optional_capabilities", {})
     except CheckError as exc:
@@ -741,21 +739,26 @@ def _optional(
             f"sys.path[:0]=[{str(core_root)!r},{str(core_root / 'src')!r}];"
             f"runpy.run_module({declaration['entry_module']!r},run_name='__main__',alter_sys=True)"
         )
-        completed = subprocess.run(
-            [sys.executable, "-B", "-I", "-c", bootstrap, "info"],
-            cwd=execution_root,
-            env=environment,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=False,
-        )
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-B", "-I", "-c", bootstrap, "info"],
+                cwd=core_root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+        except OSError as exc:
+            return StepResult("optional-features", "not_run", f"{capability_id}: {exc}")
         try:
             payload = json.loads(completed.stdout)
         except json.JSONDecodeError:
             payload = {}
         if (
             completed.returncode != 0
+            or not isinstance(payload, dict)
             or payload.get("ok") is not True
             or payload.get("capability") != capability_id
             or payload.get("capability_version") != declaration["version"]
@@ -766,31 +769,20 @@ def _optional(
             detail = completed.stderr.strip() or completed.stdout.strip() or "info 결과가 선언과 다르다"
             return StepResult("optional-features", "fail", f"{capability_id}: {detail[-500:]}")
         tests_dir = core_root / declaration["entry_module"].replace(".", "/") / "tests"
-        if run_internal_tests and not tests_dir.is_dir():
+        if not tests_dir.is_dir():
             return StepResult("optional-features", "not_run",
                               f"{capability_id}: 필수 tests 디렉터리가 없다",
                               evidence={"target": str(tests_dir), "suites": suites})
-        if run_internal_tests:
-            tested = _test_suite(tests_dir, execution_root=execution_root, environment=environment)
-            suites[capability_id] = tested.as_dict()
-            if tested.status != "pass":
-                return StepResult("optional-features", tested.status,
-                                  f"{capability_id} tests: {tested.detail}", evidence={"suites": suites})
+        tested = _test_suite(tests_dir, execution_root=core_root, environment=environment)
+        suites[capability_id] = tested.as_dict()
+        if tested.status != "pass":
+            return StepResult("optional-features", tested.status,
+                              f"{capability_id} tests: {tested.detail}", evidence={"suites": suites})
     if installed == 0:
         return StepResult(
             "optional-features",
             "not_applicable",
             f"선택 기능 {absent}종이 완전히 부재한다. 필수 기능 실패가 아니다",
-            required=False,
-        )
-    if not run_internal_tests:
-        return StepResult(
-            "optional-features",
-            "not_applicable",
-            (
-                f"정적 discovery {installed}종의 선언 일치만 확인했다. "
-                "기능 소비·가용성·완료 검증이 아니다"
-            ),
             required=False,
         )
     return StepResult(
@@ -808,6 +800,7 @@ def _run_once(
     before_consumer: str | None,
     host_preflight: StepResult | None,
     budget: int | None = None,
+    include_optional: bool = False,
 ) -> GateResult:
     try:
         version = declared_compatibility(core_root).get("contract_version")
@@ -830,8 +823,10 @@ def _run_once(
             raise CheckError("검증된 소비 계약 없이 gate 실행을 시작할 수 없다")
         result.steps.append(host_preflight)
     consumer_role = str(contract["consumer_role"]) if contract is not None else None
+    if include_optional and consumer_role == "host":
+        raise CheckError("Host gate에서는 --include-optional을 사용할 수 없다. Maintainer에서 검증한다")
 
-    result.steps.append(_integrity(core_root))
+    result.steps.append(_integrity(core_root, include_optional=include_optional))
     if consumer_role == "host":
         result.steps.append(
             StepResult(
@@ -843,13 +838,16 @@ def _run_once(
         )
     else:
         result.steps.append(_tests(core_root))
-    result.steps.append(
-        _optional(
-            core_root,
-            execution_root=consumer_root if consumer_role == "host" else core_root,
-            run_internal_tests=consumer_role != "host",
+    if not include_optional:
+        result.steps.append(
+            StepResult("optional-features", "not_applicable", "선택 기능 검사를 요청하지 않았다", required=False)
         )
-    )
+    elif result.failed_step is not None:
+        result.steps.append(
+            StepResult("optional-features", "not_run", "앞선 필수 검사가 실패해 실행하지 않았다")
+        )
+    else:
+        result.steps.append(_optional(core_root))
 
     if consumer_root is not None:
         consumer_step = _consumer_integrity(core_root, consumer_root)
@@ -887,7 +885,10 @@ def _run_once(
     return result
 
 
-def run(core_root: Path, consumer_root: Path | None = None, *, budget: int | None = None) -> GateResult:
+def run(
+    core_root: Path, consumer_root: Path | None = None, *, budget: int | None = None,
+    include_optional: bool = False,
+) -> GateResult:
     """계약을 한 번 해석하고 예외·조기 반환에서도 무부작용을 판정한다."""
     if budget is not None:
         if type(budget) is not int or budget <= 0:
@@ -1015,6 +1016,7 @@ def run(core_root: Path, consumer_root: Path | None = None, *, budget: int | Non
             before_consumer=before_consumer,
             host_preflight=host_preflight,
             budget=budget,
+            include_optional=include_optional,
         )
     except Exception as exc:
         unchanged = tree_digest(core_root) == before_core

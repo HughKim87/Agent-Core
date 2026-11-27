@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import stat
 from urllib.parse import unquote
@@ -35,6 +35,7 @@ COMPAT_BLOCK = re.compile(
     r"<!--\s*core-compatibility:v1\s*-->\s*```json\s*(.*?)```", re.S
 )
 SKIP_DIRS = {".git", "tmp", "__pycache__", ".obsidian"}
+EXPERIMENTAL_ROOT = "experimental"
 COMPATIBILITY_FIELDS = frozenset(
     {
         "core_version",
@@ -50,16 +51,17 @@ OPTIONAL_CAPABILITY_FIELDS = frozenset(
 )
 
 
-def walk_markdown(root: Path, *, excluded_roots: Iterable[Path] = ()) -> Iterable[Path]:
+def walk_core_files(root: Path, suffix: str, *, include_optional: bool = False) -> Iterable[Path]:
     root = root.resolve()
-    excluded = [path.resolve() for path in excluded_roots]
-    for path in sorted(root.rglob("*.md")):
-        resolved = path.resolve()
-        if any(base == resolved or base in resolved.parents for base in excluded):
-            continue
-        if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
-            continue
-        yield path
+    paths: list[Path] = []
+    for directory, subdirs, files in os.walk(root):
+        current = Path(directory)
+        excluded = SKIP_DIRS
+        if current == root and not include_optional:
+            excluded = excluded | {EXPERIMENTAL_ROOT}
+        subdirs[:] = [name for name in subdirs if name not in excluded]
+        paths.extend(current / name for name in files if (current / name).suffix.lower() == suffix)
+    yield from sorted(paths)
 
 
 def _json_object(payload: str, label: str, source: Path) -> dict[str, object]:
@@ -74,7 +76,7 @@ def _json_object(payload: str, label: str, source: Path) -> dict[str, object]:
 
 def _single_json_declaration(root: Path, pattern: re.Pattern[str], label: str) -> dict[str, object]:
     matches: list[tuple[Path, str]] = []
-    for path in walk_markdown(root):
+    for path in walk_core_files(root, ".md"):
         for match in pattern.finditer(path.read_text(encoding="utf-8")):
             matches.append((path, match.group(1)))
     if len(matches) != 1:
@@ -83,13 +85,18 @@ def _single_json_declaration(root: Path, pattern: re.Pattern[str], label: str) -
     return _json_object(payload, label, path)
 
 
-def _relative_path(root: Path, value: object, label: str, *, must_exist: str | None = None) -> Path:
+def _relative_candidate(value: object, label: str) -> Path:
     if not isinstance(value, str) or not value:
         raise CheckError(f"{label}이 유효한 상대경로가 아니다")
     candidate = Path(value)
-    if candidate.is_absolute() or ".." in candidate.parts:
+    windows = PureWindowsPath(value)
+    if candidate.anchor or windows.anchor or ".." in candidate.parts or ".." in windows.parts:
         raise CheckError(f"{label}은 선언된 뿌리 안쪽의 상대경로여야 한다: {value}")
-    resolved = resolve_inside(root, candidate)
+    return candidate
+
+
+def _relative_path(root: Path, value: object, label: str, *, must_exist: str | None = None) -> Path:
+    resolved = resolve_inside(root, _relative_candidate(value, label))
     if must_exist == "file" and not resolved.is_file():
         raise CheckError(f"{label} 파일이 없다: {value}")
     if must_exist == "dir" and not resolved.is_dir():
@@ -489,7 +496,6 @@ def declared_compatibility(core_root: Path) -> dict[str, object]:
         module = raw["entry_module"]
         if not isinstance(module, str) or re.fullmatch(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*", module) is None:
             raise CheckError(f"{capability_id}.entry_module이 유효하지 않다")
-        _relative_path(core_root, module.replace(".", "/"), f"{capability_id}.entry_module")
         commands = raw["commands"]
         if (
             not isinstance(commands, list)
@@ -499,7 +505,7 @@ def declared_compatibility(core_root: Path) -> dict[str, object]:
         ):
             raise CheckError(f"{capability_id}.commands는 중복 없는 문자열 목록이어야 한다")
         for field in ("request_schema", "result_schema"):
-            _relative_path(core_root, raw[field], f"{capability_id}.{field}")
+            _relative_candidate(raw[field], f"{capability_id}.{field}")
         schemas = raw["schemas"]
         if (
             not isinstance(schemas, list)
@@ -509,6 +515,5 @@ def declared_compatibility(core_root: Path) -> dict[str, object]:
         ):
             raise CheckError(f"{capability_id}.schemas는 중복 없는 schema 경로 목록이어야 한다")
         for schema in schemas:
-            _relative_path(core_root, schema, f"{capability_id}.schemas")
-        optional_capability_installation_state(core_root, capability_id, raw)
+            _relative_candidate(schema, f"{capability_id}.schemas")
     return declaration

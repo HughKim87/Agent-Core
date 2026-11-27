@@ -14,7 +14,7 @@ from .declarations import (
     consumer_routed_rule_paths,
     core_policy_path,
     routed_rule_paths,
-    walk_markdown,
+    walk_core_files,
 )
 from .primitives import CheckError, Finding, WARNING_REVIEW_GUIDANCE, empty_state_finding, fingerprint, resolve_inside
 
@@ -110,7 +110,7 @@ def build(
         package.optional.append(available[name])
 
     selected = {ref.identifier for ref in package.required + package.optional}
-    for path in walk_markdown(core_root):
+    for path in walk_core_files(core_root, ".md"):
         ref = _ref("core", core_root, path)
         if ref.identifier in selected:
             continue

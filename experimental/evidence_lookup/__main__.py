@@ -1,6 +1,8 @@
 """Public v1 entry for opt-in evidence lookup."""
 
 import argparse
+from collections import defaultdict
+from functools import cache
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -26,7 +28,8 @@ SCHEMAS = "experimental/evidence_lookup/schemas/"
 def relative_checked(value):
     backends.require(
         isinstance(value, str) and value and not any(char in value for char in "\\:\x00")
-        and all(part and part not in {".", "..", ".git"} for part in value.split("/")),
+        and all(part.rstrip(" .").casefold() not in {"", ".git"}
+                and (os.name != "nt" or part == part.rstrip(" .")) for part in value.split("/")),
         "INVALID_RELATIVE_PATH",
     )
     return value
@@ -37,22 +40,55 @@ def inside_path(parent, path):
     return path == parent or path.startswith(parent + "/")
 
 
-def git(root, *args):
-    pathspec = [] if args[0] == "check-ignore" else ["--literal-pathspecs"]
-    return subprocess.run(["git", *pathspec, "-C", str(root), *args],
+def git(root, *args, literal=True):
+    pathspec = ["--literal-pathspecs"] if literal and args[0] != "check-ignore" else []
+    env = os.environ.copy()
+    for name in ("GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS"):
+        env.pop(name, None)
+    return subprocess.run(["git", *pathspec, "-C", str(root), *args], env=env,
                           capture_output=True, timeout=20, check=False)
 
 
-def tracked(root, roots):
-    result = git(root, "ls-files", "-z", "--", *roots)
+@cache
+def unicode_case_spellings():
+    # Git pathspec icase handles ASCII; match the same Unicode case folding as the read guard.
+    spellings = defaultdict(list)
+    for value in range(128, sys.maxunicode + 1):
+        character = chr(value)
+        folded = character.casefold()
+        if character != folded:
+            spellings[folded].append(character)
+    return spellings, max(map(len, spellings))
+
+
+def protected_pathspecs(path):
+    normalized = path.casefold()
+    alternates, longest = unicode_case_spellings()
+    prefixes = [{""}, *(set() for _ in normalized)]
+    for offset, character in enumerate(normalized):
+        prefixes[offset + 1].update(prefix + character for prefix in prefixes[offset])
+        for end in range(offset + 1, min(offset + longest, len(normalized)) + 1):
+            variants = alternates.get(normalized[offset:end], ())
+            prefixes[end].update(prefix + variant for prefix in prefixes[offset] for variant in variants)
+            backends.require(len(prefixes[end]) <= 128, "PROTECTED_PATHSPEC_LIMIT")
+    return [f":(top,exclude,literal,icase){value}" for value in sorted(prefixes[-1])]
+
+
+def tracked(root, roots, *, excluded=()):
+    includes = [f":(top,literal){path}" for path in roots]
+    excludes = [spec for path in excluded if any(inside_path(root, path) for root in roots)
+                for spec in protected_pathspecs(path)]
+    result = git(root, "ls-files", "-z", "--", *includes, *excludes, literal=False)
     backends.require(result.returncode == 0, "TRACKED_SOURCE_LIST_UNAVAILABLE")
     return [path for path in result.stdout.decode("utf-8").split("\0") if path]
 
 
-def document_sources(boundary, roots, suffix):
+def document_sources(boundary, roots, suffix, *, target=None):
     core_rel = CORE.relative_to(boundary.consumer_root).as_posix()
-    protected = tuple(path for path in boundary.protected_paths if path != core_rel)
-    backends.require(not any(inside_path(path, requested) for requested in roots for path in protected),
+    protected = tuple(Path(path).as_posix() for path in boundary.protected_paths
+                      if Path(path) != Path(core_rel))
+    requested_paths = roots if target is None else [*roots, target]
+    backends.require(not any(inside_path(path, requested) for requested in requested_paths for path in protected),
                      "PROTECTED_SOURCE")
     core_inputs = [path[len(core_rel) + 1:] for path in roots if inside_path(core_rel, path)]
     allowed_core = {"PROJECT_RULES.md", "README.md", "docs", "rules", "src"}
@@ -62,7 +98,8 @@ def document_sources(boundary, roots, suffix):
             path.split("/", 1)[0] in allowed_core or path in boundary_clients for path in core_inputs
         ), "CORE_SOURCE_SCOPE_REJECTED")
     local_roots = [path for path in roots if not inside_path(core_rel, path)]
-    paths = [path for path in tracked(boundary.consumer_root, local_roots)
+    excluded = (*protected, core_rel)
+    paths = [path for path in tracked(boundary.consumer_root, local_roots, excluded=excluded)
              if not inside_path(core_rel, path)] if local_roots else []
     partial = False
     if core_inputs:
@@ -125,45 +162,39 @@ def invoke(consumer_root, request):
     backends.require(executable is None or (isinstance(executable, str) and Path(executable).is_absolute()),
                      "ABSOLUTE_EXECUTABLE_REQUIRED")
     backends.no_links(consumer_root)
-    obsidian_request = None
-    obsidian_error = None
-    if tool == "obsidian" and executable is not None:
-        try:
-            obsidian_request = obsidian_session.Request(executable)
-        except (backends.Rejected, OSError, ValueError) as exc:
-            obsidian_error = getattr(exc, "code", type(exc).__name__)
-    try:
-        return lookup_with_boundary(consumer_root, cache, tool, target, roots, executable,
-                                    include_call_sites, obsidian_request, obsidian_error)
-    finally:
-        if obsidian_request is not None:
-            obsidian_request.close()
+    return lookup_with_boundary(consumer_root, cache, tool, target, roots, executable, include_call_sites)
 
 
-def lookup_with_boundary(consumer_root, cache, tool, target, roots, executable, include_call_sites,
-                         obsidian_request, obsidian_error):
+def lookup_with_boundary(consumer_root, cache, tool, target, roots, executable, include_call_sites):
     boundary = prepare_consumer_runtime_boundary(CORE, consumer_root, capability_id=CAPABILITY,
-                                                 write_paths=(cache,))
+                                                 write_paths=(cache,), reject_write_path_links=True)
     try:
         backends.require(boundary.write_paths == (cache,), "CACHE_PATH_ALIAS_REJECTED")
-        snapshots, partial = document_sources(boundary, roots, ".md" if tool == "obsidian" else ".py")
+        snapshots, partial = document_sources(boundary, roots, ".md" if tool == "obsidian" else ".py",
+                                              target=target if tool == "obsidian" else None)
         data = {path: snapshot[0] for path, snapshot in snapshots.items()}
         if tool == "obsidian":
             backends.require(target in data, "NOTE_NOT_IN_SCOPE")
-        reason = "CORE_FILE_LIST_UNAVAILABLE" if partial else obsidian_error or "TOOL_NOT_CONFIGURED"
+        reason = "CORE_FILE_LIST_UNAVAILABLE" if partial else "TOOL_NOT_CONFIGURED"
         result = None
         mode = None
-        if executable is not None and not partial and (tool == "graphify" or obsidian_request is not None):
+        if executable is not None and not partial:
             local_cache = cache_directory(boundary)
+            obsidian_request = None
             try:
-                with TemporaryDirectory(dir=local_cache, prefix=f"{tool}-") as temp:
-                    if tool == "obsidian":
+                if tool == "obsidian":
+                    obsidian_request = obsidian_session.Request(executable)
+                    with TemporaryDirectory(dir=local_cache, prefix=f"{tool}-") as temp:
                         result = obsidian_request.lookup(data, target, Path(temp))
-                        mode = "cold_obsidian"
-                    else:
+                    mode = "cold_obsidian"
+                else:
+                    with TemporaryDirectory(dir=local_cache, prefix=f"{tool}-") as temp:
                         result, mode = backends.graphify(data, target, executable, Path(temp), local_cache)
-            except (backends.Rejected, OSError, subprocess.SubprocessError, UnicodeError, SyntaxError) as exc:
+            except (backends.Rejected, OSError, subprocess.SubprocessError, ValueError, SyntaxError) as exc:
                 reason = getattr(exc, "code", type(exc).__name__)
+            finally:
+                if obsidian_request is not None:
+                    obsidian_request.close()
         backend = tool
         if result is None:
             backend = "markdown" if tool == "obsidian" else "python"

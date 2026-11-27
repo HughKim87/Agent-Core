@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
+import stat
 from typing import Iterable
 
-from .declarations import consumer_contract, declared_compatibility
+from .declarations import consumer_contract, declared_compatibility, optional_capability_installation_state
 from .gate import (
     HostObservationError,
     HostCoreBaseline,
@@ -37,8 +39,6 @@ class ConsumerRuntimeBoundary:
 
 
 def _paths_overlap(first: Path, second: Path) -> bool:
-    first = first.resolve()
-    second = second.resolve()
     return first == second or first in second.parents or second in first.parents
 
 
@@ -56,6 +56,7 @@ def prepare_consumer_runtime_boundary(
     capability_id: str,
     write_paths: Iterable[str | Path],
     protected_paths: Iterable[str | Path] = (),
+    reject_write_path_links: bool = False,
 ) -> ConsumerRuntimeBoundary:
     """계약·기능·쓰기 위치를 확인한 뒤 선택 Runtime 실행 경계를 고정한다."""
     core_root = core_root.resolve()
@@ -112,21 +113,12 @@ def prepare_consumer_runtime_boundary(
         raise RuntimeBoundaryError(
             f"Consumer가 요구한 {capability_id} v{minimum_version}을 Core가 제공하지 않는다"
         )
-
-    canonical_write_paths: list[str] = []
-    for candidate in write_paths:
-        try:
-            resolved = resolve_inside(consumer_root, candidate)
-        except (CheckError, OSError) as exc:
-            raise _runtime_error(f"Runtime 쓰기 경로가 Consumer 밖이다: {candidate}: {exc}", exc)
-        if _paths_overlap(resolved, core_root):
-            raise RuntimeBoundaryError(
-                f"Runtime 쓰기 경로는 소비 계약의 core_path와 겹칠 수 없다: {candidate}"
-            )
-        canonical_write_paths.append(resolved.relative_to(consumer_root).as_posix())
-
-    if not canonical_write_paths:
-        raise RuntimeBoundaryError("Runtime은 하나 이상의 쓰기 경로를 선언해야 한다")
+    try:
+        installation = optional_capability_installation_state(core_root, capability_id, capability)
+    except (CheckError, OSError) as exc:
+        raise _runtime_error(f"선택 기능 설치 확인 실패: {exc}", exc)
+    if installation != "installed":
+        raise RuntimeBoundaryError(f"Consumer가 요구한 선택 기능이 설치되지 않았다: {capability_id}")
 
     declared_protected = contract.get("protected_paths")
     if not isinstance(declared_protected, list):
@@ -135,25 +127,59 @@ def prepare_consumer_runtime_boundary(
         core_relative = core_root.relative_to(consumer_root).as_posix()
     except ValueError as exc:
         raise _runtime_error("소비 계약의 core_path가 Consumer 밖이다", exc)
-    effective_protected = tuple(sorted({
-        str(value) for value in [*declared_protected, *protected_paths, core_relative]
-    }))
-    canonical_protected: list[tuple[str, Path]] = []
-    for candidate in effective_protected:
+    protected_locations: set[Path] = set()
+    for value in [*declared_protected, *protected_paths, core_relative]:
+        candidate = Path(value)
+        combined = consumer_root / candidate
+        if candidate.is_absolute() or ".." in candidate.parts or not combined.is_relative_to(consumer_root):
+            raise RuntimeBoundaryError(f"보호 경로는 Consumer 안쪽 상대경로여야 한다: {value}")
+        protected_locations.add(combined.relative_to(consumer_root))
+    effective_protected = tuple(sorted(path.as_posix() for path in protected_locations))
+    protected_write_locations = [(relative, consumer_root / relative) for relative in effective_protected]
+
+    def check_write_path(path: Path, protected_paths: list[tuple[str, Path]]) -> None:
+        if not path.is_relative_to(consumer_root):
+            raise RuntimeBoundaryError(f"Runtime 쓰기 경로가 Consumer 밖이다: {path}")
+        if _paths_overlap(path, core_root):
+            raise RuntimeBoundaryError(f"Runtime 쓰기 경로는 소비 계약의 core_path와 겹칠 수 없다: {path}")
+        for relative, protected in protected_paths:
+            if _paths_overlap(path, protected):
+                raise RuntimeBoundaryError(f"Runtime 쓰기 경로는 보호 경로와 겹칠 수 없다: {path} <-> {relative}")
+
+    canonical_write_paths: list[str] = []
+    canonical_protected: list[tuple[str, Path]] | None = None
+    for candidate in write_paths:
+        lexical = Path(os.path.abspath(consumer_root / candidate))
+        check_write_path(lexical, protected_write_locations)
         try:
-            canonical_protected.append(
-                (candidate, resolve_inside(consumer_root, candidate))
-            )
+            if reject_write_path_links:
+                current = consumer_root
+                for part in lexical.relative_to(consumer_root).parts:
+                    current /= part
+                    try:
+                        info = current.lstat()
+                    except FileNotFoundError:
+                        break
+                    if (not stat.S_ISDIR(info.st_mode)
+                            or getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT):
+                        raise RuntimeBoundaryError("Runtime 쓰기 경로는 링크 없는 디렉터리여야 한다")
+                resolved = lexical
+            else:
+                resolved = resolve_inside(consumer_root, candidate)
         except (CheckError, OSError) as exc:
-            raise _runtime_error(f"보호 경로가 Consumer 밖이다: {candidate}: {exc}", exc)
-    for relative in canonical_write_paths:
-        write_path = resolve_inside(consumer_root, relative)
-        for protected_relative, protected_path in canonical_protected:
-            if _paths_overlap(write_path, protected_path):
-                raise RuntimeBoundaryError(
-                    "Runtime 쓰기 경로는 보호 경로와 겹칠 수 없다: "
-                    f"{relative} <-> {protected_relative}"
-                )
+            raise _runtime_error(f"Runtime 쓰기 경로를 확인할 수 없다: {candidate}: {exc}", exc)
+        if not reject_write_path_links and canonical_protected is None:
+            # Shared Data retains its existing canonical overlap check for storage aliases.
+            try:
+                canonical_protected = [(relative, resolve_inside(consumer_root, path))
+                                       for relative, path in protected_write_locations]
+            except (CheckError, OSError) as exc:
+                raise _runtime_error(f"보호 경로가 Consumer 밖이다: {exc}", exc)
+        check_write_path(resolved, canonical_protected if canonical_protected is not None else protected_write_locations)
+        canonical_write_paths.append(resolved.relative_to(consumer_root).as_posix())
+
+    if not canonical_write_paths:
+        raise RuntimeBoundaryError("Runtime은 하나 이상의 쓰기 경로를 선언해야 한다")
 
     baseline: HostConsumerBaseline | None = None
     if contract.get("consumer_role") == "host":

@@ -189,9 +189,14 @@ def declare_optional_shared_data(
     if partial and installed:
         raise ValueError("partial과 installed는 함께 사용할 수 없다")
     if partial or installed:
+        from core_check.declarations import module_layers
+
         module = root / "experimental" / "shared_data"
         module.mkdir(parents=True)
         (module / "__main__.py").write_text("\n", encoding="utf-8")
+        layers = module_layers(root)
+        layers["L7"].append("experimental/shared_data/__main__.py")
+        write_layers(root, layers)
     if installed:
         schemas = root / "experimental" / "shared_data" / "schemas"
         schemas.mkdir()
@@ -386,8 +391,8 @@ def add_nested_gitlink(core: Path, base: Path) -> Path:
     return nested
 
 
-def findings_for(root: Path, check: str) -> list[str]:
-    return [f.message for f in run_all(root).findings if f.check == check]
+def findings_for(root: Path, check: str, *, include_optional: bool = False) -> list[str]:
+    return [f.message for f in run_all(root, include_optional=include_optional).findings if f.check == check]
 
 
 class BaselineTest(unittest.TestCase):
@@ -429,10 +434,12 @@ class BaselineTest(unittest.TestCase):
                              ["깨진 링크: experimental/shared_data_notes/manual.md"])
             # With the runtime installed its linked manual is required as well.
             declare_optional_shared_data(root, installed=True)
-            self.assertEqual(len(findings_for(root, "markdown-links")), 2)
+            self.assertEqual(findings_for(root, "markdown-links"),
+                             ["깨진 링크: experimental/shared_data_notes/manual.md"])
+            self.assertEqual(len(findings_for(root, "markdown-links", include_optional=True)), 2)
 
     def test_regular_file_at_an_optional_module_directory_is_partial(self) -> None:
-        from core_check.declarations import declared_compatibility
+        from core_check.declarations import declared_compatibility, optional_capability_installation_state
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -440,8 +447,27 @@ class BaselineTest(unittest.TestCase):
             declare_optional_shared_data(root)
             (root / "experimental").mkdir(exist_ok=True)
             (root / "experimental/shared_data").write_text("unexpected file", encoding="utf8")
+            capability = declared_compatibility(root)["optional_capabilities"]["shared_data"]
             with self.assertRaisesRegex(CheckError, "부분 설치"):
-                declared_compatibility(root)
+                optional_capability_installation_state(root, "shared_data", capability)
+
+    def test_optional_schema_paths_remain_lexically_inside_core(self) -> None:
+        from core_check.declarations import declared_compatibility
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build_clean(root)
+            declare_optional_shared_data(root)
+            compatibility = root / "docs" / "COMPATIBILITY.md"
+            original = compatibility.read_text(encoding="utf-8")
+            for path in ("../request.json", "/request.json", r"\request.json", "C:request.json"):
+                with self.subTest(path=path):
+                    compatibility.write_text(
+                        original.replace('"experimental/shared_data/schemas/request.json"', json.dumps(path)),
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(CheckError, "shared_data.request_schema"):
+                        declared_compatibility(root)
 
 
 class FaultInjectionTest(unittest.TestCase):
@@ -571,7 +597,7 @@ class FaultInjectionTest(unittest.TestCase):
                 ],
             },
         )
-        self.assertEqual(findings_for(self.root, "layer-boundaries"), [])
+        self.assertEqual(findings_for(self.root, "layer-boundaries", include_optional=True), [])
 
     def test_detects_partial_experimental_l7_group(self) -> None:
         module = self.root / "experimental" / "shared_data"
@@ -588,7 +614,7 @@ class FaultInjectionTest(unittest.TestCase):
                 ],
             },
         )
-        messages = findings_for(self.root, "layer-boundaries")
+        messages = findings_for(self.root, "layer-boundaries", include_optional=True)
         self.assertTrue(any("배정 대상 파일이 없다" in message for message in messages), messages)
 
     def test_detects_import_cycle(self) -> None:
@@ -735,19 +761,20 @@ class KernelImportBoundaryTest(unittest.TestCase):
                      "from core_check.primitives import VALUE", "import json"):
             with self.subTest(code=code):
                 runtime.write_text(code + "\n", encoding="utf-8")
-                self.assertEqual(findings_for(root, "layer-boundaries"), [])
+                self.assertEqual(findings_for(root, "layer-boundaries", include_optional=True), [])
         for code in ("from core_check.integrity import VALUE", "import core_check.integrity",
                      "from core_check import integrity"):
             with self.subTest(code=code):
                 runtime.write_text(code + "\n", encoding="utf-8")
-                self.assertTrue(any("L7이 허용되지 않은 L5" in m for m in findings_for(root, "layer-boundaries")))
+                self.assertTrue(any("L7이 허용되지 않은 L5" in m for m in findings_for(
+                    root, "layer-boundaries", include_optional=True)))
 
     def test_cycles_include_l7_and_mixed_import_spellings(self):
         root = self._fixture()
         self._with_l7(root)
         (root / "experimental/shared_data/__init__.py").write_text("from .runtime import VALUE\n", encoding="utf-8")
         (root / "experimental/shared_data/runtime.py").write_text("import experimental.shared_data\n", encoding="utf-8")
-        self.assertTrue(any("순환" in m for m in findings_for(root, "layer-boundaries")))
+        self.assertTrue(any("순환" in m for m in findings_for(root, "layer-boundaries", include_optional=True)))
 
 
 class DerivedArtifactTest(unittest.TestCase):
@@ -1825,7 +1852,7 @@ class PublicInterfaceTest(unittest.TestCase):
         # Copy the released Core text into a temporary packaging fixture.
         actual_core = self.consumer / "actual-core"
         shutil.copytree(ROOT, actual_core,
-                        ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"))
+                        ignore=shutil.ignore_patterns(".git", "experimental", "__pycache__", "*.pyc"))
         policy = self.consumer / "PROJECT_RULES.md"
         policy.write_text(policy.read_text(encoding="utf-8").replace(
             '"core_path": "core"', '"core_path": "actual-core"'), encoding="utf-8")
@@ -2135,19 +2162,20 @@ class PublicInterfaceTest(unittest.TestCase):
                         self.assertIn(alias.name.split(".")[0], stdlib, path.name)
 
 
+def _run_public_cli(*argv: str) -> tuple[int, dict]:
+    import contextlib
+    import io
+
+    from core_check import cli
+
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        code = cli.main(list(argv))
+    return code, json.loads(buffer.getvalue())
+
+
 class GateRobustnessTest(unittest.TestCase):
     """게이트 자체의 실패 처리. 자체 운영 시나리오에서 발견된 결함의 회귀."""
-
-    def _run(self, *argv: str) -> tuple[int, dict]:
-        import contextlib
-        import io
-
-        from core_check import cli
-
-        buffer = io.StringIO()
-        with contextlib.redirect_stdout(buffer):
-            code = cli.main(list(argv))
-        return code, json.loads(buffer.getvalue())
 
     def test_unexpected_error_is_structured_not_traceback(self) -> None:
         from core_check import cli
@@ -2157,7 +2185,7 @@ class GateRobustnessTest(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 build_clean(Path(tmp))
-                code, payload = self._run("--root", tmp, "verify")
+                code, payload = _run_public_cli("--root", tmp, "verify")
             self.assertEqual(code, cli.EXIT_UNUSABLE)
             self.assertTrue(payload["unexpected"])
             self.assertEqual(payload["kind"], "RuntimeError")
@@ -2168,7 +2196,7 @@ class GateRobustnessTest(unittest.TestCase):
         from core_check import cli
 
         with tempfile.TemporaryDirectory() as tmp:
-            code, payload = self._run("--root", tmp, "context")
+            code, payload = _run_public_cli("--root", tmp, "context")
         self.assertEqual(code, cli.EXIT_UNUSABLE)
         self.assertNotEqual(code, cli.EXIT_FINDINGS)
         self.assertIn("error", payload)
@@ -2247,53 +2275,98 @@ class IntegrationGateTest(unittest.TestCase):
 
     def test_declared_optional_capability_complete_absence_is_not_applicable(self) -> None:
         declare_optional_shared_data(self.root)
-        result = self.gate.run(self.root)
+        result = self.gate.run(self.root, include_optional=True)
         optional = [s for s in result.steps if s.name == "optional-features"][0]
         self.assertEqual(optional.status, "not_applicable")
         self.assertFalse(optional.required)
         self.assertTrue(result.ok, result.as_dict())
 
-    def test_declared_optional_capability_partial_installation_fails_preflight(self) -> None:
+    def test_partial_optional_installation_only_fails_when_selected(self) -> None:
         declare_optional_shared_data(self.root, partial=True)
-        result = self.gate.run(self.root)
+        core_args = ("--core-root", str(self.root))
+        self.assertEqual(_run_public_cli(*core_args, "verify")[0], 0)
+        self.assertEqual(_run_public_cli(*core_args, "gate")[0], 0)
+        result = self.gate.run(self.root, include_optional=True)
         self.assertFalse(result.ok)
-        self.assertEqual(result.failed_step, "preflight-contract")
-        self.assertIn("부분 설치", result.steps[0].detail)
+        self.assertEqual(result.failed_step, "optional-features")
+        optional = next(s for s in result.steps if s.name == "optional-features")
+        self.assertIn("부분 설치", optional.detail)
 
-    def test_host_optional_info_is_discovery_not_completion_evidence(self) -> None:
+    def test_optional_static_faults_are_isolated_from_kernel_and_startup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             core, consumer = build_consumer(Path(tmp))
             declare_optional_shared_data(core, installed=True)
-            capability = self.gate.declared_compatibility(core)["optional_capabilities"][
-                "shared_data"
-            ]
-            completed = subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps(
-                    {
-                        "ok": True,
-                        "capability": "shared_data",
-                        "capability_version": capability["version"],
-                        "commands": capability["commands"],
-                        "request_schema": capability["request_schema"],
-                        "result_schema": capability["result_schema"],
-                    }
-                ),
-                stderr="",
+            module = core / "experimental/shared_data"
+            (module / "__main__.py").write_text("invalid Python(\n", encoding="utf-8")
+            (module / "schemas/request.json").write_text("{broken", encoding="utf-8")
+            (module / "duplicate.md").write_text(
+                DOCUMENT_ROLES_BODY.format(headers=DOC_HEADERS) + "\n[broken](missing.md)\n",
+                encoding="utf-8",
             )
-            with patch.object(self.gate.subprocess, "run", return_value=completed) as invoked:
-                result = self.gate._optional(
-                    core, execution_root=consumer, run_internal_tests=False
-                )
-            self.assertEqual(result.status, "not_applicable")
-            self.assertFalse(result.required)
-            self.assertIn("기능 소비·가용성·완료 검증이 아니다", result.detail)
-            self.assertEqual(invoked.call_count, 1)
-            self.assertEqual(invoked.call_args.kwargs["cwd"], consumer)
-            command = invoked.call_args.args[0]
-            self.assertIn("-I", command)
-            self.assertIn("runpy.run_module", command[command.index("-c") + 1])
+            args = ("--core-root", str(core), "--consumer-root", str(consumer))
+            for command in ("verify", "context", "gate"):
+                code, payload = _run_public_cli(*args, command)
+                self.assertEqual(code, 0, payload)
+            code, payload = _run_public_cli(*args, "gate", "--include-optional")
+            self.assertEqual(code, 1, payload)
+            self.assertEqual(payload["failed_step"], "core-integrity")
+            core_step = next(s for s in payload["steps"] if s["name"] == "core-integrity")
+            checks = {finding["check"] for finding in core_step["evidence"]["findings"]}
+            self.assertTrue({"markdown-links", "json-parse", "python-ast"}.issubset(checks), checks)
+
+    def test_selected_optional_info_and_suite_fail_closed(self) -> None:
+        declare_optional_shared_data(self.root, installed=True)
+        module = self.root / "experimental/shared_data"
+        entry = module / "__main__.py"
+        capability = self.gate.declared_compatibility(self.root)["optional_capabilities"]["shared_data"]
+        info = {key: capability[key] for key in ("commands", "request_schema", "result_schema")}
+        info.update(ok=True, capability="shared_data", capability_version=capability["version"])
+        entry.write_text("print('[]')\n", encoding="utf-8")
+        rejected = self.gate.run(self.root, include_optional=True)
+        self.assertEqual(rejected.failed_step, "optional-features", rejected.as_dict())
+        self.assertEqual(next(s for s in rejected.steps if s.name == "optional-features").status, "fail")
+
+        entry.write_text(f"print({json.dumps(info)!r})\n", encoding="utf-8")
+        missing = self.gate.run(self.root, include_optional=True)
+        self.assertEqual(missing.failed_step, "optional-features", missing.as_dict())
+        self.assertEqual(next(s for s in missing.steps if s.name == "optional-features").status, "not_run")
+
+        tests = module / "tests"
+        tests.mkdir()
+        test_case = tests / "test_case.py"
+        for assertion, status in (("False", "fail"), ("True", "pass")):
+            test_case.write_text(
+                "import unittest\nclass Fixture(unittest.TestCase):\n"
+                f" def test_result(self): self.assertTrue({assertion})\n", encoding="utf-8"
+            )
+            result = self.gate.run(self.root, include_optional=True)
+            step = next(s for s in result.steps if s.name == "optional-features")
+            self.assertEqual(step.status, status, result.as_dict())
+            self.assertEqual(result.ok, status == "pass", result.as_dict())
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host fixture를 건너뛴다")
+    def test_host_checks_declared_installation_without_running_optional_info(self) -> None:
+        for required in (False, True):
+            with self.subTest(required=required), tempfile.TemporaryDirectory() as tmp:
+                core, consumer = build_consumer(Path(tmp))
+                set_consumer_role(consumer, "host")
+                declare_optional_shared_data(core, partial=True)
+                if required:
+                    policy = consumer / "PROJECT_RULES.md"
+                    policy.write_text(
+                        policy.read_text(encoding="utf-8").replace(
+                            '"rule_roots":', '"required_core_capabilities": {"shared_data": 1},\n  "rule_roots":',
+                            1,
+                        ),
+                        encoding="utf-8",
+                    )
+                initialize_host_consumer_gitlink(core, consumer)
+                with patch.object(self.gate, "_optional", side_effect=AssertionError("Host executed info")):
+                    result = self.gate.run(core, consumer)
+                    with self.assertRaisesRegex(CheckError, "Host gate"):
+                        self.gate.run(core, consumer, include_optional=True)
+                self.assertEqual(result.failed_step, "consumer-integrity" if required else None, result.as_dict())
+                self.assertEqual(next(s for s in result.steps if s.name == "core-no-side-effects").status, "pass")
 
     def test_not_applicable_does_not_fail_but_not_run_does(self) -> None:
         result = self.gate.run(self.root)
@@ -2665,11 +2738,9 @@ class IntegrationGateTest(unittest.TestCase):
                     capture_output=True,
                     check=True,
                 )
-                return self.gate.StepResult(
-                    "optional-features", "not_applicable", "fixture", required=False
-                )
+                return self.gate.StepResult("core-integrity", "pass", "fixture")
 
-            with patch.object(self.gate, "_optional", side_effect=commit_without_tree_change):
+            with patch.object(self.gate, "_integrity", side_effect=commit_without_tree_change):
                 result = self.gate.run(core, consumer)
             side_effect = [s for s in result.steps if s.name == "core-no-side-effects"][0]
             self.assertEqual(side_effect.status, "fail")
@@ -2714,11 +2785,9 @@ class IntegrationGateTest(unittest.TestCase):
                     capture_output=True,
                     check=True,
                 )
-                return self.gate.StepResult(
-                    "optional-features", "not_applicable", "fixture", required=False
-                )
+                return self.gate.StepResult("core-integrity", "pass", "fixture")
 
-            with patch.object(self.gate, "_optional", side_effect=replace_linked_revision):
+            with patch.object(self.gate, "_integrity", side_effect=replace_linked_revision):
                 result = self.gate.run(core, consumer)
             side_effect = next(
                 step for step in result.steps if step.name == "core-no-side-effects"
@@ -2790,7 +2859,7 @@ class IntegrationGateTest(unittest.TestCase):
             self.assertNotEqual(before, host_core_git_fingerprint(core))
 
     @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host read-only fixture를 건너뛴다")
-    def test_consumer_baseline_precedes_optional_execution_and_role_is_stable(self) -> None:
+    def test_consumer_baseline_precedes_required_inspection_and_role_is_stable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             core, consumer = build_consumer(Path(tmp))
             set_consumer_role(consumer, "host")
@@ -2804,11 +2873,9 @@ class IntegrationGateTest(unittest.TestCase):
                     ),
                     encoding="utf-8",
                 )
-                return self.gate.StepResult(
-                    "optional-features", "not_applicable", "fixture", required=False
-                )
+                return self.gate.StepResult("core-integrity", "pass", "fixture")
 
-            with patch.object(self.gate, "_optional", side_effect=mutate_consumer_role):
+            with patch.object(self.gate, "_integrity", side_effect=mutate_consumer_role):
                 result = self.gate.run(core, consumer)
             regression = [s for s in result.steps if s.name == "regression-tests"][0]
             consumer_side_effect = [
@@ -3059,7 +3126,7 @@ class IntegrationGateTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             packaged = Path(raw) / "core"
             shutil.copytree(ROOT, packaged,
-                            ignore=shutil.ignore_patterns(".git", "tests", "__pycache__", "*.pyc"))
+                            ignore=shutil.ignore_patterns(".git", "tests", "experimental", "__pycache__", "*.pyc"))
             initialize_clean_git(packaged)
             completed = subprocess.run(
                 [sys.executable, "-B", "-I", "-c",
@@ -3071,9 +3138,8 @@ class IntegrationGateTest(unittest.TestCase):
             self.assertNotEqual(completed.returncode, 0, payload)
             self.assertFalse(payload["ok"])
             self.assertEqual(self.gate._tests(packaged).status, "not_run")
-            optional = self.gate._optional(packaged, execution_root=packaged, run_internal_tests=True)
-            expected = "not_run" if (packaged / "experimental/shared_data").is_dir() else "not_applicable"
-            self.assertEqual(optional.status, expected, optional.as_dict())
+            regression = next(s for s in payload["steps"] if s["name"] == "regression-tests")
+            self.assertEqual(regression["status"], "not_run")
 
     def test_test_runner_unavailable_or_early_exit_is_not_pass(self):
         tests = self.root / "tests"
@@ -3232,29 +3298,24 @@ class CompatibilityTest(unittest.TestCase):
         ):
             self.assertIn(key, self.declared)
 
-    def test_declared_optional_capability_has_a_complete_public_boundary(self) -> None:
-        from core_check.declarations import optional_capability_installation_state
-
+    def test_declared_optional_capability_publishes_entry_commands_and_schemas(self) -> None:
         capability = self.declared["optional_capabilities"]["shared_data"]
         self.assertEqual(capability["version"], 1)
+        self.assertEqual(capability["entry_module"], "experimental.shared_data")
         self.assertEqual(capability["commands"], ["info", "invoke"])
         self.assertTrue(capability["schemas"])
-        state = optional_capability_installation_state(ROOT, "shared_data", capability)
-        self.assertIn(state, {"installed", "absent"})
-        if state == "installed":
-            for field in ("request_schema", "result_schema"):
-                self.assertTrue((ROOT / capability[field]).is_file())
+        for value in (capability["request_schema"], capability["result_schema"], *capability["schemas"]):
+            self.assertTrue(Path(value).is_relative_to("experimental/shared_data/schemas"))
 
     def test_declaration_is_the_only_source(self) -> None:
-        from core_check.declarations import COMPAT_BLOCK
+        from core_check.declarations import COMPAT_BLOCK, walk_core_files
 
         # 제외 판정은 저장소 뿌리 기준 상대 경로로 한다. 절대 경로로 판정하면
         # 저장소가 `tmp` 같은 이름의 디렉터리 아래에 체크아웃될 때 전부 건너뛴다.
         blocks = [
             p
-            for p in ROOT.rglob("*.md")
-            if not {".git", "tmp"} & set(p.relative_to(ROOT).parts)
-            and COMPAT_BLOCK.search(p.read_text(encoding="utf-8"))
+            for p in walk_core_files(ROOT, ".md")
+            if COMPAT_BLOCK.search(p.read_text(encoding="utf-8"))
         ]
         self.assertEqual(len(blocks), 1, f"호환성 선언이 {len(blocks)}곳에 있다")
 

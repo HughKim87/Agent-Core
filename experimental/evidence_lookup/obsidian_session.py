@@ -194,8 +194,7 @@ class Request:
             entries.pop(self.key, None)
 
     def collect(self):
-        # Requests register before reading the repository. Wait for other
-        # members of the same cold start even if their snapshot takes longer.
+        # Wait for other registered requests in the same cold start to prepare their Vaults.
         deadline = time.monotonic() + COLLECT_SECONDS
         time.sleep(COLLECT_SECONDS)
         while True:
