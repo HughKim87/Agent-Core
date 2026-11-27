@@ -48,11 +48,22 @@ def byte_lock(path, offset, timeout):
 
 
 class Session:
-    def __init__(self):
+    def __init__(self, consumer_root=None):
         # The only shared files are rendezvous metadata in the user's OS temp
         # directory. Every Vault and the app profile live in Consumer caches.
-        directory = Path(os.environ['LOCALAPPDATA']) / 'Temp' / 'agent-core-obsidian-v1'
+        local_app_data = Path(os.environ.get('LOCALAPPDATA', ''))
+        b.require(local_app_data.is_absolute(), 'OBSIDIAN_COORDINATION_PATH')
+        directory = Path(os.path.abspath(local_app_data)) / 'Temp' / 'agent-core-obsidian-v1'
+
+        def check_consumer_overlap(path):
+            if consumer_root is not None:
+                b.require(not path.is_relative_to(consumer_root) and not consumer_root.is_relative_to(path),
+                          'OBSIDIAN_COORDINATION_PATH')
+
+        check_consumer_overlap(directory)
         b.no_links(directory.parent)
+        directory = directory.parent.resolve(strict=True) / directory.name
+        check_consumer_overlap(directory)
         directory.mkdir(exist_ok=True)
         b.no_links(directory)
         self.lock = directory / 'session.lock'
@@ -176,13 +187,13 @@ def query(exe, runtime, vault, key, pid, note, files):
 
 
 class Request:
-    def __init__(self, executable):
+    def __init__(self, executable, consumer_root):
         b.require(os.name == 'nt', 'OBSIDIAN_WINDOWS_ONLY')
         self.executable = Path(executable)
         b.require(self.executable.name.casefold() == 'obsidian.exe', 'OBSIDIAN_EXECUTABLE_REQUIRED')
         b.no_links(self.executable)
         b.no_links(self.executable.with_suffix('.com'))
-        self.session = Session()
+        self.session = Session(consumer_root)
         self.key = 'evidence' + uuid4().hex
         with self.session.requests() as entries:
             b.require(len(entries) < MAX_REQUESTS, 'OBSIDIAN_QUEUE_FULL')

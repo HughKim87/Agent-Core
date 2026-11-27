@@ -59,6 +59,39 @@ def request_payload() -> dict:
     }
 
 
+def copy_core_fixture(destination: Path) -> None:
+    shutil.copytree(
+        ROOT,
+        destination,
+        ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
+    )
+
+
+def checkout_host_core_fixture(core_link: Path) -> None:
+    core_link.mkdir()
+    for command in (["git", "init", "--quiet"], ["git", "config", "core.autocrlf", "false"]):
+        subprocess.run(command, cwd=core_link, capture_output=True, check=True)
+    with tempfile.TemporaryDirectory(prefix="shared-cli-index-") as directory:
+        source = Path(directory) / "source"
+        copy_core_fixture(source)
+        # Apply Git attributes on the way into the index and materialize an empty checkout.
+        subprocess.run(
+            ["git", f"--git-dir={core_link / '.git'}", f"--work-tree={source}", "add", "-A"],
+            cwd=source,
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "checkout-index", "--all", "--index"], cwd=core_link,
+            capture_output=True, check=True,
+        )
+    subprocess.run(
+        ["git", "-c", "user.name=Core Test", "-c", "user.email=core-test@example.invalid",
+         "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture"],
+        cwd=core_link, capture_output=True, check=True,
+    )
+
+
 def configure_consumer(
     root: Path,
     *,
@@ -70,11 +103,10 @@ def configure_consumer(
     if not core_link.exists():
         # 현재 worktree의 공개 CLI를 검증하는 합성 packaging fixture다. Host 배포·Runtime
         # 의존이나 실제 Consumer 검증 근거로 사용하지 않는다.
-        shutil.copytree(
-            ROOT,
-            core_link,
-            ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
-        )
+        if consumer_role == "host":
+            checkout_host_core_fixture(core_link)
+        else:
+            copy_core_fixture(core_link)
     (root / "rules").mkdir(exist_ok=True)
     (root / "rules" / "project.md").write_text("# fixture\n", encoding="utf-8")
     (root / "CURRENT.md").write_text("# fixture state\n", encoding="utf-8")
@@ -101,21 +133,6 @@ def configure_consumer(
         encoding="utf-8",
     )
     if consumer_role == "host":
-        if not (core_link / ".git").exists():
-            commands = (
-                ["git", "init", "--quiet"],
-                ["git", "config", "core.autocrlf", "false"],
-                ["git", "add", "-A"],
-                [
-                    "git",
-                    "-c", "user.name=Core Test",
-                    "-c", "user.email=core-test@example.invalid",
-                    "-c", "commit.gpgsign=false",
-                    "commit", "--quiet", "-m", "fixture",
-                ],
-            )
-            for command in commands:
-                subprocess.run(command, cwd=core_link, capture_output=True, check=True)
         (root / ".gitmodules").write_text(
             '[submodule "core"]\n\tpath = core\n\turl = https://example.invalid/core.git\n',
             encoding="utf-8",
@@ -700,6 +717,37 @@ class PublicSharedDataCliTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 1, payload)
             self.assertEqual(payload["kind"], "write_not_enabled")
             self.assertFalse(marker.exists())
+
+    @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host checkout 검사를 건너뛴다")
+    def test_host_fixture_checks_out_index_bytes_and_still_rejects_raw_crlf(self) -> None:
+        from core_check.integrity import host_core_cleanliness
+
+        copytree = shutil.copytree
+
+        def copy_with_crlf(source, destination, *args, **kwargs):
+            copied = copytree(source, destination, *args, **kwargs)
+            if Path(source) == ROOT:
+                policy = Path(copied) / "PROJECT_RULES.md"
+                content = policy.read_bytes().replace(b"\r\n", b"\n")
+                policy.write_bytes(content.replace(b"\n", b"\r\n"))
+            return copied
+
+        with tempfile.TemporaryDirectory(prefix="shared-cli-host-checkout-") as raw_root:
+            root = Path(raw_root)
+            with patch.object(shutil, "copytree", side_effect=copy_with_crlf):
+                configure_consumer(root, consumer_role="host")
+            core = root / "core"
+            policy = core / "PROJECT_RULES.md"
+            committed = subprocess.check_output(["git", "show", "HEAD:PROJECT_RULES.md"], cwd=core)
+            self.assertNotIn(b"\r\n", committed)
+            self.assertEqual(policy.read_bytes(), committed)
+            clean, detail = host_core_cleanliness(core)
+            self.assertTrue(clean, detail)
+
+            policy.write_bytes(committed.replace(b"\n", b"\r\n"))
+            clean, detail = host_core_cleanliness(core)
+            self.assertFalse(clean, detail)
+            self.assertIn("PROJECT_RULES.md", detail)
 
     @unittest.skipUnless(shutil.which("git"), "Git 실행기가 없어 Host public boundary를 건너뛴다")
     def test_host_dirty_core_is_rejected_before_public_dispatch(self) -> None:

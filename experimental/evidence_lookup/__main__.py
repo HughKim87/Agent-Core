@@ -42,10 +42,11 @@ def inside_path(parent, path):
 
 def git(root, *args, literal=True):
     pathspec = ["--literal-pathspecs"] if literal and args[0] != "check-ignore" else []
-    env = os.environ.copy()
-    for name in ("GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS"):
-        env.pop(name, None)
-    return subprocess.run(["git", *pathspec, "-C", str(root), *args], env=env,
+    env = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
+    env.update(GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0")
+    command = ["git", *pathspec, "--git-dir=.git", "--work-tree=.",
+               "-c", f"safe.directory={root.as_posix()}", "-c", "core.fsmonitor=false", *args]
+    return subprocess.run(command, cwd=root, env=env,
                           capture_output=True, timeout=20, check=False)
 
 
@@ -183,7 +184,7 @@ def lookup_with_boundary(consumer_root, cache, tool, target, roots, executable, 
             obsidian_request = None
             try:
                 if tool == "obsidian":
-                    obsidian_request = obsidian_session.Request(executable)
+                    obsidian_request = obsidian_session.Request(executable, boundary.consumer_root)
                     with TemporaryDirectory(dir=local_cache, prefix=f"{tool}-") as temp:
                         result = obsidian_request.lookup(data, target, Path(temp))
                     mode = "cold_obsidian"

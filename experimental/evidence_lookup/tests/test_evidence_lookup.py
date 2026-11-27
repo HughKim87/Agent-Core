@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from experimental.evidence_lookup import __main__ as cli
-from experimental.evidence_lookup import backends
+from experimental.evidence_lookup import backends, obsidian_session
 from core_check import runtime_boundary
 
 
@@ -90,9 +90,30 @@ class EvidenceLookupTests(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("# Synthetic fixture\n", encoding="utf-8")
             subprocess.run(["git", "add", "--", "notes"], cwd=root, check=True, capture_output=True)
-            with patch.dict(os.environ, {"GIT_LITERAL_PATHSPECS": "1"}):
+            with patch.dict(os.environ, {"GIT_LITERAL_PATHSPECS": "1",
+                                         "GIT_INDEX_FILE": str(root / "unused-fixture-index")}):
                 result = cli.tracked(root, ["notes"], excluded=("Notes/Subfolder", "notes/éQUIPE/éTÉ"))
             self.assertEqual(result, ["notes/public.md", "notes/subfolder-nearby/public.md", "notes/Équipage/public.md"])
+
+    @unittest.skipUnless(shutil.which("git"), "Git is required for the tracked source boundary")
+    def test_git_candidate_lookup_binds_to_consumer_and_supports_gitfile(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            subprocess.run(["git", "init", "--quiet"], cwd=root, check=True, capture_output=True)
+            consumer = root / "consumer"
+            consumer.mkdir()
+            with self.assertRaisesRegex(backends.Rejected, "TRACKED_SOURCE_LIST_UNAVAILABLE"):
+                cli.tracked(consumer, ["example.md"])
+
+            metadata = root / "consumer-metadata"
+            subprocess.run(["git", "init", "--quiet", f"--separate-git-dir={metadata}"],
+                           cwd=consumer, check=True, capture_output=True)
+            (consumer / "example.md").write_text("# Synthetic fixture\n", encoding="utf-8")
+            (consumer / ".gitignore").write_text("/.evidence/\n", encoding="utf-8")
+            subprocess.run(["git", "add", "--", "example.md"], cwd=consumer, check=True, capture_output=True)
+            self.assertEqual(cli.tracked(consumer, ["example.md"]), ["example.md"])
+            boundary = SimpleNamespace(consumer_root=consumer, write_paths=(".evidence",))
+            self.assertEqual(cli.cache_directory(boundary), consumer / ".evidence")
 
     def test_invoke_checks_boundary_input_and_cache_before_obsidian_registration(self):
         root = Path.cwd().resolve()
@@ -190,6 +211,7 @@ class EvidenceLookupTests(unittest.TestCase):
                 register.return_value.close.side_effect = lambda: order.append("close")
                 native = cli.invoke(root, request)
                 self.assertEqual(native["backend"], "obsidian")
+                register.assert_called_once_with(request["executable"], root)
                 self.assertEqual(order, ["close", "check"])
 
                 register.side_effect = backends.Rejected("MOCK_TOOL_FAILURE")
@@ -197,3 +219,26 @@ class EvidenceLookupTests(unittest.TestCase):
                 self.assertEqual(fallback["backend"], "markdown")
                 self.assertEqual(fallback["fallback_reason"], "MOCK_TOOL_FAILURE")
                 self.assertEqual(order, ["close", "check", "check"])
+
+    def test_obsidian_coordination_path_rejects_invalid_and_overlapping_roots_without_access(self):
+        consumer = Path.cwd().resolve()
+        for local_app_data in ("", "relative", str(consumer)):
+            with self.subTest(local_app_data=local_app_data), \
+                    patch.dict(os.environ, {"LOCALAPPDATA": local_app_data}), \
+                    patch.object(backends, "no_links") as probe:
+                with self.assertRaisesRegex(backends.Rejected, "OBSIDIAN_COORDINATION_PATH"):
+                    obsidian_session.Session(consumer)
+                probe.assert_not_called()
+
+    def test_obsidian_coordination_path_accepts_separate_temp_directory(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            consumer = root / "consumer"
+            consumer.mkdir()
+            app_data = root / "app-data"
+            (app_data / "Temp").mkdir(parents=True)
+            with patch.dict(os.environ, {"LOCALAPPDATA": str(app_data)}):
+                session = obsidian_session.Session(consumer)
+            expected = app_data / "Temp" / "agent-core-obsidian-v1"
+            self.assertEqual(session.lock.parent, expected)
+            self.assertTrue(expected.is_dir())

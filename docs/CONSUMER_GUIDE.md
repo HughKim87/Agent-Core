@@ -249,7 +249,7 @@ Invoke-SharedData -RuntimeArgs @('info')
 
 `info`의 정적 discovery 조건은 [호환성 §3A](COMPATIBILITY.md#3a-선택-runtime-공개-경계)를 따른다. dirty Core에서도 조회할 수 있지만 기능 소비·가용성·완료의 성공 근거는 아니다. 실제 호출은 소비 root·Runtime storage root·보호 경계를 명시하고 request v1 JSON 하나를 stdin으로 보낸다.
 
-따라서 Host gate가 `info` 선언 일치를 확인해도 `optional-features`는 `not_applicable`로 기록한다. Consumer 계약 검사는 요구 기능의 설치 구조·최소 버전을 별도로 확인하고, 실제 기능 완료 근거가 필요하면 아래 verified `invoke` 결과를 사용한다.
+Host gate는 선택 Runtime의 `info`를 실행하지 않으며 `optional-features`는 `not_applicable`로 기록한다. Consumer 계약 검사는 이 Consumer가 요구한 기능의 설치 구조와 최소 버전을 확인한다. 실제 기능 완료는 아래 verified `invoke` 결과로 확인한다.
 
 `invoke` 전에 소비 계약 버전과 `required_core_capabilities.shared_data` 최소 버전을 맞추고 [호환성 §3A](COMPATIBILITY.md#3a-선택-runtime-공개-경계)의 verified Consumer 조건을 충족한다. storage는 Consumer 내부이며 Core·보호 경로와 겹치지 않아야 한다. 계약과 호출의 보호 경로는 함께 적용된다. Host는 §6의 clean·gitlink 결속·실행 전후 불변 조건도 충족해야 한다.
 
