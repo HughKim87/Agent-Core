@@ -12,7 +12,19 @@
         "fallback_reason": {"type": ["string", "null"]},
         "partial": {"type": "boolean"},
         "truncated": {"type": "boolean"},
-        "result": {"type": ["array", "string"]}
+        "result": {"type": ["array", "string"]},
+        "call_sites": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["matches", "incomplete"],
+          "properties": {
+            "matches": {"type": "array", "maxItems": 100, "items": {
+              "type": "object", "additionalProperties": false, "required": ["path", "line"],
+              "properties": {"path": {"type": "string"}, "line": {"type": "integer", "minimum": 1}}
+            }},
+            "incomplete": {"type": "boolean"}
+          }
+        }
       }
     },
     {

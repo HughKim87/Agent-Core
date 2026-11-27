@@ -351,3 +351,29 @@ def python_definitions(files, symbol):
                 if node.name == symbol.rsplit('.', 1)[-1]:
                     found.append({'path': name, 'line': node.lineno, 'symbol': node.name})
     return sorted(found, key=lambda hit: (hit['path'], hit['line']))
+
+
+def python_call_sites(files, symbol):
+    """Find syntactic call candidates. A matching name does not prove resolution."""
+    name = symbol.rsplit(".", 1)[-1]
+    matches = []
+    incomplete = False
+    for path, data in sorted(files.items()):
+        try:
+            tree = ast.parse(data)
+        except SyntaxError:
+            incomplete = True
+            continue
+        lines = set()
+        for call in ast.walk(tree):
+            if not isinstance(call, ast.Call):
+                continue
+            fn = call.func
+            if (isinstance(fn, ast.Name) and fn.id == name) or (
+                isinstance(fn, ast.Attribute) and fn.attr == name
+            ):
+                lines.add(call.lineno)
+        matches.extend({"path": path, "line": line} for line in sorted(lines))
+        if len(matches) > 100:
+            return matches[:100], True
+    return matches, incomplete

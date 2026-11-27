@@ -56,9 +56,10 @@ def document_sources(boundary, roots, suffix):
                      "PROTECTED_SOURCE")
     core_inputs = [path[len(core_rel) + 1:] for path in roots if inside_path(core_rel, path)]
     allowed_core = {"PROJECT_RULES.md", "README.md", "docs", "rules", "src"}
+    boundary_clients = {"experimental/evidence_lookup/__main__.py", "experimental/shared_data/cli.py"} if suffix == ".py" else set()
     if core_inputs:
         backends.require(boundary.host_baseline is None and all(
-            path.split("/", 1)[0] in allowed_core for path in core_inputs
+            path.split("/", 1)[0] in allowed_core or path in boundary_clients for path in core_inputs
         ), "CORE_SOURCE_SCOPE_REJECTED")
     local_roots = [path for path in roots if not inside_path(core_rel, path)]
     paths = [path for path in tracked(boundary.consumer_root, local_roots)
@@ -104,11 +105,14 @@ def cache_directory(boundary):
 
 
 def invoke(consumer_root, request):
-    backends.require(isinstance(request, dict) and set(request) == {
-        "tool", "target", "source_roots", "executable", "cache"
-    }, "REQUEST_FIELDS")
+    required = {"tool", "target", "source_roots", "executable", "cache"}
+    backends.require(isinstance(request, dict) and required <= request.keys()
+                     and request.keys() <= required | {"include_call_sites"}, "REQUEST_FIELDS")
     tool, target, roots, executable = (request[k] for k in ("tool", "target", "source_roots", "executable"))
     backends.require(tool in ("obsidian", "graphify") and isinstance(roots, list) and 0 < len(roots) <= 40,
+                     "REQUEST_VALUES")
+    include_call_sites = request.get("include_call_sites", False)
+    backends.require(type(include_call_sites) is bool and (not include_call_sites or tool == "graphify"),
                      "REQUEST_VALUES")
     roots = [relative_checked(path) for path in roots]
     cache = relative_checked(request["cache"])
@@ -154,10 +158,14 @@ def invoke(consumer_root, request):
             backends.no_links(source)
             backends.require(backends.path_signature(source.stat()) == signature, "SOURCE_CHANGED")
         truncated = len(result) > (16000 if isinstance(result, str) else 100)
-        return {"ok": True, "backend": backend, "execution_mode": mode,
-                "fallback_reason": reason if backend != tool else None,
-                "partial": partial, "truncated": truncated,
-                "result": result[:16000] if isinstance(result, str) else result[:100]}
+        response = {"ok": True, "backend": backend, "execution_mode": mode,
+                    "fallback_reason": reason if backend != tool else None,
+                    "partial": partial, "truncated": truncated,
+                    "result": result[:16000] if isinstance(result, str) else result[:100]}
+        if include_call_sites:
+            matches, incomplete = backends.python_call_sites(data, target)
+            response["call_sites"] = {"matches": matches, "incomplete": partial or incomplete}
+        return response
     finally:
         require_consumer_runtime_boundary_unchanged(boundary)
 

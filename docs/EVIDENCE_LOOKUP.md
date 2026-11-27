@@ -33,3 +33,5 @@ python -B -I -c "import runpy,sys; from pathlib import Path; p=Path(sys.argv.pop
 `executable`에 설치한 실행 파일의 절대경로를 지정한다. 값을 `null`로 두거나 조회가 실패하면 Obsidian은 추적 Markdown의 인라인 링크, Graphify는 추적 Python의 심볼 정의를 조회하는 방식으로 이어간다. 대체 결과는 `backend`와 `fallback_reason`으로 구분한다. 대체 Python 결과는 **정의 후보**이며 호출 관계를 반환하지 않는다. 결과가 비어 있거나 `partial`·`truncated`이면 검색 범위와 한계를 함께 확인한다.
 
 `source_roots`는 Consumer 상대 파일 또는 디렉터리의 목록이다. Git 추적 입력 및 요청한 확장자만 읽고 보호 경로를 제외한다. 별도 승인된 Core 유지보수를 하는 Maintainer는 명시적으로 Core의 문서·규칙·소스 근거를 조회할 수 있다. Host 실행은 해당 범위를 열지 않는다. 캐시, 로그와 임시 사본은 Consumer의 Git 제외 경로 안에서 생성한다. Graphify는 로컬 코드 전용 모드로 실행하고, Obsidian은 임시 Vault와 프로필을 사용한다.
+
+Graphify 요청에 `"include_call_sites": true`를 추가하면 같은 입력에서 직접 검색한 호출 후보를 `call_sites`로 받는다. `matches`는 파일과 줄을 제공하며, 이름이 같은 호출은 원문에서 실제 대상을 확인한다. 입력 누락, Python 구문 오류, 결과 제한으로 검색이 불완전하면 `incomplete`가 참이다. Core의 런타임 경계 변경을 검토하는 Maintainer는 `core/experimental/evidence_lookup/__main__.py`와 `core/experimental/shared_data/cli.py`에 해당하는 파일을 각각 명시할 수 있다. 두 파일의 상위 디렉터리는 이 예외에 포함하지 않는다.
