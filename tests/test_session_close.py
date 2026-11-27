@@ -58,6 +58,18 @@ class SessionCloseTest(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "결정 대기 — C2")
         self.assertNotIn(MARKER, result.stdout + result.stderr)
 
+    def test_optional_candidate_awaiting_decision_blocks_close(self):
+        self.publish("E1(선택)")
+        candidate = {"id": "E1", "required": False, "state": "pending"}
+        pending = self.run_check([candidate])
+        self.assertEqual(pending.returncode, 1)
+        self.assertEqual(pending.stdout.strip(), "결정 대기 — E1")
+        self.assertNotIn(MARKER, pending.stdout + pending.stderr)
+
+        not_selected = self.run_check([dict(candidate, state="not_selected")])
+        self.assertEqual(not_selected.returncode, 0)
+        self.assertEqual(not_selected.stdout.strip(), MARKER)
+
     def test_no_required_decision_and_explicit_deferral_allow_close(self):
         for roster, candidates in (
             ("없음", []),

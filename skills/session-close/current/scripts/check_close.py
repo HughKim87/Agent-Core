@@ -67,7 +67,7 @@ def check_close(report, classified):
             reference = candidate.get("decision_ref")
             if not isinstance(reference, str) or not reference.strip():
                 raise ValueError(f"필수 후보 {candidate_id}의 결정 근거가 필요합니다.")
-        if required and state == "pending":
+        if state == "pending":
             pending.append(candidate_id)
         if state == "approved":
             unfinished.append(candidate_id)
